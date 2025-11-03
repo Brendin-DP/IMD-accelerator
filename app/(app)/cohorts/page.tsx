@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus } from "lucide-react";
+import { Plus, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -52,6 +52,9 @@ export default function CohortsPage() {
   const [cohortsLoading, setCohortsLoading] = useState(true);
   const [cohortsError, setCohortsError] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [editingCohortId, setEditingCohortId] = useState<string | null>(null);
+  const [deletingCohortId, setDeletingCohortId] = useState<string | null>(null);
   const [clients, setClients] = useState<Client[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -66,6 +69,7 @@ export default function CohortsPage() {
   });
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     fetchCohorts();
@@ -75,8 +79,22 @@ export default function CohortsPage() {
     if (isDialogOpen) {
       fetchClients();
       fetchPlans();
+      if (editingCohortId) {
+        fetchCohortForEdit(editingCohortId);
+      }
+    } else {
+      // Reset form when dialog closes
+      setEditingCohortId(null);
+      setFormData({
+        name: "",
+        client_id: "",
+        plan_id: "",
+        start_date: "",
+        end_date: "",
+        participant_ids: [],
+      });
     }
-  }, [isDialogOpen]);
+  }, [isDialogOpen, editingCohortId]);
 
   useEffect(() => {
     if (formData.client_id) {
@@ -178,6 +196,101 @@ export default function CohortsPage() {
     }
   }
 
+  async function fetchCohortForEdit(cohortId: string) {
+    try {
+      setLoading(true);
+      // Fetch cohort details
+      const { data: cohort, error: cohortError } = await supabase
+        .from("cohorts")
+        .select("*")
+        .eq("id", cohortId)
+        .single();
+
+      if (cohortError) {
+        console.error("Error fetching cohort:", cohortError);
+        return;
+      }
+
+      // Fetch participants
+      const { data: participants, error: participantsError } = await supabase
+        .from("cohort_participants")
+        .select("client_user_id")
+        .eq("cohort_id", cohortId);
+
+      if (participantsError) {
+        console.error("Error fetching participants:", participantsError);
+      }
+
+      // Set form data
+      setFormData({
+        name: cohort.name || "",
+        client_id: cohort.client_id || "",
+        plan_id: cohort.plan_id || "",
+        start_date: cohort.start_date ? cohort.start_date.split('T')[0] : "",
+        end_date: cohort.end_date ? cohort.end_date.split('T')[0] : "",
+        participant_ids: participants?.map((p) => p.client_user_id) || [],
+      });
+
+      // Fetch client users for the selected client
+      if (cohort.client_id) {
+        await fetchClientUsers(cohort.client_id);
+      }
+    } catch (err) {
+      console.error("Error fetching cohort for edit:", err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleEdit(cohort: Cohort) {
+    setEditingCohortId(cohort.id);
+    setIsDialogOpen(true);
+  }
+
+  function handleDeleteClick(cohortId: string) {
+    setDeletingCohortId(cohortId);
+    setIsDeleteDialogOpen(true);
+  }
+
+  async function handleDeleteConfirm() {
+    if (!deletingCohortId) return;
+
+    setDeleting(true);
+    try {
+      // First delete participants
+      const { error: participantsError } = await supabase
+        .from("cohort_participants")
+        .delete()
+        .eq("cohort_id", deletingCohortId);
+
+      if (participantsError) {
+        console.error("Error deleting participants:", participantsError);
+      }
+
+      // Then delete cohort
+      const { error: cohortError } = await supabase
+        .from("cohorts")
+        .delete()
+        .eq("id", deletingCohortId);
+
+      if (cohortError) {
+        console.error("Error deleting cohort:", cohortError);
+        setSubmitError(cohortError.message);
+        setDeleting(false);
+        return;
+      }
+
+      setIsDeleteDialogOpen(false);
+      setDeletingCohortId(null);
+      await fetchCohorts();
+    } catch (err) {
+      console.error("Unexpected error:", err);
+      setSubmitError(err instanceof Error ? err.message : "An unexpected error occurred");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   function handleInputChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
@@ -210,31 +323,70 @@ export default function CohortsPage() {
         return;
       }
 
-      // Create cohort
-      const { data: cohort, error: cohortError } = await supabase
-        .from("cohorts")
-        .insert([
-          {
+      let cohortId: string;
+
+      if (editingCohortId) {
+        // Update existing cohort
+        const { data: cohort, error: cohortError } = await supabase
+          .from("cohorts")
+          .update({
             name: formData.name,
             client_id: formData.client_id,
             plan_id: formData.plan_id,
             start_date: formData.start_date,
             end_date: formData.end_date,
-          },
-        ])
-        .select()
-        .single();
+          })
+          .eq("id", editingCohortId)
+          .select()
+          .single();
 
-      if (cohortError) {
-        console.error("Error creating cohort:", cohortError);
-        setSubmitError(cohortError.message);
-        setSubmitting(false);
-        return;
+        if (cohortError) {
+          console.error("Error updating cohort:", cohortError);
+          setSubmitError(cohortError.message);
+          setSubmitting(false);
+          return;
+        }
+
+        cohortId = cohort.id;
+
+        // Delete existing participants
+        const { error: deleteError } = await supabase
+          .from("cohort_participants")
+          .delete()
+          .eq("cohort_id", cohortId);
+
+        if (deleteError) {
+          console.error("Error deleting existing participants:", deleteError);
+        }
+      } else {
+        // Create new cohort
+        const { data: cohort, error: cohortError } = await supabase
+          .from("cohorts")
+          .insert([
+            {
+              name: formData.name,
+              client_id: formData.client_id,
+              plan_id: formData.plan_id,
+              start_date: formData.start_date,
+              end_date: formData.end_date,
+            },
+          ])
+          .select()
+          .single();
+
+        if (cohortError) {
+          console.error("Error creating cohort:", cohortError);
+          setSubmitError(cohortError.message);
+          setSubmitting(false);
+          return;
+        }
+
+        cohortId = cohort.id;
       }
 
       // Add participants to cohort
       const cohortParticipants = formData.participant_ids.map((client_user_id) => ({
-        cohort_id: cohort.id,
+        cohort_id: cohortId,
         client_user_id,
       }));
 
@@ -304,6 +456,7 @@ export default function CohortsPage() {
                 <th className="px-6 py-3 text-left text-sm font-medium">Start Date</th>
                 <th className="px-6 py-3 text-left text-sm font-medium">End Date</th>
                 <th className="px-6 py-3 text-left text-sm font-medium">Created</th>
+                <th className="px-6 py-3 text-left text-sm font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -327,6 +480,26 @@ export default function CohortsPage() {
                       ? new Date(cohort.created_at).toLocaleDateString()
                       : "-"}
                   </td>
+                  <td className="px-6 py-4 text-sm">
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleEdit(cohort)}
+                        className="h-8 w-8 p-0"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteClick(cohort.id)}
+                        className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -339,9 +512,13 @@ export default function CohortsPage() {
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogClose onClick={() => setIsDialogOpen(false)} />
           <DialogHeader>
-            <DialogTitle>Create Cohort</DialogTitle>
+            <DialogTitle>
+              {editingCohortId ? "Edit Cohort" : "Create Cohort"}
+            </DialogTitle>
             <DialogDescription>
-              Create a new cohort by selecting a client, dates, and participants.
+              {editingCohortId
+                ? "Update the cohort details below."
+                : "Create a new cohort by selecting a client, dates, and participants."}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -509,10 +686,51 @@ export default function CohortsPage() {
                 Cancel
               </Button>
               <Button type="submit" disabled={submitting}>
-                {submitting ? "Creating..." : "Create Cohort"}
+                {submitting
+                  ? editingCohortId
+                    ? "Updating..."
+                    : "Creating..."
+                  : editingCohortId
+                  ? "Update Cohort"
+                  : "Create Cohort"}
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
+          <DialogClose onClick={() => setIsDeleteDialogOpen(false)} />
+          <DialogHeader>
+            <DialogTitle>Delete Cohort</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this cohort? This action cannot be undone and will also remove all associated participants.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setIsDeleteDialogOpen(false);
+                setDeletingCohortId(null);
+              }}
+              disabled={deleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="default"
+              onClick={handleDeleteConfirm}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? "Deleting..." : "Delete Cohort"}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
