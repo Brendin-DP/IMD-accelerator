@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,6 +49,7 @@ interface Cohort {
 }
 
 export default function CohortsPage() {
+  const router = useRouter();
   const [cohorts, setCohorts] = useState<Cohort[]>([]);
   const [cohortsLoading, setCohortsLoading] = useState(true);
   const [cohortsError, setCohortsError] = useState<string | null>(null);
@@ -461,7 +463,11 @@ export default function CohortsPage() {
             </thead>
             <tbody>
               {cohorts.map((cohort) => (
-                <tr key={cohort.id} className="border-b hover:bg-muted/50 transition-colors">
+                <tr
+                  key={cohort.id}
+                  className="border-b hover:bg-muted/50 transition-colors cursor-pointer"
+                  onClick={() => router.push(`/cohorts/${cohort.id}`)}
+                >
                   <td className="px-6 py-4 text-sm font-medium">{cohort.name || "-"}</td>
                   <td className="px-6 py-4 text-sm">
                     {(cohort.client as any)?.name || "-"}
@@ -481,7 +487,7 @@ export default function CohortsPage() {
                       : "-"}
                   </td>
                   <td className="px-6 py-4 text-sm">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                       <Button
                         variant="ghost"
                         size="sm"
