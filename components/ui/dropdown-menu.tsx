@@ -45,10 +45,18 @@ DropdownMenu.displayName = "DropdownMenu"
 
 const DropdownMenuTrigger = React.forwardRef<
   HTMLButtonElement,
-  React.ButtonHTMLAttributes<HTMLButtonElement>
->(({ className, children, ...props }, ref) => {
+  React.ButtonHTMLAttributes<HTMLButtonElement> & { asChild?: boolean }
+>(({ className, children, asChild, ...props }, ref) => {
   const context = React.useContext(DropdownMenuContext)
   if (!context) throw new Error("DropdownMenuTrigger must be used within DropdownMenu")
+
+  if (asChild && React.isValidElement(children)) {
+    return React.cloneElement(children as React.ReactElement<any>, {
+      ref,
+      onClick: () => context.setIsOpen(!context.isOpen),
+      ...props,
+    })
+  }
 
   return (
     <button

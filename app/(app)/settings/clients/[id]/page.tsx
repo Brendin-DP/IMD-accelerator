@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Plus, ArrowLeft } from "lucide-react";
+import { Plus, ArrowLeft, ChevronDown, UserPlus, Upload, Download, FileUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +14,12 @@ import {
   DialogDescription,
   DialogClose,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 import { supabase } from "@/lib/supabaseClient";
 
 interface Client {
@@ -44,6 +50,7 @@ export default function ClientDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     surname: "",
@@ -51,6 +58,9 @@ export default function ClientDetailPage() {
   });
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
     if (clientId) {
@@ -156,6 +166,127 @@ export default function ClientDetailPage() {
     setFormData((prev) => ({ ...prev, [name]: value }));
   }
 
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.type === "text/csv" || file.name.endsWith(".csv")) {
+        setSelectedFile(file);
+        setImportError(null);
+      } else {
+        setImportError("Please upload a CSV file");
+        setSelectedFile(null);
+      }
+    }
+  }
+
+  function handleDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      if (file.type === "text/csv" || file.name.endsWith(".csv")) {
+        setSelectedFile(file);
+        setImportError(null);
+      } else {
+        setImportError("Please upload a CSV file");
+        setSelectedFile(null);
+      }
+    }
+  }
+
+  function handleDragOver(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+  }
+
+  function downloadCSVTemplate() {
+    const headers = ["name", "surname", "email"];
+    const csvContent = headers.join(",") + "\n";
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", "user_import_template.csv");
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  async function handleImport() {
+    if (!selectedFile) {
+      setImportError("Please select a CSV file");
+      return;
+    }
+
+    setImporting(true);
+    setImportError(null);
+
+    try {
+      const text = await selectedFile.text();
+      const lines = text.split("\n").filter((line) => line.trim());
+      
+      if (lines.length < 2) {
+        setImportError("CSV file must contain at least a header row and one data row");
+        setImporting(false);
+        return;
+      }
+
+      // Parse CSV (simple parser - assumes no commas in values)
+      const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
+      const nameIndex = headers.indexOf("name");
+      const surnameIndex = headers.indexOf("surname");
+      const emailIndex = headers.indexOf("email");
+
+      if (nameIndex === -1 || surnameIndex === -1 || emailIndex === -1) {
+        setImportError("CSV must contain columns: name, surname, email");
+        setImporting(false);
+        return;
+      }
+
+      const usersToImport = [];
+      for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(",").map((v) => v.trim());
+        if (values[nameIndex] && values[surnameIndex] && values[emailIndex]) {
+          usersToImport.push({
+            client_id: clientId,
+            name: values[nameIndex],
+            surname: values[surnameIndex],
+            email: values[emailIndex],
+          });
+        }
+      }
+
+      if (usersToImport.length === 0) {
+        setImportError("No valid users found in CSV file");
+        setImporting(false);
+        return;
+      }
+
+      // Insert users into database
+      const { error: dbError } = await supabase
+        .from("client_users")
+        .insert(usersToImport);
+
+      if (dbError) {
+        console.error("Error importing users:", dbError);
+        setImportError(dbError.message);
+        setImporting(false);
+        return;
+      }
+
+      // Reset and close dialog
+      setSelectedFile(null);
+      setIsImportDialogOpen(false);
+      
+      // Refresh the users list
+      await fetchClientUsers();
+    } catch (err) {
+      console.error("Error processing CSV:", err);
+      setImportError(err instanceof Error ? err.message : "Failed to process CSV file");
+    } finally {
+      setImporting(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -192,10 +323,29 @@ export default function ClientDetailPage() {
             <p className="text-muted-foreground mt-2">Client details and user management</p>
           </div>
         </div>
-        <Button onClick={() => setIsDialogOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Add User
-        </Button>
+        <div className="flex items-center">
+          <Button onClick={() => setIsDialogOpen(true)} className="rounded-r-none border-r-0">
+            <Plus className="mr-2 h-4 w-4" />
+            Add User
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="default" className="rounded-l-none px-2 border-l border-primary/20">
+                <ChevronDown className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setIsDialogOpen(true)}>
+                <UserPlus className="mr-2 h-4 w-4" />
+                Invite a User
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setIsImportDialogOpen(true)}>
+                <Upload className="mr-2 h-4 w-4" />
+                Import Users
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       {/* Client Details Card */}
@@ -356,6 +506,102 @@ export default function ClientDetailPage() {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import Users Dialog */}
+      <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
+        <DialogContent>
+          <DialogClose onClick={() => setIsImportDialogOpen(false)} />
+          <DialogHeader>
+            <DialogTitle>Import Users</DialogTitle>
+            <DialogDescription>
+              Upload a CSV file to bulk import users. The file should contain name, surname, and email columns.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* File Upload Area */}
+            <div
+              onDrop={handleDrop}
+              onDragOver={handleDragOver}
+              className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+                selectedFile
+                  ? "border-primary bg-primary/5"
+                  : "border-muted-foreground/25 hover:border-primary/50"
+              }`}
+            >
+              <input
+                type="file"
+                accept=".csv"
+                onChange={handleFileChange}
+                className="hidden"
+                id="csv-upload"
+              />
+              <label
+                htmlFor="csv-upload"
+                className="cursor-pointer flex flex-col items-center gap-2"
+              >
+                <FileUp className="h-10 w-10 text-muted-foreground" />
+                {selectedFile ? (
+                  <div className="mt-2">
+                    <p className="text-sm font-medium">{selectedFile.name}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {(selectedFile.size / 1024).toFixed(2)} KB
+                    </p>
+                  </div>
+                ) : (
+                  <div className="mt-2">
+                    <p className="text-sm font-medium">
+                      Click to upload or drag and drop
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      CSV file only
+                    </p>
+                  </div>
+                )}
+              </label>
+            </div>
+
+            {importError && (
+              <p className="text-sm text-destructive">{importError}</p>
+            )}
+
+            {/* Download Template Button */}
+            <div className="flex justify-center pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={downloadCSVTemplate}
+                disabled={importing}
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Download CSV Template
+              </Button>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex justify-end gap-2 pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setIsImportDialogOpen(false);
+                  setSelectedFile(null);
+                  setImportError(null);
+                }}
+                disabled={importing}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={handleImport}
+                disabled={!selectedFile || importing}
+              >
+                {importing ? "Importing..." : "Import Users"}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
