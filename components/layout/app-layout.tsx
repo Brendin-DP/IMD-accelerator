@@ -15,7 +15,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const storedUser = localStorage.getItem("imd_admin");
     if (storedUser) {
-      setUser(JSON.parse(storedUser));
+      const userData = JSON.parse(storedUser);
+      setUser(userData);
     }
   }, []);
 
@@ -68,21 +69,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           {/* Profile Section */}
           <div className="border-t p-4">
             <DropdownMenu>
-              <DropdownMenuTrigger className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left hover:bg-accent">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                    <User className="h-4 w-4" />
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium">
-                      {user?.name || user?.email || "Profile"}
-                    </span>
-                    <span className="text-xs text-muted-foreground">View Profile</span>
-                  </div>
+              <DropdownMenuTrigger className="w-full flex items-center gap-3 rounded-lg px-3 py-2 text-left hover:bg-accent transition-colors focus:outline-none border-0 bg-transparent shadow-none appearance-none cursor-pointer">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground flex-shrink-0">
+                  <User className="h-5 w-5" />
                 </div>
-                <ChevronDown className="h-4 w-4 transition-transform" />
+                <div className="flex flex-col flex-1 min-w-0">
+                  <span className="text-sm font-medium truncate">
+                    {user?.name && user?.surname 
+                      ? `${user.name} ${user.surname}`
+                      : user?.name || user?.surname || user?.email || "Profile"}
+                  </span>
+                  <span className="text-xs text-muted-foreground">View Profile</span>
+                </div>
+                <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground ml-auto" />
               </DropdownMenuTrigger>
-              <DropdownMenuContent>
+              <DropdownMenuContent className="left-0 right-auto">
                 <DropdownMenuItem onClick={() => router.push("/profile")}>
                   <User className="mr-2 h-4 w-4" />
                   View Profile
