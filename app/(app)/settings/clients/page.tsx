@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +26,7 @@ interface Client {
 }
 
 export default function ClientsPage() {
+  const router = useRouter();
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -155,7 +157,11 @@ export default function ClientsPage() {
             </thead>
             <tbody>
               {clients.map((client) => (
-                <tr key={client.id} className="border-b hover:bg-muted/50 transition-colors">
+                <tr
+                  key={client.id}
+                  className="border-b hover:bg-muted/50 transition-colors cursor-pointer"
+                  onClick={() => router.push(`/settings/clients/${client.id}`)}
+                >
                   <td className="px-6 py-4 text-sm font-medium">{client.name || "-"}</td>
                   <td className="px-6 py-4 text-sm text-muted-foreground">
                     {client.domain || "-"}
