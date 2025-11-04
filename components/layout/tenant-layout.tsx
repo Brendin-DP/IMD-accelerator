@@ -16,17 +16,66 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
   const [user, setUser] = useState<any>(null);
   const [clientName, setClientName] = useState<string>("");
   const [notificationCount, setNotificationCount] = useState<number>(0);
+  const [validating, setValidating] = useState<boolean>(true);
 
   // Don't show layout on login page
   const isLoginPage = pathname?.includes("/login");
 
   useEffect(() => {
-    // Get participant user from localStorage
-    const storedUser = localStorage.getItem("participant");
-    if (storedUser) {
+    // Skip validation on login page
+    if (isLoginPage) {
+      setValidating(false);
+      return;
+    }
+
+    const validateSubdomainAndLoadUser = async () => {
       try {
-        const userData = JSON.parse(storedUser);
+        setValidating(true);
+        
+        // Get user from localStorage
+        const storedUser = localStorage.getItem("participant");
+        if (!storedUser) {
+          console.log("No user found in localStorage, redirecting to login");
+          router.push(`/tenant/${subdomain}/login`);
+          return;
+        }
+
+        let userData;
+        try {
+          userData = JSON.parse(storedUser);
+        } catch (parseError) {
+          console.error("Error parsing user data:", parseError);
+          localStorage.removeItem("participant");
+          router.push(`/tenant/${subdomain}/login`);
+          return;
+        }
+
+        // Fetch client for subdomain
+        const { data: client, error: clientError } = await supabase
+          .from("clients")
+          .select("id")
+          .eq("subdomain", subdomain)
+          .single();
+
+        if (clientError || !client) {
+          console.error("Invalid subdomain or client not found:", clientError);
+          localStorage.removeItem("participant");
+          router.push(`/tenant/${subdomain}/login`);
+          return;
+        }
+
+        // Verify user belongs to this client
+        if (userData.client_id !== client.id) {
+          console.error("User doesn't belong to this subdomain. User client_id:", userData.client_id, "Subdomain client_id:", client.id);
+          // Redirect to login for this subdomain
+          localStorage.removeItem("participant");
+          router.push(`/tenant/${subdomain}/login`);
+          return;
+        }
+
+        // Validation passed - set user and fetch notifications
         setUser(userData);
+        setClientName(subdomain.charAt(0).toUpperCase() + subdomain.slice(1));
         
         // Fetch notifications count
         if (userData.id) {
@@ -39,17 +88,21 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
           
           return () => clearInterval(interval);
         }
-      } catch (error) {
-        console.error("Error parsing user data:", error);
+      } catch (err) {
+        console.error("Error validating subdomain:", err);
+        localStorage.removeItem("participant");
+        router.push(`/tenant/${subdomain}/login`);
+      } finally {
+        setValidating(false);
       }
-    }
+    };
 
-    // Fetch client name from subdomain
     if (subdomain) {
-      // You can fetch client name here if needed
-      setClientName(subdomain.charAt(0).toUpperCase() + subdomain.slice(1));
+      validateSubdomainAndLoadUser();
+    } else {
+      setValidating(false);
     }
-  }, [subdomain]);
+  }, [subdomain, isLoginPage, router]);
 
   async function fetchNotificationCount(userId: string) {
     try {
@@ -95,6 +148,17 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
   // If login page, don't render sidebar
   if (isLoginPage) {
     return <>{children}</>;
+  }
+
+  // Show loading state while validating
+  if (validating) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-muted-foreground">Validating access...</p>
+        </div>
+      </div>
+    );
   }
 
   const handleLogout = () => {

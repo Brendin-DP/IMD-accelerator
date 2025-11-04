@@ -46,26 +46,59 @@ export default function TenantLogin() {
 
       console.log("✅ Client found:", client.id);
 
-      // First, find the user by email and client_id
-      console.log("📡 Fetching user:", { client_id: client.id, email });
-      const { data: user, error: userError } = await supabase
+      // First, check if user exists by email (without client filter)
+      const normalizedEmail = email.toLowerCase().trim();
+      console.log("📡 Checking if user exists:", { email: normalizedEmail });
+      const { data: userByEmail, error: emailCheckError } = await supabase
         .from("client_users")
-        .select("*")
-        .eq("client_id", client.id)
-        .eq("email", email.toLowerCase().trim())
-        .eq("status", "active")
+        .select("id, email, client_id, status")
+        .eq("email", normalizedEmail)
         .maybeSingle();
 
-      if (userError) {
-        console.error("❌ Error fetching user:", userError);
+      if (emailCheckError) {
+        console.error("❌ Error checking user:", emailCheckError);
         setError("An error occurred. Please try again.");
         setLoading(false);
         return;
       }
 
-      if (!user) {
+      // If user doesn't exist at all, show invalid credentials
+      if (!userByEmail) {
         console.error("❌ User not found");
         setError("Invalid credentials");
+        setLoading(false);
+        return;
+      }
+
+      // If user exists but doesn't belong to this client, show specific error
+      if (userByEmail.client_id !== client.id) {
+        console.error("❌ User belongs to different client. User client_id:", userByEmail.client_id, "Subdomain client_id:", client.id);
+        setError("You are not part of this organization. Please contact your administrator or use the correct portal.");
+        setLoading(false);
+        return;
+      }
+
+      // If user exists but is not active, show error
+      if (userByEmail.status !== "active") {
+        console.error("❌ User is not active");
+        setError("Your account is not active. Please contact your administrator.");
+        setLoading(false);
+        return;
+      }
+
+      // Now fetch the full user data for this client
+      console.log("📡 Fetching full user data:", { client_id: client.id, email: normalizedEmail });
+      const { data: user, error: userError } = await supabase
+        .from("client_users")
+        .select("*")
+        .eq("client_id", client.id)
+        .eq("email", normalizedEmail)
+        .eq("status", "active")
+        .single();
+
+      if (userError || !user) {
+        console.error("❌ Error fetching user data:", userError);
+        setError("An error occurred. Please try again.");
         setLoading(false);
         return;
       }
