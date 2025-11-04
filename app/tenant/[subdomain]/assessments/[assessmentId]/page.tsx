@@ -2,11 +2,12 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, MoreVertical, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { ToastContainer, useToast } from "@/components/ui/toast";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -80,6 +81,7 @@ export default function TenantAssessmentDetailPage() {
   const [selectedReviewers, setSelectedReviewers] = useState<string[]>([]);
   const [loadingRoster, setLoadingRoster] = useState(false);
   const [submittingNominations, setSubmittingNominations] = useState(false);
+  const [deletingNomination, setDeletingNomination] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { toasts, showToast, removeToast } = useToast();
@@ -410,6 +412,37 @@ export default function TenantAssessmentDetailPage() {
     }
   }
 
+  async function handleDeleteNomination(nominationId: string) {
+    if (!participantAssessment || !user) return;
+
+    try {
+      setDeletingNomination(nominationId);
+
+      // Delete the nomination
+      const { error: deleteError } = await supabase
+        .from("reviewer_nominations")
+        .delete()
+        .eq("id", nominationId)
+        .eq("nominated_by_id", user.id); // Ensure user can only delete their own nominations
+
+      if (deleteError) {
+        console.error("Error deleting nomination:", deleteError);
+        showToast("Error deleting nomination. Please try again.", "error");
+        return;
+      }
+
+      // Refresh nominations list
+      await fetchNominations(participantAssessment.id, user.id);
+
+      showToast("Nomination request removed successfully.", "success");
+    } catch (err) {
+      console.error("Error deleting nomination:", err);
+      showToast("An unexpected error occurred. Please try again.", "error");
+    } finally {
+      setDeletingNomination(null);
+    }
+  }
+
   const getStatusColor = (status: string | null) => {
     if (!status) return "bg-gray-100 text-gray-800";
     const statusLower = status.toLowerCase();
@@ -620,11 +653,13 @@ export default function TenantAssessmentDetailPage() {
                       <th className="px-6 py-3 text-left text-sm font-medium">Email</th>
                       <th className="px-6 py-3 text-left text-sm font-medium">Status</th>
                       <th className="px-6 py-3 text-left text-sm font-medium">Requested</th>
+                      <th className="px-6 py-3 text-left text-sm font-medium w-12"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {nominations.map((nomination) => {
                       const reviewer = nomination.reviewer;
+                      const canDelete = nomination.status === "pending";
                       
                       return (
                         <tr key={nomination.id} className="border-b hover:bg-muted/50">
@@ -648,6 +683,27 @@ export default function TenantAssessmentDetailPage() {
                             {nomination.created_at
                               ? new Date(nomination.created_at).toLocaleDateString()
                               : "-"}
+                          </td>
+                          <td className="px-6 py-4 text-sm">
+                            <div onClick={(e) => e.stopPropagation()}>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                    <MoreVertical className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem
+                                    onClick={() => handleDeleteNomination(nomination.id)}
+                                    className="text-destructive"
+                                    disabled={!canDelete || deletingNomination === nomination.id}
+                                  >
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    {deletingNomination === nomination.id ? "Removing..." : "Remove"}
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
                           </td>
                         </tr>
                       );
