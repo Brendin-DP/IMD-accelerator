@@ -6,6 +6,7 @@ import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose } from "@/components/ui/dialog";
 import { supabase } from "@/lib/supabaseClient";
 
 interface CohortAssessment {
@@ -39,6 +40,30 @@ interface ParticipantAssessment {
   created_at: string | null;
 }
 
+interface ReviewerNomination {
+  id: string;
+  participant_assessment_id: string;
+  reviewer_id: string;
+  nominated_by_id: string;
+  status: string | null;
+  review_submitted_at: string | null;
+  created_at: string | null;
+  reviewer?: {
+    id: string;
+    name: string | null;
+    surname: string | null;
+    email: string;
+  };
+}
+
+interface ClientUser {
+  id: string;
+  name: string | null;
+  surname: string | null;
+  email: string;
+  client_id: string;
+}
+
 export default function TenantAssessmentDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -48,6 +73,12 @@ export default function TenantAssessmentDetailPage() {
   const [user, setUser] = useState<any>(null);
   const [assessment, setAssessment] = useState<CohortAssessment | null>(null);
   const [participantAssessment, setParticipantAssessment] = useState<ParticipantAssessment | null>(null);
+  const [nominations, setNominations] = useState<ReviewerNomination[]>([]);
+  const [clientRoster, setClientRoster] = useState<ClientUser[]>([]);
+  const [isNominationModalOpen, setIsNominationModalOpen] = useState(false);
+  const [selectedReviewers, setSelectedReviewers] = useState<string[]>([]);
+  const [loadingRoster, setLoadingRoster] = useState(false);
+  const [submittingNominations, setSubmittingNominations] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -181,9 +212,187 @@ export default function TenantAssessmentDetailPage() {
       }
 
       setParticipantAssessment(participantAssessmentData as ParticipantAssessment);
+      
+      // If we have a participant assessment, fetch nominations
+      if (participantAssessmentData) {
+        fetchNominations(participantAssessmentData.id, userId);
+      }
     } catch (err) {
       console.error("Error fetching participant assessment:", err);
       setParticipantAssessment(null);
+    }
+  }
+
+  async function fetchNominations(participantAssessmentId: string, userId: string) {
+    try {
+      // Fetch nominations where this user nominated reviewers
+      const { data: nominationsData, error: nominationsError } = await supabase
+        .from("reviewer_nominations")
+        .select("*")
+        .eq("participant_assessment_id", participantAssessmentId)
+        .eq("nominated_by_id", userId)
+        .order("created_at", { ascending: false });
+
+      if (nominationsError) {
+        console.error("Error fetching nominations:", nominationsError);
+        setNominations([]);
+        return;
+      }
+
+      if (!nominationsData || nominationsData.length === 0) {
+        setNominations([]);
+        return;
+      }
+
+      // Fetch reviewer details
+      const reviewerIds = [...new Set(nominationsData.map((n: any) => n.reviewer_id))];
+      const { data: clientUsers, error: usersError } = await supabase
+        .from("client_users")
+        .select("id, name, surname, email")
+        .in("id", reviewerIds);
+
+      if (usersError) {
+        console.error("Error fetching client users:", usersError);
+        setNominations(nominationsData as ReviewerNomination[]);
+        return;
+      }
+
+      // Merge the data
+      const mergedNominations = nominationsData.map((nomination: any) => ({
+        ...nomination,
+        reviewer: clientUsers?.find((u: any) => u.id === nomination.reviewer_id) || null,
+      }));
+
+      setNominations(mergedNominations as ReviewerNomination[]);
+    } catch (err) {
+      console.error("Error fetching nominations:", err);
+      setNominations([]);
+    }
+  }
+
+  async function fetchClientRoster(clientId: string, currentUserId: string) {
+    try {
+      setLoadingRoster(true);
+      
+      // Fetch all client_users for this client, excluding the current user
+      const { data: rosterData, error: rosterError } = await supabase
+        .from("client_users")
+        .select("id, name, surname, email, client_id")
+        .eq("client_id", clientId)
+        .neq("id", currentUserId)
+        .eq("status", "active")
+        .order("name", { ascending: true });
+
+      if (rosterError) {
+        console.error("Error fetching client roster:", rosterError);
+        setClientRoster([]);
+        return;
+      }
+
+      setClientRoster(rosterData || []);
+    } catch (err) {
+      console.error("Error fetching client roster:", err);
+      setClientRoster([]);
+    } finally {
+      setLoadingRoster(false);
+    }
+  }
+
+  function handleOpenNominationModal() {
+    if (!user || !participantAssessment) {
+      alert("Please ensure you are logged in and have an active assessment.");
+      return;
+    }
+    
+    // Get client_id from user
+    const clientId = (user as any).client_id;
+    if (!clientId) {
+      console.error("User client_id not found:", user);
+      alert("Unable to load client roster. Please try logging out and back in.");
+      return;
+    }
+    
+    fetchClientRoster(clientId, user.id);
+    setIsNominationModalOpen(true);
+    setSelectedReviewers([]);
+  }
+
+  function handleToggleReviewer(reviewerId: string) {
+    setSelectedReviewers((prev) => {
+      if (prev.includes(reviewerId)) {
+        return prev.filter((id) => id !== reviewerId);
+      } else {
+        // Limit to 10 total nominations (existing + new selections)
+        const maxNewSelections = 10 - nominations.length;
+        if (prev.length >= maxNewSelections) {
+          alert(`You can only select up to ${maxNewSelections} more reviewer(s). You already have ${nominations.length} nomination(s).`);
+          return prev;
+        }
+        return [...prev, reviewerId];
+      }
+    });
+  }
+
+  async function handleSubmitNominations() {
+    if (!participantAssessment || !user || selectedReviewers.length === 0) {
+      return;
+    }
+
+    try {
+      setSubmittingNominations(true);
+
+      // Check existing nominations to avoid duplicates
+      const { data: existingNominations, error: checkError } = await supabase
+        .from("reviewer_nominations")
+        .select("reviewer_id")
+        .eq("participant_assessment_id", participantAssessment.id)
+        .eq("nominated_by_id", user.id);
+
+      if (checkError) {
+        console.error("Error checking existing nominations:", checkError);
+        alert("Error checking existing nominations. Please try again.");
+        return;
+      }
+
+      const existingReviewerIds = new Set(existingNominations?.map((n: any) => n.reviewer_id) || []);
+      const newReviewerIds = selectedReviewers.filter((id) => !existingReviewerIds.has(id));
+
+      if (newReviewerIds.length === 0) {
+        alert("All selected reviewers have already been nominated.");
+        return;
+      }
+
+      // Create nominations
+      const nominationsToInsert = newReviewerIds.map((reviewerId) => ({
+        participant_assessment_id: participantAssessment.id,
+        reviewer_id: reviewerId,
+        nominated_by_id: user.id,
+        status: "pending", // Default status
+      }));
+
+      const { error: insertError } = await supabase
+        .from("reviewer_nominations")
+        .insert(nominationsToInsert);
+
+      if (insertError) {
+        console.error("Error creating nominations:", insertError);
+        alert("Error creating nominations. Please try again.");
+        return;
+      }
+
+      // Refresh nominations list
+      await fetchNominations(participantAssessment.id, user.id);
+      
+      // Close modal and reset
+      setIsNominationModalOpen(false);
+      setSelectedReviewers([]);
+      
+      alert(`Successfully requested ${newReviewerIds.length} nomination(s).`);
+    } catch (err) {
+      console.error("Error submitting nominations:", err);
+      alert("An unexpected error occurred. Please try again.");
+    } finally {
+      setSubmittingNominations(false);
     }
   }
 
@@ -378,6 +587,173 @@ export default function TenantAssessmentDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Nominate for Review Section */}
+      {participantAssessment && participantAssessment.allow_reviewer_nominations && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>Nominate for Review</CardTitle>
+              <Button
+                onClick={handleOpenNominationModal}
+                disabled={nominations.length >= 10}
+              >
+                Request Nomination
+              </Button>
+            </div>
+            {nominations.length >= 10 && (
+              <p className="text-sm text-muted-foreground mt-2">
+                You have reached the maximum of 10 nominations.
+              </p>
+            )}
+          </CardHeader>
+          <CardContent>
+            {nominations.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No nominations requested yet.</p>
+            ) : (
+              <div className="rounded-md border">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b bg-muted/50">
+                      <th className="px-6 py-3 text-left text-sm font-medium">Name</th>
+                      <th className="px-6 py-3 text-left text-sm font-medium">Surname</th>
+                      <th className="px-6 py-3 text-left text-sm font-medium">Email</th>
+                      <th className="px-6 py-3 text-left text-sm font-medium">Status</th>
+                      <th className="px-6 py-3 text-left text-sm font-medium">Requested</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {nominations.map((nomination) => {
+                      const reviewer = nomination.reviewer;
+                      
+                      return (
+                        <tr key={nomination.id} className="border-b hover:bg-muted/50">
+                          <td className="px-6 py-4 text-sm font-medium">
+                            {reviewer?.name || "-"}
+                          </td>
+                          <td className="px-6 py-4 text-sm font-medium">
+                            {reviewer?.surname || "-"}
+                          </td>
+                          <td className="px-6 py-4 text-sm">{reviewer?.email || "-"}</td>
+                          <td className="px-6 py-4 text-sm">
+                            {nomination.status ? (
+                              <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(nomination.status)}`}>
+                                {nomination.status}
+                              </span>
+                            ) : (
+                              "-"
+                            )}
+                          </td>
+                          <td className="px-6 py-4 text-sm">
+                            {nomination.created_at
+                              ? new Date(nomination.created_at).toLocaleDateString()
+                              : "-"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Nomination Modal */}
+      <Dialog open={isNominationModalOpen} onOpenChange={setIsNominationModalOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Request Nomination</DialogTitle>
+            <DialogDescription>
+              Select up to {10 - nominations.length} reviewers from your client roster. You have {nominations.length} existing nomination(s).
+            </DialogDescription>
+          </DialogHeader>
+          <DialogClose onClick={() => setIsNominationModalOpen(false)} />
+
+          <div className="space-y-4">
+            {loadingRoster ? (
+              <div className="p-8 text-center text-muted-foreground">Loading roster...</div>
+            ) : clientRoster.length === 0 ? (
+              <div className="p-8 text-center text-muted-foreground">No users available in your roster.</div>
+            ) : (
+              <>
+                <div className="border rounded-md max-h-96 overflow-y-auto">
+                  <table className="w-full">
+                    <thead className="sticky top-0 bg-muted/50">
+                      <tr className="border-b">
+                        <th className="px-4 py-3 text-left text-sm font-medium w-12"></th>
+                        <th className="px-4 py-3 text-left text-sm font-medium">Name</th>
+                        <th className="px-4 py-3 text-left text-sm font-medium">Surname</th>
+                        <th className="px-4 py-3 text-left text-sm font-medium">Email</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {clientRoster.map((user) => {
+                        const isSelected = selectedReviewers.includes(user.id);
+                        const isAlreadyNominated = nominations.some(
+                          (n) => n.reviewer_id === user.id
+                        );
+                        
+                        return (
+                          <tr
+                            key={user.id}
+                            className={`border-b hover:bg-muted/50 ${
+                              isAlreadyNominated ? "opacity-50" : ""
+                            }`}
+                          >
+                            <td className="px-4 py-3">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                disabled={
+                                  isAlreadyNominated ||
+                                  (!isSelected && selectedReviewers.length >= (10 - nominations.length))
+                                }
+                                onChange={() => handleToggleReviewer(user.id)}
+                                className="h-4 w-4 rounded border-gray-300"
+                              />
+                            </td>
+                            <td className="px-4 py-3 text-sm font-medium">
+                              {user.name || "-"}
+                            </td>
+                            <td className="px-4 py-3 text-sm font-medium">
+                              {user.surname || "-"}
+                            </td>
+                            <td className="px-4 py-3 text-sm">{user.email}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="flex items-center justify-between pt-4 border-t">
+                  <p className="text-sm text-muted-foreground">
+                    {selectedReviewers.length} of {10 - nominations.length} selected
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => setIsNominationModalOpen(false)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={handleSubmitNominations}
+                      disabled={
+                        selectedReviewers.length === 0 || submittingNominations
+                      }
+                    >
+                      {submittingNominations ? "Submitting..." : "Submit Request"}
+                    </Button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
