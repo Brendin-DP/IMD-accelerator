@@ -84,6 +84,7 @@ export default function TenantAssessmentDetailPage() {
   const [deletingNomination, setDeletingNomination] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"internal" | "external">("internal");
   const { toasts, showToast, removeToast } = useToast();
 
   useEffect(() => {
@@ -535,6 +536,18 @@ export default function TenantAssessmentDetailPage() {
               <p className="text-sm font-medium text-muted-foreground">Assessment Type</p>
               <p className="text-base mt-1">{assessment.assessment_type?.name || "N/A"}</p>
             </div>
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">Assessment Status</p>
+              {participantAssessment?.status ? (
+                <span className={`inline-block px-3 py-1 text-sm font-medium rounded-full mt-1 ${getStatusColor(participantAssessment.status)}`}>
+                  {participantAssessment.status}
+                </span>
+              ) : (
+                <span className={`inline-block px-3 py-1 text-sm font-medium rounded-full mt-1 ${getStatusColor("not_started")}`}>
+                  not_started
+                </span>
+              )}
+            </div>
             {assessment.assessment_type?.description && (
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Description</p>
@@ -561,12 +574,13 @@ export default function TenantAssessmentDetailPage() {
         </CardContent>
       </Card>
 
-      {/* My Assessment Status Card */}
-      <Card>
-        <CardHeader>
-          <CardTitle>My Assessment Status</CardTitle>
-        </CardHeader>
-        <CardContent>
+      {/* My Assessment Status Card - Hidden for now */}
+      {false && (
+        <Card>
+          <CardHeader>
+            <CardTitle>My Assessment Status</CardTitle>
+          </CardHeader>
+          <CardContent>
           {participantAssessment ? (
             <div className="space-y-4">
               <div className="grid gap-4 md:grid-cols-2">
@@ -619,7 +633,8 @@ export default function TenantAssessmentDetailPage() {
             </div>
           )}
         </CardContent>
-      </Card>
+        </Card>
+      )}
 
       {/* Nominate for Review Section */}
       {participantAssessment && participantAssessment.allow_reviewer_nominations && (
@@ -641,23 +656,47 @@ export default function TenantAssessmentDetailPage() {
             )}
           </CardHeader>
           <CardContent>
-            {nominations.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No nominations requested yet.</p>
-            ) : (
-              <div className="rounded-md border">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b bg-muted/50">
-                      <th className="px-6 py-3 text-left text-sm font-medium">Name</th>
-                      <th className="px-6 py-3 text-left text-sm font-medium">Surname</th>
-                      <th className="px-6 py-3 text-left text-sm font-medium">Email</th>
-                      <th className="px-6 py-3 text-left text-sm font-medium">Status</th>
-                      <th className="px-6 py-3 text-left text-sm font-medium">Requested</th>
-                      <th className="px-6 py-3 text-left text-sm font-medium w-12"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {nominations.map((nomination) => {
+            {/* Tabs */}
+            <div className="flex space-x-1 border-b mb-4">
+              <button
+                onClick={() => setActiveTab("internal")}
+                className={`px-4 py-2 text-sm font-medium transition-colors ${
+                  activeTab === "internal"
+                    ? "border-b-2 border-primary text-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Internal Nominations
+              </button>
+              <button
+                onClick={() => setActiveTab("external")}
+                className={`px-4 py-2 text-sm font-medium transition-colors ${
+                  activeTab === "external"
+                    ? "border-b-2 border-primary text-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                External Nominations
+              </button>
+            </div>
+            {activeTab === "internal" ? (
+              nominations.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No nominations requested yet.</p>
+              ) : (
+                <div className="rounded-md border">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b bg-muted/50">
+                        <th className="px-6 py-3 text-left text-sm font-medium">Name</th>
+                        <th className="px-6 py-3 text-left text-sm font-medium">Surname</th>
+                        <th className="px-6 py-3 text-left text-sm font-medium">Email</th>
+                        <th className="px-6 py-3 text-left text-sm font-medium">Status</th>
+                        <th className="px-6 py-3 text-left text-sm font-medium">Requested</th>
+                        <th className="px-6 py-3 text-left text-sm font-medium w-12"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {nominations.map((nomination) => {
                       const reviewer = nomination.reviewer;
                       const canDelete = nomination.status === "pending";
                       
@@ -707,9 +746,14 @@ export default function TenantAssessmentDetailPage() {
                           </td>
                         </tr>
                       );
-                    })}
-                  </tbody>
-                </table>
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            ) : (
+              <div className="p-8 text-center text-muted-foreground">
+                <p>External nominations will be available here.</p>
               </div>
             )}
           </CardContent>
