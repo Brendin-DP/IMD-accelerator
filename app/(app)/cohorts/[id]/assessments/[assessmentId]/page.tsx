@@ -367,7 +367,11 @@ export default function AssessmentDetailPage() {
                 {participantAssessments.map((pa) => {
                   const clientUser = (pa.participant as any)?.client_user as any;
                   return (
-                    <tr key={pa.id} className="border-b hover:bg-muted/50 transition-colors">
+                    <tr 
+                      key={pa.id} 
+                      className="border-b hover:bg-muted/50 transition-colors cursor-pointer"
+                      onClick={() => router.push(`/cohorts/${cohortId}/assessments/${assessmentId}/participants/${pa.id}/nominations`)}
+                    >
                       <td className="px-6 py-4 text-sm font-medium">{clientUser?.name || "-"}</td>
                       <td className="px-6 py-4 text-sm font-medium">{clientUser?.surname || "-"}</td>
                       <td className="px-6 py-4 text-sm">{clientUser?.email || "-"}</td>
