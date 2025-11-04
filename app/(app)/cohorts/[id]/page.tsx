@@ -48,6 +48,22 @@ interface Participant {
   [key: string]: any;
 }
 
+interface CohortAssessment {
+  id: string;
+  cohort_id: string;
+  assessment_type_id: string;
+  name: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  status: string | null;
+  created_at: string | null;
+  assessment_type?: {
+    id: string;
+    name: string;
+    description: string | null;
+  };
+}
+
 export default function CohortDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -55,6 +71,8 @@ export default function CohortDetailPage() {
 
   const [cohort, setCohort] = useState<Cohort | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
+  const [assessments, setAssessments] = useState<CohortAssessment[]>([]);
+  const [assessmentsLoading, setAssessmentsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -75,6 +93,12 @@ export default function CohortDetailPage() {
   }, [cohortId]);
 
   useEffect(() => {
+    if (cohort?.plan_id) {
+      fetchAssessments();
+    }
+  }, [cohort?.plan_id, cohortId]);
+
+  useEffect(() => {
     if (isDialogOpen && cohort) {
       fetchAvailableUsers();
     }
@@ -85,7 +109,8 @@ export default function CohortDetailPage() {
       setLoading(true);
       setError(null);
 
-      const { data, error: dbError } = await supabase
+      // Try fetching with relationships first
+      let { data, error: dbError } = await supabase
         .from("cohorts")
         .select(`
           *,
@@ -94,6 +119,37 @@ export default function CohortDetailPage() {
         `)
         .eq("id", cohortId)
         .single();
+
+      // If relationship query fails, fallback to separate queries
+      if (dbError && (dbError.message?.includes("relationship") || dbError.message?.includes("cache"))) {
+        console.warn("Relationship query failed, fetching separately:", dbError.message);
+        
+        // Fetch cohort without relationships
+        const { data: cohortData, error: cohortError } = await supabase
+          .from("cohorts")
+          .select("*")
+          .eq("id", cohortId)
+          .single();
+
+        if (cohortError) {
+          throw cohortError;
+        }
+
+        // Fetch client and plan separately
+        const [clientResult, planResult] = await Promise.all([
+          cohortData?.client_id ? supabase.from("clients").select("id, name").eq("id", cohortData.client_id).single() : { data: null, error: null },
+          cohortData?.plan_id ? supabase.from("plans").select("id, name").eq("id", cohortData.plan_id).single() : { data: null, error: null }
+        ]);
+
+        // Merge the data
+        data = {
+          ...cohortData,
+          client: clientResult.data || null,
+          plan: planResult.data || null,
+        };
+
+        dbError = null;
+      }
 
       if (dbError) {
         console.error("Error fetching cohort:", dbError);
@@ -158,6 +214,91 @@ export default function CohortDetailPage() {
     } catch (err) {
       console.error("Error fetching participants:", err);
       setParticipants([]);
+    }
+  }
+
+  async function fetchAssessments() {
+    try {
+      setAssessmentsLoading(true);
+      
+      // First, check if cohort has assessments
+      const { data: existingAssessments, error: fetchError } = await supabase
+        .from("cohort_assessments")
+        .select(`
+          *,
+          assessment_type:assessment_types(id, name, description)
+        `)
+        .eq("cohort_id", cohortId)
+        .order("created_at", { ascending: false });
+
+      if (fetchError) {
+        console.error("Error fetching assessments:", fetchError);
+        setAssessments([]);
+        return;
+      }
+
+      // If no assessments exist and we have cohort data, check plan assessments and create cohort assessments
+      if ((!existingAssessments || existingAssessments.length === 0) && cohort?.plan_id) {
+        // Get plan assessments
+        const { data: planAssessments, error: planAssessmentsError } = await supabase
+          .from("plan_assessments")
+          .select("assessment_id")
+          .eq("plan_id", cohort.plan_id);
+
+        if (planAssessmentsError) {
+          console.error("Error fetching plan assessments:", planAssessmentsError);
+          setAssessments([]);
+          return;
+        }
+
+        // Create cohort assessments from plan assessments
+        // Use assessment_id from plan_assessments to link to assessment_types
+        if (planAssessments && planAssessments.length > 0) {
+          const cohortAssessmentsToCreate = planAssessments.map((pa: any) => ({
+            cohort_id: cohortId,
+            assessment_type_id: pa.assessment_id, // This links to assessment_types (e.g., "360" assessment)
+            name: null, // Will use assessment_type name
+            status: "pending",
+          }));
+
+          const { error: createError } = await supabase
+            .from("cohort_assessments")
+            .insert(cohortAssessmentsToCreate);
+
+          if (createError) {
+            console.error("Error creating cohort assessments:", createError);
+            setAssessments([]);
+            return;
+          }
+
+          // Fetch the newly created assessments
+          const { data: newAssessments, error: newFetchError } = await supabase
+            .from("cohort_assessments")
+            .select(`
+              *,
+              assessment_type:assessment_types(id, name, description)
+            `)
+            .eq("cohort_id", cohortId)
+            .order("created_at", { ascending: false });
+
+          if (newFetchError) {
+            console.error("Error fetching new assessments:", newFetchError);
+            setAssessments([]);
+            return;
+          }
+
+          setAssessments(newAssessments || []);
+        } else {
+          setAssessments([]);
+        }
+      } else {
+        setAssessments(existingAssessments || []);
+      }
+    } catch (err) {
+      console.error("Error fetching assessments:", err);
+      setAssessments([]);
+    } finally {
+      setAssessmentsLoading(false);
     }
   }
 
@@ -362,6 +503,79 @@ export default function CohortDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Assessments Section */}
+      <div>
+        <h2 className="text-2xl font-bold mb-4">Assessments</h2>
+        {assessmentsLoading ? (
+          <div className="p-8 text-center text-muted-foreground">Loading assessments...</div>
+        ) : assessments.length === 0 ? (
+          <div className="p-8 text-center text-muted-foreground rounded-md border">
+            No assessments found for this cohort.
+          </div>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {assessments.map((assessment) => {
+              const assessmentType = assessment.assessment_type as any;
+              const assessmentName = assessment.name || assessmentType?.name || "Assessment";
+              
+              // Determine status badge color
+              const getStatusColor = (status: string | null) => {
+                if (!status) return "bg-gray-100 text-gray-800";
+                const statusLower = status.toLowerCase();
+                if (statusLower === "active" || statusLower === "in_progress") {
+                  return "bg-blue-100 text-blue-800";
+                } else if (statusLower === "completed" || statusLower === "done") {
+                  return "bg-green-100 text-green-800";
+                } else if (statusLower === "draft" || statusLower === "pending") {
+                  return "bg-yellow-100 text-yellow-800";
+                }
+                return "bg-gray-100 text-gray-800";
+              };
+
+              return (
+                <Card key={assessment.id} className="hover:shadow-md transition-shadow cursor-pointer">
+                  <CardHeader>
+                    <div className="flex items-start justify-between">
+                      <CardTitle className="text-lg">{assessmentName}</CardTitle>
+                      {assessment.status && (
+                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(assessment.status)}`}>
+                          {assessment.status}
+                        </span>
+                      )}
+                    </div>
+                    {assessmentType?.description && (
+                      <p className="text-sm text-muted-foreground mt-2">
+                        {assessmentType.description}
+                      </p>
+                    )}
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2 text-sm">
+                      {assessment.start_date && (
+                        <div>
+                          <span className="text-muted-foreground">Start: </span>
+                          <span className="font-medium">
+                            {new Date(assessment.start_date).toLocaleDateString()}
+                          </span>
+                        </div>
+                      )}
+                      {assessment.end_date && (
+                        <div>
+                          <span className="text-muted-foreground">End: </span>
+                          <span className="font-medium">
+                            {new Date(assessment.end_date).toLocaleDateString()}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {/* Participants Table */}
       <div>

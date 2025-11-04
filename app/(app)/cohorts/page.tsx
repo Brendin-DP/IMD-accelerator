@@ -148,8 +148,8 @@ export default function CohortsPage() {
 
       const today = new Date().toISOString().split('T')[0];
 
-      // Fetch active cohorts (end_date >= today)
-      const { data, error } = await supabase
+      // Try fetching with relationships first
+      let { data, error } = await supabase
         .from("cohorts")
         .select(`
           *,
@@ -158,6 +158,41 @@ export default function CohortsPage() {
         `)
         .gte("end_date", today)
         .order("start_date", { ascending: false });
+
+      // If relationship query fails, fallback to separate queries
+      if (error && (error.message?.includes("relationship") || error.message?.includes("cache"))) {
+        console.warn("Relationship query failed, fetching separately:", error.message);
+        
+        // Fetch cohorts without relationships
+        const { data: cohortsData, error: cohortsError } = await supabase
+          .from("cohorts")
+          .select("*")
+          .gte("end_date", today)
+          .order("start_date", { ascending: false });
+
+        if (cohortsError) {
+          throw cohortsError;
+        }
+
+        // Fetch all unique client and plan IDs
+        const clientIds = [...new Set(cohortsData?.map((c: any) => c.client_id) || [])];
+        const planIds = [...new Set(cohortsData?.map((c: any) => c.plan_id) || [])];
+
+        // Fetch clients and plans
+        const [clientsResult, plansResult] = await Promise.all([
+          clientIds.length > 0 ? supabase.from("clients").select("id, name").in("id", clientIds) : { data: [], error: null },
+          planIds.length > 0 ? supabase.from("plans").select("id, name").in("id", planIds) : { data: [], error: null }
+        ]);
+
+        // Merge the data
+        data = cohortsData?.map((cohort: any) => ({
+          ...cohort,
+          client: clientsResult.data?.find((c: any) => c.id === cohort.client_id) || null,
+          plan: plansResult.data?.find((p: any) => p.id === cohort.plan_id) || null,
+        })) || [];
+
+        error = null;
+      }
 
       if (error) {
         console.error("Error fetching cohorts:", error);
@@ -384,6 +419,35 @@ export default function CohortsPage() {
         }
 
         cohortId = cohort.id;
+
+        // Create cohort assessments from plan assessments
+        const { data: planAssessments, error: planAssessmentsError } = await supabase
+          .from("plan_assessments")
+          .select("assessment_id")
+          .eq("plan_id", formData.plan_id);
+
+        if (planAssessmentsError) {
+          console.error("Error fetching plan assessments:", planAssessmentsError);
+          // Continue anyway - don't fail cohort creation if assessments fail
+        } else if (planAssessments && planAssessments.length > 0) {
+          // Create cohort assessments for each plan assessment
+          // Use assessment_id from plan_assessments to link to assessment_types
+          const cohortAssessmentsToCreate = planAssessments.map((pa: any) => ({
+            cohort_id: cohortId,
+            assessment_type_id: pa.assessment_id, // This links to assessment_types (e.g., "360" assessment)
+            name: null, // Will use assessment_type name
+            status: "pending",
+          }));
+
+          const { error: assessmentsError } = await supabase
+            .from("cohort_assessments")
+            .insert(cohortAssessmentsToCreate);
+
+          if (assessmentsError) {
+            console.error("Error creating cohort assessments:", assessmentsError);
+            // Continue anyway - don't fail cohort creation if assessments fail
+          }
+        }
       }
 
       // Add participants to cohort
