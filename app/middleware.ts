@@ -3,40 +3,25 @@ import type { NextRequest } from "next/server";
 
 export function middleware(req: NextRequest) {
   const host = req.headers.get("host") || "";
+  const subdomain = host.split(".")[0];
   const pathname = req.nextUrl.pathname;
-  
-  // Extract subdomain - handle both localhost and production domains
-  let subdomain = "";
-  if (host.includes("localhost")) {
-    // For localhost:3000 or subdomain.localhost:3000
-    const parts = host.split(":");
-    const hostname = parts[0];
-    if (hostname === "localhost") {
-      subdomain = ""; // No subdomain
-    } else {
-      // subdomain.localhost
-      subdomain = hostname.split(".")[0];
-    }
-  } else {
-    // Production: subdomain.example.com
-    subdomain = host.split(".")[0];
-  }
 
-  console.log("🔹 Middleware - Host:", host, "| Subdomain:", subdomain, "| Path:", pathname);
+  // Debug (optional during dev)
+  console.log("🔹 Host:", host, "| Subdomain:", subdomain, "| Path:", pathname);
 
   // 1️⃣ Skip if already a tenant route (avoid infinite rewrites)
   if (pathname.startsWith("/tenant/")) {
-    console.log("⏭️ Already tenant route, skipping");
     return NextResponse.next();
   }
 
-  // 2️⃣ Skip admin + plain localhost (no subdomain)
+  // 2️⃣ Skip admin + routes without subdomain
+  // Only skip localhost if it's EXACTLY "localhost" (not subdomain.localhost)
   const isPlainLocalhost = host === "localhost" || host.startsWith("localhost:");
   const isAdmin = subdomain === "admin";
-  const hasNoSubdomain = !subdomain || (host.includes("localhost") && host.split(".")[0] === "localhost");
+  const hasNoSubdomain = !subdomain || host.split(".").length <= 1;
 
-  if (isAdmin || hasNoSubdomain) {
-    console.log("⏭️ Skipping middleware - Admin or no subdomain:", { isAdmin, hasNoSubdomain, host, subdomain });
+  if (isAdmin || isPlainLocalhost || hasNoSubdomain) {
+    console.log("⏭️ Skipping middleware:", { isAdmin, isPlainLocalhost, hasNoSubdomain, host });
     return NextResponse.next();
   }
 
@@ -48,16 +33,17 @@ export function middleware(req: NextRequest) {
     tenantPath = "/login";
   } else if (pathname === "/dashboard") {
     tenantPath = "/dashboard";
-  } else if (pathname === "/cohort" || pathname.startsWith("/cohort/")) {
-    tenantPath = pathname; // Keep as-is
   } else if (pathname === "/cohorts" || pathname.startsWith("/cohorts/")) {
     tenantPath = pathname.replace("/cohorts", "/cohort");
+  } else if (pathname.startsWith("/cohort/")) {
+    tenantPath = pathname;
   }
 
   // Rewrite to tenant namespace
   const url = req.nextUrl.clone();
   url.pathname = `/tenant/${subdomain}${tenantPath}`;
 
+  // Debug (optional)
   console.log("🔁 Rewriting to:", url.pathname);
 
   return NextResponse.rewrite(url);

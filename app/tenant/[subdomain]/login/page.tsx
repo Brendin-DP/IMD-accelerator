@@ -99,8 +99,23 @@ export default function TenantLogin() {
       console.log("✅ Login successful, redirecting...");
 
       localStorage.setItem("participant", JSON.stringify(user));
-      router.push(`/tenant/${subdomain}/dashboard`);
+      
+      // Try router.push first, fallback to window.location if needed
+      try {
+        const dashboardPath = `/dashboard`;
+        console.log("🔄 Redirecting to:", dashboardPath);
+        router.push(dashboardPath);
+        // Also update URL directly as fallback
+        setTimeout(() => {
+          window.location.href = dashboardPath;
+        }, 100);
+      } catch (redirectError) {
+        console.error("❌ Redirect error:", redirectError);
+        // Fallback to window.location
+        window.location.href = `/dashboard`;
+      }
     } catch (err) {
+      console.error("❌ Unexpected error:", err);
       setError(err instanceof Error ? err.message : "An error occurred");
       setLoading(false);
     }
