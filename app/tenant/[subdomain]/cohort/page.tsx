@@ -133,7 +133,19 @@ export default function TenantCohortPage() {
         <p className="text-muted-foreground mt-2">View your active cohorts</p>
       </div>
 
-      {cohorts.length === 0 ? (
+      {loading ? (
+        <Card>
+          <CardContent className="p-8 text-center text-muted-foreground">
+            Loading cohorts...
+          </CardContent>
+        </Card>
+      ) : error ? (
+        <Card>
+          <CardContent className="p-8 text-center text-destructive">
+            {error}
+          </CardContent>
+        </Card>
+      ) : cohorts.length === 0 ? (
         <Card>
           <CardContent className="p-8 text-center text-muted-foreground">
             No active cohorts found.
