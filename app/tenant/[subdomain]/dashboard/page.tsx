@@ -429,11 +429,10 @@ export default function TenantDashboardPage() {
                       key={assessment.id}
                       className="p-3 border rounded-lg hover:bg-accent transition-colors cursor-pointer"
                       onClick={() => {
-                        // Navigate to assessment detail if needed
-                        const cohortId = assessment.cohort_assessment?.cohort?.id;
+                        // Navigate to assessment detail
                         const assessmentId = assessment.cohort_assessment?.id;
-                        if (cohortId && assessmentId) {
-                          router.push(`/cohort/${cohortId}/assessments/${assessmentId}`);
+                        if (assessmentId) {
+                          router.push(`/assessments/${assessmentId}`);
                         }
                       }}
                     >
