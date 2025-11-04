@@ -1,15 +1,63 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabaseClient";
+
+interface MyAssessment {
+  id: string;
+  status: string | null;
+  score: number | null;
+  submitted_at: string | null;
+  cohort_assessment: {
+    id: string;
+    name: string | null;
+    assessment_type?: {
+      name: string;
+    };
+    cohort?: {
+      id: string;
+      name: string;
+    };
+  };
+}
+
+interface MyReview {
+  id: string;
+  status: string | null;
+  created_at: string | null;
+  participant_assessment: {
+    id: string;
+    participant?: {
+      client_user?: {
+        name: string | null;
+        surname: string | null;
+        email: string;
+      };
+    };
+    cohort_assessment?: {
+      name: string | null;
+      assessment_type?: {
+        name: string;
+      };
+      cohort?: {
+        name: string;
+      };
+    };
+  };
+}
 
 export default function TenantDashboardPage() {
   const params = useParams();
+  const router = useRouter();
   const subdomain = params.subdomain as string;
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [myAssessments, setMyAssessments] = useState<MyAssessment[]>([]);
+  const [myReviews, setMyReviews] = useState<MyReview[]>([]);
+  const [myActions, setMyActions] = useState<any[]>([]); // Will be blank for now
 
   useEffect(() => {
     const storedUser = localStorage.getItem("participant");
@@ -17,12 +65,276 @@ export default function TenantDashboardPage() {
       try {
         const userData = JSON.parse(storedUser);
         setUser(userData);
+        if (userData.id) {
+          fetchMyAssessments(userData.id);
+          fetchMyReviews(userData.id);
+          fetchMyActions(userData.id);
+        }
       } catch (error) {
         console.error("Error parsing user data:", error);
       }
     }
     setLoading(false);
   }, []);
+
+  async function fetchMyAssessments(userId: string) {
+    try {
+      // First, find all cohort_participants for this user
+      const { data: participants, error: participantsError } = await supabase
+        .from("cohort_participants")
+        .select("id")
+        .eq("client_user_id", userId);
+
+      if (participantsError || !participants) {
+        console.error("Error fetching participants:", participantsError);
+        setMyAssessments([]);
+        return;
+      }
+
+      const participantIds = participants.map((p: any) => p.id);
+
+      if (participantIds.length === 0) {
+        setMyAssessments([]);
+        return;
+      }
+
+      // Fetch participant_assessments for these participants
+      const { data: assessments, error: assessmentsError } = await supabase
+        .from("participant_assessments")
+        .select(`
+          id,
+          status,
+          score,
+          submitted_at,
+          cohort_assessment:cohort_assessments(
+            id,
+            name,
+            assessment_type:assessment_types(name),
+            cohort:cohorts(id, name)
+          )
+        `)
+        .in("participant_id", participantIds)
+        .order("created_at", { ascending: false });
+
+      // Handle relationship cache issues
+      if (assessmentsError && (assessmentsError.message?.includes("relationship") || assessmentsError.message?.includes("cache"))) {
+        console.warn("Relationship query failed, fetching separately");
+        
+        const { data: assessmentsOnly, error: assessmentsOnlyError } = await supabase
+          .from("participant_assessments")
+          .select("id, status, score, submitted_at, cohort_assessment_id")
+          .in("participant_id", participantIds)
+          .order("created_at", { ascending: false });
+
+        if (assessmentsOnlyError) {
+          setMyAssessments([]);
+          return;
+        }
+
+        if (assessmentsOnly && assessmentsOnly.length > 0) {
+          const cohortAssessmentIds = [...new Set(assessmentsOnly.map((a: any) => a.cohort_assessment_id))];
+          
+          // Fetch cohort assessments
+          const { data: cohortAssessments, error: caError } = await supabase
+            .from("cohort_assessments")
+            .select("id, name, assessment_type_id, cohort_id")
+            .in("id", cohortAssessmentIds);
+
+          if (caError) {
+            setMyAssessments([]);
+            return;
+          }
+
+          // Fetch assessment types
+          const assessmentTypeIds = [...new Set(cohortAssessments?.map((ca: any) => ca.assessment_type_id).filter(Boolean) || [])];
+          const { data: assessmentTypes, error: atError } = await supabase
+            .from("assessment_types")
+            .select("id, name")
+            .in("id", assessmentTypeIds);
+
+          // Fetch cohorts
+          const cohortIds = [...new Set(cohortAssessments?.map((ca: any) => ca.cohort_id).filter(Boolean) || [])];
+          const { data: cohorts, error: cohortsError } = await supabase
+            .from("cohorts")
+            .select("id, name")
+            .in("id", cohortIds);
+
+          // Merge data
+          const merged = assessmentsOnly.map((assessment: any) => {
+            const cohortAssessment = cohortAssessments?.find((ca: any) => ca.id === assessment.cohort_assessment_id);
+            const assessmentType = assessmentTypes?.find((at: any) => at.id === cohortAssessment?.assessment_type_id);
+            const cohort = cohorts?.find((c: any) => c.id === cohortAssessment?.cohort_id);
+
+            return {
+              ...assessment,
+              cohort_assessment: {
+                ...cohortAssessment,
+                assessment_type: assessmentType,
+                cohort: cohort,
+              },
+            };
+          });
+
+          setMyAssessments(merged || []);
+        } else {
+          setMyAssessments([]);
+        }
+      } else if (assessments) {
+        setMyAssessments(assessments || []);
+      } else {
+        setMyAssessments([]);
+      }
+    } catch (err) {
+      console.error("Error fetching my assessments:", err);
+      setMyAssessments([]);
+    }
+  }
+
+  async function fetchMyReviews(userId: string) {
+    try {
+      // Fetch nominations where this user is the reviewer and status is "accepted"
+      const { data: nominations, error: nominationsError } = await supabase
+        .from("reviewer_nominations")
+        .select(`
+          id,
+          status,
+          created_at,
+          participant_assessment:participant_assessments(
+            id,
+            participant:cohort_participants(
+              client_user:client_users(id, name, surname, email)
+            ),
+            cohort_assessment:cohort_assessments(
+              name,
+              assessment_type:assessment_types(name),
+              cohort:cohorts(name)
+            )
+          )
+        `)
+        .eq("reviewer_id", userId)
+        .eq("status", "accepted")
+        .order("created_at", { ascending: false });
+
+      // Handle relationship cache issues
+      if (nominationsError && (nominationsError.message?.includes("relationship") || nominationsError.message?.includes("cache"))) {
+        console.warn("Relationship query failed, fetching separately");
+        
+        const { data: nominationsOnly, error: nominationsOnlyError } = await supabase
+          .from("reviewer_nominations")
+          .select("id, status, created_at, participant_assessment_id")
+          .eq("reviewer_id", userId)
+          .eq("status", "accepted")
+          .order("created_at", { ascending: false });
+
+        if (nominationsOnlyError) {
+          setMyReviews([]);
+          return;
+        }
+
+        if (nominationsOnly && nominationsOnly.length > 0) {
+          const participantAssessmentIds = nominationsOnly.map((n: any) => n.participant_assessment_id);
+          
+          // Fetch participant assessments
+          const { data: participantAssessments, error: paError } = await supabase
+            .from("participant_assessments")
+            .select("id, participant_id, cohort_assessment_id")
+            .in("id", participantAssessmentIds);
+
+          if (paError) {
+            setMyReviews([]);
+            return;
+          }
+
+          // Fetch cohort participants and client users
+          const participantIds = [...new Set(participantAssessments?.map((pa: any) => pa.participant_id) || [])];
+          const { data: cohortParticipants, error: cpError } = await supabase
+            .from("cohort_participants")
+            .select("id, client_user_id")
+            .in("id", participantIds);
+
+          const clientUserIds = [...new Set(cohortParticipants?.map((cp: any) => cp.client_user_id) || [])];
+          const { data: clientUsers, error: cuError } = await supabase
+            .from("client_users")
+            .select("id, name, surname, email")
+            .in("id", clientUserIds);
+
+          // Fetch cohort assessments
+          const cohortAssessmentIds = [...new Set(participantAssessments?.map((pa: any) => pa.cohort_assessment_id) || [])];
+          const { data: cohortAssessments, error: caError } = await supabase
+            .from("cohort_assessments")
+            .select("id, name, assessment_type_id, cohort_id")
+            .in("id", cohortAssessmentIds);
+
+          // Fetch assessment types and cohorts
+          const assessmentTypeIds = [...new Set(cohortAssessments?.map((ca: any) => ca.assessment_type_id).filter(Boolean) || [])];
+          const { data: assessmentTypes } = await supabase
+            .from("assessment_types")
+            .select("id, name")
+            .in("id", assessmentTypeIds);
+
+          const cohortIds = [...new Set(cohortAssessments?.map((ca: any) => ca.cohort_id).filter(Boolean) || [])];
+          const { data: cohorts } = await supabase
+            .from("cohorts")
+            .select("id, name")
+            .in("id", cohortIds);
+
+          // Merge data
+          const merged = nominationsOnly.map((nomination: any) => {
+            const participantAssessment = participantAssessments?.find((pa: any) => pa.id === nomination.participant_assessment_id);
+            const cohortParticipant = cohortParticipants?.find((cp: any) => cp.id === participantAssessment?.participant_id);
+            const clientUser = clientUsers?.find((cu: any) => cu.id === cohortParticipant?.client_user_id);
+            const cohortAssessment = cohortAssessments?.find((ca: any) => ca.id === participantAssessment?.cohort_assessment_id);
+            const assessmentType = assessmentTypes?.find((at: any) => at.id === cohortAssessment?.assessment_type_id);
+            const cohort = cohorts?.find((c: any) => c.id === cohortAssessment?.cohort_id);
+
+            return {
+              ...nomination,
+              participant_assessment: {
+                id: participantAssessment?.id,
+                participant: {
+                  client_user: clientUser,
+                },
+                cohort_assessment: {
+                  name: cohortAssessment?.name,
+                  assessment_type: assessmentType,
+                  cohort: cohort,
+                },
+              },
+            };
+          });
+
+          setMyReviews(merged || []);
+        } else {
+          setMyReviews([]);
+        }
+      } else if (nominations) {
+        setMyReviews(nominations || []);
+      } else {
+        setMyReviews([]);
+      }
+    } catch (err) {
+      console.error("Error fetching my reviews:", err);
+      setMyReviews([]);
+    }
+  }
+
+  async function fetchMyActions(userId: string) {
+    // This will be blank for now as requested
+    setMyActions([]);
+  }
+
+  const getStatusColor = (status: string | null) => {
+    if (!status) return "bg-gray-100 text-gray-800";
+    const statusLower = status.toLowerCase();
+    if (statusLower === "completed" || statusLower === "submitted") {
+      return "bg-green-100 text-green-800";
+    } else if (statusLower === "pending" || statusLower === "in_progress") {
+      return "bg-yellow-100 text-yellow-800";
+    } else if (statusLower === "not_started") {
+      return "bg-gray-100 text-gray-800";
+    }
+    return "bg-gray-100 text-gray-800";
+  };
 
   if (loading) {
     return (
@@ -93,6 +405,116 @@ export default function TenantDashboardPage() {
           <p className="text-sm text-muted-foreground">No recent activity</p>
         </CardContent>
       </Card>
+
+      {/* Three Panels Section */}
+      <div className="grid gap-6 md:grid-cols-3">
+        {/* My Assessments */}
+        <Card>
+          <CardHeader>
+            <CardTitle>My Assessments</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {myAssessments.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No assessments found</p>
+            ) : (
+              <div className="space-y-3">
+                {myAssessments.map((assessment) => {
+                  const assessmentName = assessment.cohort_assessment?.name || 
+                    assessment.cohort_assessment?.assessment_type?.name || 
+                    "Assessment";
+                  const cohortName = assessment.cohort_assessment?.cohort?.name || "Cohort";
+                  
+                  return (
+                    <div
+                      key={assessment.id}
+                      className="p-3 border rounded-lg hover:bg-accent transition-colors cursor-pointer"
+                      onClick={() => {
+                        // Navigate to assessment detail if needed
+                        const cohortId = assessment.cohort_assessment?.cohort?.id;
+                        const assessmentId = assessment.cohort_assessment?.id;
+                        if (cohortId && assessmentId) {
+                          router.push(`/cohort/${cohortId}/assessments/${assessmentId}`);
+                        }
+                      }}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <p className="text-sm font-medium">{assessmentName}</p>
+                          <p className="text-xs text-muted-foreground">{cohortName}</p>
+                        </div>
+                        {assessment.status && (
+                          <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(assessment.status)}`}>
+                            {assessment.status}
+                          </span>
+                        )}
+                      </div>
+                      {assessment.score !== null && (
+                        <p className="text-xs text-muted-foreground mt-1">Score: {assessment.score}</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* My Actions */}
+        <Card>
+          <CardHeader>
+            <CardTitle>My Actions</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">No actions required</p>
+          </CardContent>
+        </Card>
+
+        {/* My Reviews */}
+        <Card>
+          <CardHeader>
+            <CardTitle>My Reviews</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {myReviews.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No reviews pending</p>
+            ) : (
+              <div className="space-y-3">
+                {myReviews.map((review) => {
+                  const participant = review.participant_assessment?.participant?.client_user;
+                  const participantName = participant
+                    ? `${participant.name || ""} ${participant.surname || ""}`.trim() || participant.email
+                    : "Participant";
+                  const assessmentName = review.participant_assessment?.cohort_assessment?.name ||
+                    review.participant_assessment?.cohort_assessment?.assessment_type?.name ||
+                    "Assessment";
+                  
+                  return (
+                    <div
+                      key={review.id}
+                      className="p-3 border rounded-lg hover:bg-accent transition-colors cursor-pointer"
+                      onClick={() => {
+                        // Navigate to review page if needed
+                        const participantAssessmentId = review.participant_assessment?.id;
+                        if (participantAssessmentId) {
+                          // You can navigate to a review page here
+                        }
+                      }}
+                    >
+                      <p className="text-sm font-medium">{participantName}</p>
+                      <p className="text-xs text-muted-foreground">{assessmentName}</p>
+                      {review.created_at && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Assigned: {new Date(review.created_at).toLocaleDateString()}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
