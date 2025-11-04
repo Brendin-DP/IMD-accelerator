@@ -59,12 +59,25 @@ export default function ParticipantNominationsPage() {
   const [assessmentName, setAssessmentName] = useState<string>("Assessment");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [nominationsLoading, setNominationsLoading] = useState(true);
 
   useEffect(() => {
     if (participantAssessmentId && cohortId && assessmentId) {
-      fetchParticipantAssessment();
-      fetchNominations();
-      fetchCohortAndAssessmentNames();
+      const loadData = async () => {
+        setLoading(true);
+        setNominationsLoading(true);
+        try {
+          await Promise.all([
+            fetchParticipantAssessment(),
+            fetchNominations(),
+            fetchCohortAndAssessmentNames(),
+          ]);
+        } finally {
+          setLoading(false);
+          setNominationsLoading(false);
+        }
+      };
+      loadData();
     }
   }, [participantAssessmentId, cohortId, assessmentId]);
 
@@ -102,6 +115,7 @@ export default function ParticipantNominationsPage() {
 
   async function fetchParticipantAssessment() {
     try {
+      // Try to fetch with relationship first, but always have fallback
       const { data, error: dbError } = await supabase
         .from("participant_assessments")
         .select(`
@@ -109,7 +123,7 @@ export default function ParticipantNominationsPage() {
           participant:cohort_participants(
             id,
             client_user_id,
-            client_users!cohort_participants_client_user_id_fkey(id, name, surname, email)
+            client_user:client_users!cohort_participants_client_user_id_fkey(id, name, surname, email)
           )
         `)
         .eq("id", participantAssessmentId)
@@ -157,7 +171,96 @@ export default function ParticipantNominationsPage() {
           setParticipantAssessment(paData);
         }
       } else if (data) {
-        setParticipantAssessment(data);
+        // Normalize the data structure - ensure client_user is always populated
+        const participant = data.participant as any;
+        let normalizedData = { ...data };
+        
+        if (participant) {
+          // If client_user is missing but we have client_user_id, fetch it
+          if (!participant.client_user && participant.client_user_id) {
+            console.log("Client user missing, fetching for client_user_id:", participant.client_user_id);
+            const { data: clientUserData, error: userError } = await supabase
+              .from("client_users")
+              .select("id, name, surname, email")
+              .eq("id", participant.client_user_id)
+              .single();
+            
+            if (!userError && clientUserData) {
+              normalizedData = {
+                ...data,
+                participant: {
+                  ...participant,
+                  client_user: clientUserData,
+                },
+              };
+            } else {
+              console.error("Error fetching client user:", userError);
+            }
+          }
+        } else if (data.participant_id) {
+          // If participant object is missing entirely, fetch it
+          console.log("Participant object missing, fetching for participant_id:", data.participant_id);
+          const { data: participantData, error: participantError } = await supabase
+            .from("cohort_participants")
+            .select("id, client_user_id")
+            .eq("id", data.participant_id)
+            .single();
+
+          if (!participantError && participantData && participantData.client_user_id) {
+            const { data: clientUserData, error: userError } = await supabase
+              .from("client_users")
+              .select("id, name, surname, email")
+              .eq("id", participantData.client_user_id)
+              .single();
+
+            if (!userError && clientUserData) {
+              normalizedData = {
+                ...data,
+                participant: {
+                  ...participantData,
+                  client_user: clientUserData,
+                },
+              };
+            }
+          }
+        }
+        
+        console.log("Participant assessment data:", normalizedData);
+        setParticipantAssessment(normalizedData);
+      } else {
+        // If no data returned, try fetching separately as fallback
+        console.warn("No data returned from relationship query, trying separate fetch");
+        const { data: paData, error: paError } = await supabase
+          .from("participant_assessments")
+          .select("*")
+          .eq("id", participantAssessmentId)
+          .single();
+
+        if (!paError && paData?.participant_id) {
+          const { data: participantData, error: participantError } = await supabase
+            .from("cohort_participants")
+            .select("id, client_user_id")
+            .eq("id", paData.participant_id)
+            .single();
+
+          if (!participantError && participantData && participantData.client_user_id) {
+            const { data: clientUserData, error: userError } = await supabase
+              .from("client_users")
+              .select("id, name, surname, email")
+              .eq("id", participantData.client_user_id)
+              .single();
+
+            setParticipantAssessment({
+              ...paData,
+              participant: {
+                ...participantData,
+                client_user: clientUserData || null,
+              },
+            });
+          } else {
+            setParticipantAssessment(paData);
+          }
+        }
       }
 
       setError(null);
@@ -165,34 +268,50 @@ export default function ParticipantNominationsPage() {
       console.error("Error fetching participant assessment:", err);
       setError(err instanceof Error ? err.message : "An unexpected error occurred");
       setParticipantAssessment(null);
-    } finally {
-      setLoading(false);
     }
   }
 
   async function fetchNominations() {
     try {
-      // Fetch reviewer nominations for this participant assessment
-      const { data: nominationsData, error: nominationsError } = await supabase
-        .from("reviewer_nominations")
-        .select("*")
-        .eq("participant_assessment_id", participantAssessmentId);
-
-      if (nominationsError) {
-        console.error("Error fetching nominations:", nominationsError);
+      setNominationsLoading(true);
+      console.log("Fetching nominations for participant_assessment_id:", participantAssessmentId);
+      
+      if (!participantAssessmentId) {
+        console.error("participant_assessment_id is missing");
+        setError("Participant assessment ID is missing");
         setNominations([]);
         return;
       }
 
+      // Fetch ALL reviewer nominations for this participant assessment (regardless of status)
+      // Explicitly query from reviewer_nominations table
+      const { data: nominationsData, error: nominationsError } = await supabase
+        .from("reviewer_nominations")
+        .select("*")
+        .eq("participant_assessment_id", participantAssessmentId)
+        .order("created_at", { ascending: false });
+
+      if (nominationsError) {
+        console.error("Error fetching nominations from reviewer_nominations:", nominationsError);
+        setError(`Error fetching nominations: ${nominationsError.message}`);
+        setNominations([]);
+        return;
+      }
+
+      console.log("Fetched nominations from reviewer_nominations:", nominationsData?.length || 0, nominationsData);
+
       if (!nominationsData || nominationsData.length === 0) {
+        console.log("No nominations found for participant_assessment_id:", participantAssessmentId);
         setNominations([]);
         return;
       }
 
       // Get unique reviewer and nominated_by IDs
-      const reviewerIds = [...new Set(nominationsData.map((n: any) => n.reviewer_id))];
-      const nominatedByIds = [...new Set(nominationsData.map((n: any) => n.nominated_by_id))];
+      const reviewerIds = [...new Set(nominationsData.map((n: any) => n.reviewer_id).filter(Boolean))];
+      const nominatedByIds = [...new Set(nominationsData.map((n: any) => n.nominated_by_id).filter(Boolean))];
       const allUserIds = [...new Set([...reviewerIds, ...nominatedByIds])];
+
+      console.log("Fetching client users for IDs:", allUserIds);
 
       // Fetch client users
       const { data: clientUsers, error: usersError } = await supabase
@@ -202,9 +321,16 @@ export default function ParticipantNominationsPage() {
 
       if (usersError) {
         console.error("Error fetching client users:", usersError);
-        setNominations(nominationsData);
+        // Still set nominations even if we can't fetch user details
+        setNominations(nominationsData.map((n: any) => ({
+          ...n,
+          reviewer: null,
+          nominated_by: null,
+        })));
         return;
       }
+
+      console.log("Fetched client users:", clientUsers?.length || 0);
 
       // Merge the data
       const mergedNominations = nominationsData.map((nomination: any) => ({
@@ -213,10 +339,14 @@ export default function ParticipantNominationsPage() {
         nominated_by: clientUsers?.find((u: any) => u.id === nomination.nominated_by_id) || null,
       }));
 
+      console.log("Merged nominations:", mergedNominations.length);
       setNominations(mergedNominations);
     } catch (err) {
       console.error("Error fetching nominations:", err);
+      setError(`Error fetching nominations: ${err instanceof Error ? err.message : "Unknown error"}`);
       setNominations([]);
+    } finally {
+      setNominationsLoading(false);
     }
   }
 
@@ -242,10 +372,15 @@ export default function ParticipantNominationsPage() {
     );
   }
 
-  const participant = (participantAssessment.participant as any)?.client_user as any;
+  // Extract participant client_user info - handle both structures
+  const participantObj = participantAssessment.participant as any;
+  const participant = participantObj?.client_user || participantObj?.client_users || null;
   const participantName = participant
     ? `${participant.name || ""} ${participant.surname || ""}`.trim() || participant.email
     : "Participant";
+  
+  console.log("Participant object:", participantObj);
+  console.log("Participant client_user:", participant);
 
   const getStatusColor = (status: string | null) => {
     if (!status) return "bg-gray-100 text-gray-800";
@@ -315,7 +450,11 @@ export default function ParticipantNominationsPage() {
       <div>
         <h2 className="text-2xl font-bold mb-4">Reviewer Nominations</h2>
         <div className="rounded-md border">
-          {nominations.length === 0 ? (
+          {nominationsLoading ? (
+            <div className="p-8 text-center text-muted-foreground">
+              Loading nominations...
+            </div>
+          ) : nominations.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground">
               No nomination requests found for this participant.
             </div>

@@ -54,6 +54,8 @@ export function middleware(req: NextRequest) {
     tenantPath = pathname.replace("/cohorts", "/cohort");
   } else if (pathname.startsWith("/assessments/")) {
     tenantPath = pathname; // Keep as-is for assessment detail pages
+  } else if (pathname === "/notifications" || pathname.startsWith("/notifications/")) {
+    tenantPath = pathname; // Keep as-is for notifications page
   }
 
   // Rewrite to tenant namespace

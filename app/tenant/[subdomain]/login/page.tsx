@@ -129,14 +129,14 @@ export default function TenantLogin() {
       >
         <div className="text-center space-y-2">
           <h1 className="text-2xl font-bold text-gray-900">
-            {subdomain ? subdomain.charAt(0).toUpperCase() + subdomain.slice(1) : "Portal"}
+            IMD Accelerator
           </h1>
           <h2 className="text-lg font-medium text-gray-600">
             Login
           </h2>
           {subdomain && (
             <p className="text-sm text-gray-500">
-              Access your {subdomain} portal
+              Access your portal
             </p>
           )}
         </div>

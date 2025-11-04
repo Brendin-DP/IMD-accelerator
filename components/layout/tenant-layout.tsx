@@ -3,9 +3,10 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Users, User, LogOut, ChevronDown } from "lucide-react";
+import { LayoutDashboard, Users, User, LogOut, ChevronDown, Bell } from "lucide-react";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
+import { supabase } from "@/lib/supabaseClient";
 
 export default function TenantLayout({ children }: { children: React.ReactNode }) {
   const params = useParams();
@@ -14,6 +15,7 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
   const subdomain = params?.subdomain as string;
   const [user, setUser] = useState<any>(null);
   const [clientName, setClientName] = useState<string>("");
+  const [notificationCount, setNotificationCount] = useState<number>(0);
 
   // Don't show layout on login page
   const isLoginPage = pathname?.includes("/login");
@@ -25,6 +27,18 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
       try {
         const userData = JSON.parse(storedUser);
         setUser(userData);
+        
+        // Fetch notifications count
+        if (userData.id) {
+          fetchNotificationCount(userData.id);
+          
+          // Set up polling to check for new notifications every 30 seconds
+          const interval = setInterval(() => {
+            fetchNotificationCount(userData.id);
+          }, 30000);
+          
+          return () => clearInterval(interval);
+        }
       } catch (error) {
         console.error("Error parsing user data:", error);
       }
@@ -36,6 +50,47 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
       setClientName(subdomain.charAt(0).toUpperCase() + subdomain.slice(1));
     }
   }, [subdomain]);
+
+  async function fetchNotificationCount(userId: string) {
+    try {
+      // Get session start timestamp
+      const sessionStart = sessionStorage.getItem(`session_start_${userId}`);
+      if (!sessionStart) {
+        sessionStorage.setItem(`session_start_${userId}`, new Date().toISOString());
+      }
+      const lastChecked = sessionStorage.getItem(`notifications_last_checked_${userId}`) || sessionStorage.getItem(`session_start_${userId}`) || new Date(0).toISOString();
+
+      // Count new review requests (where user is reviewer, status = pending, created after last check)
+      const { count: reviewRequestsCount } = await supabase
+        .from("reviewer_nominations")
+        .select("*", { count: "exact", head: true })
+        .eq("reviewer_id", userId)
+        .eq("status", "pending")
+        .gt("created_at", lastChecked);
+
+      // For status changes, we need to check nominations user created that are accepted/rejected
+      // and haven't been seen yet
+      const { data: statusChanges } = await supabase
+        .from("reviewer_nominations")
+        .select("id")
+        .eq("nominated_by_id", userId)
+        .in("status", ["accepted", "rejected"]);
+
+      const seenNotifications = JSON.parse(sessionStorage.getItem(`seen_notifications_${userId}`) || "[]");
+      const sessionStartTime = sessionStorage.getItem(`session_start_${userId}`) || new Date(0).toISOString();
+      
+      // Filter to only show unseen status changes from this session
+      const unseenStatusChanges = statusChanges?.filter((change: any) => 
+        !seenNotifications.includes(change.id)
+      ).length || 0;
+
+      const totalCount = (reviewRequestsCount || 0) + unseenStatusChanges;
+      setNotificationCount(totalCount);
+    } catch (err) {
+      console.error("Error fetching notification count:", err);
+      setNotificationCount(0);
+    }
+  }
 
   // If login page, don't render sidebar
   if (isLoginPage) {
@@ -64,7 +119,7 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
         <div className="flex h-full flex-col">
           {/* Logo/Header */}
           <div className="flex h-16 items-center border-b px-6">
-            <h1 className="text-xl font-semibold">{clientName || "Portal"}</h1>
+            <h1 className="text-xl font-semibold">IMD Accelerator</h1>
           </div>
 
           {/* Navigation */}
@@ -91,6 +146,29 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
               );
             })}
           </nav>
+
+          {/* Notifications */}
+          <div className="px-4 pb-2">
+            <Link
+              href={`/tenant/${subdomain}/notifications`}
+              className={`
+                flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors
+                ${
+                  isActive(`/tenant/${subdomain}/notifications`)
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                }
+              `}
+            >
+              <Bell className="h-5 w-5" />
+              <span className="flex-1">Notifications</span>
+              {notificationCount > 0 && (
+                <span className="bg-primary text-primary-foreground text-xs font-medium px-2 py-0.5 rounded-full">
+                  {notificationCount}
+                </span>
+              )}
+            </Link>
+          </div>
 
           {/* Profile Section */}
           <div className="border-t p-4">

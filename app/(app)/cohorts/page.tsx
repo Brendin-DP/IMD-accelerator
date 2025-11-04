@@ -294,7 +294,65 @@ export default function CohortsPage() {
 
     setDeleting(true);
     try {
-      // First delete participants
+      // Step 1: Get all cohort_assessments for this cohort
+      const { data: cohortAssessments, error: assessmentsFetchError } = await supabase
+        .from("cohort_assessments")
+        .select("id")
+        .eq("cohort_id", deletingCohortId);
+
+      if (assessmentsFetchError) {
+        console.error("Error fetching cohort assessments:", assessmentsFetchError);
+      }
+
+      const cohortAssessmentIds = cohortAssessments?.map((ca: any) => ca.id) || [];
+
+      if (cohortAssessmentIds.length > 0) {
+        // Step 2: Get all participant_assessments for these cohort assessments
+        const { data: participantAssessments, error: paFetchError } = await supabase
+          .from("participant_assessments")
+          .select("id")
+          .in("cohort_assessment_id", cohortAssessmentIds);
+
+        if (paFetchError) {
+          console.error("Error fetching participant assessments:", paFetchError);
+        }
+
+        const participantAssessmentIds = participantAssessments?.map((pa: any) => pa.id) || [];
+
+        if (participantAssessmentIds.length > 0) {
+          // Step 3: Delete reviewer_nominations linked to these participant assessments
+          const { error: nominationsError } = await supabase
+            .from("reviewer_nominations")
+            .delete()
+            .in("participant_assessment_id", participantAssessmentIds);
+
+          if (nominationsError) {
+            console.error("Error deleting reviewer nominations:", nominationsError);
+          }
+
+          // Step 4: Delete participant_assessments
+          const { error: paDeleteError } = await supabase
+            .from("participant_assessments")
+            .delete()
+            .in("cohort_assessment_id", cohortAssessmentIds);
+
+          if (paDeleteError) {
+            console.error("Error deleting participant assessments:", paDeleteError);
+          }
+        }
+
+        // Step 5: Delete cohort_assessments
+        const { error: assessmentsDeleteError } = await supabase
+          .from("cohort_assessments")
+          .delete()
+          .eq("cohort_id", deletingCohortId);
+
+        if (assessmentsDeleteError) {
+          console.error("Error deleting cohort assessments:", assessmentsDeleteError);
+        }
+      }
+
+      // Step 6: Delete cohort_participants
       const { error: participantsError } = await supabase
         .from("cohort_participants")
         .delete()
@@ -304,7 +362,7 @@ export default function CohortsPage() {
         console.error("Error deleting participants:", participantsError);
       }
 
-      // Then delete cohort
+      // Step 7: Finally delete the cohort itself
       const { error: cohortError } = await supabase
         .from("cohorts")
         .delete()
@@ -776,7 +834,7 @@ export default function CohortsPage() {
           <DialogHeader>
             <DialogTitle>Delete Cohort</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete this cohort? This action cannot be undone and will also remove all associated participants.
+              Are you sure you want to delete this cohort? This action cannot be undone and will also remove all associated participants, assessments, and nominations.
             </DialogDescription>
           </DialogHeader>
           <div className="flex justify-end gap-2 pt-4">
