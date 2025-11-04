@@ -100,20 +100,12 @@ export default function TenantLogin() {
 
       localStorage.setItem("participant", JSON.stringify(user));
       
-      // Try router.push first, fallback to window.location if needed
-      try {
-        const dashboardPath = `/dashboard`;
-        console.log("🔄 Redirecting to:", dashboardPath);
-        router.push(dashboardPath);
-        // Also update URL directly as fallback
-        setTimeout(() => {
-          window.location.href = dashboardPath;
-        }, 100);
-      } catch (redirectError) {
-        console.error("❌ Redirect error:", redirectError);
-        // Fallback to window.location
-        window.location.href = `/dashboard`;
-      }
+      // Redirect to tenant dashboard with subdomain
+      const dashboardPath = `/tenant/${subdomain}/dashboard`;
+      console.log("🔄 Redirecting to:", dashboardPath);
+      
+      setLoading(false);
+      router.push(dashboardPath);
     } catch (err) {
       console.error("❌ Unexpected error:", err);
       setError(err instanceof Error ? err.message : "An error occurred");
