@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Plus, ArrowLeft, MoreVertical } from "lucide-react";
+import { Plus, ArrowLeft, MoreVertical, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -84,6 +84,13 @@ export default function CohortDetailPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
+  const [isEditAssessmentDialogOpen, setIsEditAssessmentDialogOpen] = useState(false);
+  const [editingAssessment, setEditingAssessment] = useState<CohortAssessment | null>(null);
+  const [assessmentFormData, setAssessmentFormData] = useState({
+    start_date: "",
+    end_date: "",
+  });
+  const [updatingAssessment, setUpdatingAssessment] = useState(false);
 
   useEffect(() => {
     if (cohortId) {
@@ -228,13 +235,31 @@ export default function CohortDetailPage() {
           *,
           assessment_type:assessment_types(id, name, description)
         `)
-        .eq("cohort_id", cohortId)
-        .order("created_at", { ascending: false });
+        .eq("cohort_id", cohortId);
 
       if (fetchError) {
         console.error("Error fetching assessments:", fetchError);
         setAssessments([]);
         return;
+      }
+
+      // Sort assessments: 360 first, then Pulse, then others
+      if (existingAssessments && existingAssessments.length > 0) {
+        existingAssessments.sort((a: any, b: any) => {
+          const aName = (a.assessment_type?.name || "").toLowerCase();
+          const bName = (b.assessment_type?.name || "").toLowerCase();
+          
+          // 360 always first
+          if (aName === "360") return -1;
+          if (bName === "360") return 1;
+          
+          // Pulse second
+          if (aName === "pulse") return -1;
+          if (bName === "pulse") return 1;
+          
+          // Others alphabetically
+          return aName.localeCompare(bName);
+        });
       }
 
       // If no assessments exist and we have cohort data, check plan assessments and create cohort assessments
@@ -278,13 +303,31 @@ export default function CohortDetailPage() {
               *,
               assessment_type:assessment_types(id, name, description)
             `)
-            .eq("cohort_id", cohortId)
-            .order("created_at", { ascending: false });
+            .eq("cohort_id", cohortId);
 
           if (newFetchError) {
             console.error("Error fetching new assessments:", newFetchError);
             setAssessments([]);
             return;
+          }
+
+          // Sort assessments: 360 first, then Pulse, then others
+          if (newAssessments && newAssessments.length > 0) {
+            newAssessments.sort((a: any, b: any) => {
+              const aName = (a.assessment_type?.name || "").toLowerCase();
+              const bName = (b.assessment_type?.name || "").toLowerCase();
+              
+              // 360 always first
+              if (aName === "360") return -1;
+              if (bName === "360") return 1;
+              
+              // Pulse second
+              if (aName === "pulse") return -1;
+              if (bName === "pulse") return 1;
+              
+              // Others alphabetically
+              return aName.localeCompare(bName);
+            });
           }
 
           setAssessments(newAssessments || []);
@@ -408,6 +451,60 @@ export default function CohortDetailPage() {
       setSubmitError(err instanceof Error ? err.message : "An unexpected error occurred");
     } finally {
       setRemoving(null);
+    }
+  }
+
+  function handleEditAssessment(assessment: CohortAssessment, e: React.MouseEvent) {
+    e.stopPropagation(); // Prevent card click
+    setEditingAssessment(assessment);
+    setAssessmentFormData({
+      start_date: assessment.start_date ? assessment.start_date.split('T')[0] : "",
+      end_date: assessment.end_date ? assessment.end_date.split('T')[0] : "",
+    });
+    setIsEditAssessmentDialogOpen(true);
+  }
+
+  async function handleUpdateAssessment(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingAssessment) return;
+
+    setUpdatingAssessment(true);
+    setSubmitError(null);
+
+    try {
+      const updateData: any = {};
+      if (assessmentFormData.start_date) {
+        updateData.start_date = assessmentFormData.start_date;
+      } else {
+        updateData.start_date = null;
+      }
+      if (assessmentFormData.end_date) {
+        updateData.end_date = assessmentFormData.end_date;
+      } else {
+        updateData.end_date = null;
+      }
+
+      const { error } = await supabase
+        .from("cohort_assessments")
+        .update(updateData)
+        .eq("id", editingAssessment.id);
+
+      if (error) {
+        console.error("Error updating assessment:", error);
+        setSubmitError(error.message);
+        setUpdatingAssessment(false);
+        return;
+      }
+
+      // Close dialog and refresh assessments
+      setIsEditAssessmentDialogOpen(false);
+      setEditingAssessment(null);
+      await fetchAssessments();
+    } catch (err) {
+      console.error("Unexpected error:", err);
+      setSubmitError(err instanceof Error ? err.message : "An unexpected error occurred");
+    } finally {
+      setUpdatingAssessment(false);
     }
   }
 
@@ -536,17 +633,46 @@ export default function CohortDetailPage() {
               return (
                 <Card 
                   key={assessment.id} 
-                  className="hover:shadow-md transition-shadow cursor-pointer"
-                  onClick={() => router.push(`/cohorts/${cohortId}/assessments/${assessment.id}`)}
+                  className="hover:shadow-md transition-shadow cursor-pointer relative"
+                  onClick={(e) => {
+                    // Only navigate if click is not on the dropdown menu or its children
+                    const target = e.target as HTMLElement;
+                    if (!target.closest('[role="menu"]') && !target.closest('button')) {
+                      router.push(`/cohorts/${cohortId}/assessments/${assessment.id}`);
+                    }
+                  }}
                 >
                   <CardHeader>
                     <div className="flex items-start justify-between">
-                      <CardTitle className="text-lg">{assessmentName}</CardTitle>
-                      {assessment.status && (
-                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(assessment.status)}`}>
-                          {assessment.status}
-                        </span>
-                      )}
+                      <CardTitle className="text-lg pr-8">{assessmentName}</CardTitle>
+                      <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                        {assessment.status && (
+                          <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(assessment.status)}`}>
+                            {assessment.status}
+                          </span>
+                        )}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                              }}
+                              onMouseDown={(e) => e.stopPropagation()}
+                            >
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                            <DropdownMenuItem onClick={(e) => handleEditAssessment(assessment, e)}>
+                              <Pencil className="mr-2 h-4 w-4" />
+                              Edit
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </div>
                     {assessmentType?.description && (
                       <p className="text-sm text-muted-foreground mt-2">
@@ -556,22 +682,22 @@ export default function CohortDetailPage() {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-2 text-sm">
-                      {assessment.start_date && (
-                        <div>
-                          <span className="text-muted-foreground">Start: </span>
-                          <span className="font-medium">
-                            {new Date(assessment.start_date).toLocaleDateString()}
-                          </span>
-                        </div>
-                      )}
-                      {assessment.end_date && (
-                        <div>
-                          <span className="text-muted-foreground">End: </span>
-                          <span className="font-medium">
-                            {new Date(assessment.end_date).toLocaleDateString()}
-                          </span>
-                        </div>
-                      )}
+                      <div>
+                        <span className="text-muted-foreground">Start: </span>
+                        <span className="font-medium">
+                          {assessment.start_date
+                            ? new Date(assessment.start_date).toLocaleDateString()
+                            : "Not set"}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">End: </span>
+                        <span className="font-medium">
+                          {assessment.end_date
+                            ? new Date(assessment.end_date).toLocaleDateString()
+                            : "Not set"}
+                        </span>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -708,6 +834,64 @@ export default function CohortDetailPage() {
               </Button>
               <Button type="submit" disabled={submitting || formData.participant_ids.length === 0}>
                 {submitting ? "Adding..." : "Add Participants"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Assessment Dialog */}
+      <Dialog open={isEditAssessmentDialogOpen} onOpenChange={setIsEditAssessmentDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogClose onClick={() => setIsEditAssessmentDialogOpen(false)} />
+          <DialogHeader>
+            <DialogTitle>Edit Assessment Dates</DialogTitle>
+            <DialogDescription>
+              Update the start and end dates for this assessment. Dates are optional.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleUpdateAssessment} className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Start Date</label>
+              <Input
+                type="date"
+                value={assessmentFormData.start_date}
+                onChange={(e) =>
+                  setAssessmentFormData((prev) => ({ ...prev, start_date: e.target.value }))
+                }
+                placeholder="Select start date (optional)"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">End Date</label>
+              <Input
+                type="date"
+                value={assessmentFormData.end_date}
+                onChange={(e) =>
+                  setAssessmentFormData((prev) => ({ ...prev, end_date: e.target.value }))
+                }
+                placeholder="Select end date (optional)"
+              />
+            </div>
+
+            {submitError && <p className="text-sm text-destructive">{submitError}</p>}
+
+            <div className="flex justify-end gap-2 pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setIsEditAssessmentDialogOpen(false);
+                  setEditingAssessment(null);
+                  setAssessmentFormData({ start_date: "", end_date: "" });
+                  setSubmitError(null);
+                }}
+                disabled={updatingAssessment}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={updatingAssessment}>
+                {updatingAssessment ? "Updating..." : "Update Assessment"}
               </Button>
             </div>
           </form>
