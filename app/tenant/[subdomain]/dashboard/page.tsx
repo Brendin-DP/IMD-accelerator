@@ -678,7 +678,7 @@ export default function TenantDashboardPage() {
                         // Navigate to assessment detail
                         const assessmentId = assessment.cohort_assessment?.id;
                         if (assessmentId) {
-                          router.push(`/assessments/${assessmentId}`);
+                          router.push(`/tenant/${subdomain}/assessments/${assessmentId}`);
                         }
                       }}
                     >

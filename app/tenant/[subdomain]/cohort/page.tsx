@@ -157,7 +157,7 @@ export default function TenantCohortPage() {
             <Card
               key={cohort.id}
               className="hover:shadow-md transition-shadow cursor-pointer"
-              onClick={() => router.push(`/cohort/${cohort.id}`)}
+              onClick={() => router.push(`/tenant/${subdomain}/cohort/${cohort.id}`)}
             >
               <CardHeader>
                 <CardTitle>{cohort.name}</CardTitle>

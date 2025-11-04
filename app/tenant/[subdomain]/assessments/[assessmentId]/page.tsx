@@ -674,7 +674,7 @@ export default function TenantAssessmentDetailPage() {
       <div className="space-y-6">
         <Breadcrumb
           items={[
-            { label: "Dashboard", href: `/dashboard` },
+            { label: "Dashboard", href: `/tenant/${subdomain}/dashboard` },
             { label: "Assessment" },
           ]}
         />
@@ -683,7 +683,7 @@ export default function TenantAssessmentDetailPage() {
             <p className="text-destructive">{error || "Assessment not found"}</p>
             <Button
               variant="outline"
-              onClick={() => router.push(`/dashboard`)}
+              onClick={() => router.push(`/tenant/${subdomain}/dashboard`)}
               className="mt-4"
             >
               <ArrowLeft className="mr-2 h-4 w-4" />
@@ -703,15 +703,22 @@ export default function TenantAssessmentDetailPage() {
       {/* Breadcrumbs */}
       <Breadcrumb
         items={[
-          { label: "Dashboard", href: `/dashboard` },
+          { label: "Dashboard", href: `/tenant/${subdomain}/dashboard` },
+          { label: cohortName, href: assessment.cohort_id ? `/tenant/${subdomain}/cohort/${assessment.cohort_id}` : undefined },
           { label: assessmentName },
         ]}
       />
 
       {/* Back Button */}
-      <Button variant="ghost" onClick={() => router.push(`/dashboard`)} className="p-0 h-auto">
+      <Button variant="ghost" onClick={() => {
+        if (assessment.cohort_id) {
+          router.push(`/tenant/${subdomain}/cohort/${assessment.cohort_id}`);
+        } else {
+          router.push(`/tenant/${subdomain}/dashboard`);
+        }
+      }} className="p-0 h-auto">
         <ArrowLeft className="mr-2 h-4 w-4" />
-        Back to Dashboard
+        {assessment.cohort_id ? "Back to Cohort" : "Back to Dashboard"}
       </Button>
 
       {/* Header */}

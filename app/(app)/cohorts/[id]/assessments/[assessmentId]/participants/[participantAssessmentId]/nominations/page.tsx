@@ -11,7 +11,9 @@ import { supabase } from "@/lib/supabaseClient";
 interface ReviewerNomination {
   id: string;
   participant_assessment_id: string;
-  reviewer_id: string;
+  reviewer_id: string | null;
+  external_reviewer_id: string | null;
+  is_external: boolean | null;
   nominated_by_id: string;
   status: string | null;
   review_submitted_at: string | null;
@@ -21,7 +23,11 @@ interface ReviewerNomination {
     name: string | null;
     surname: string | null;
     email: string;
-  };
+  } | null;
+  external_reviewer?: {
+    id: string;
+    email: string;
+  } | null;
   nominated_by?: {
     id: string;
     name: string | null;
@@ -60,6 +66,7 @@ export default function ParticipantNominationsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [nominationsLoading, setNominationsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<"internal" | "external">("internal");
 
   useEffect(() => {
     if (participantAssessmentId && cohortId && assessmentId) {
@@ -306,8 +313,12 @@ export default function ParticipantNominationsPage() {
         return;
       }
 
-      // Get unique reviewer and nominated_by IDs
-      const reviewerIds = [...new Set(nominationsData.map((n: any) => n.reviewer_id).filter(Boolean))];
+      // Separate internal and external nominations
+      const internalNominations = nominationsData.filter((n: any) => !n.is_external && n.reviewer_id);
+      const externalNominations = nominationsData.filter((n: any) => n.is_external && n.external_reviewer_id);
+
+      // Get unique reviewer and nominated_by IDs for internal nominations
+      const reviewerIds = [...new Set(internalNominations.map((n: any) => n.reviewer_id).filter(Boolean))];
       const nominatedByIds = [...new Set(nominationsData.map((n: any) => n.nominated_by_id).filter(Boolean))];
       const allUserIds = [...new Set([...reviewerIds, ...nominatedByIds])];
 
@@ -321,23 +332,46 @@ export default function ParticipantNominationsPage() {
 
       if (usersError) {
         console.error("Error fetching client users:", usersError);
-        // Still set nominations even if we can't fetch user details
-        setNominations(nominationsData.map((n: any) => ({
-          ...n,
-          reviewer: null,
-          nominated_by: null,
-        })));
-        return;
+      }
+
+      // Fetch external reviewers
+      const externalReviewerIds = [...new Set(externalNominations.map((n: any) => n.external_reviewer_id).filter(Boolean))];
+      let externalReviewers: any[] = [];
+      
+      if (externalReviewerIds.length > 0) {
+        const { data: externalReviewersData, error: externalError } = await supabase
+          .from("external_reviewers")
+          .select("id, email")
+          .in("id", externalReviewerIds);
+
+        if (!externalError && externalReviewersData) {
+          externalReviewers = externalReviewersData;
+        }
       }
 
       console.log("Fetched client users:", clientUsers?.length || 0);
+      console.log("Fetched external reviewers:", externalReviewers?.length || 0);
 
       // Merge the data
-      const mergedNominations = nominationsData.map((nomination: any) => ({
-        ...nomination,
-        reviewer: clientUsers?.find((u: any) => u.id === nomination.reviewer_id) || null,
-        nominated_by: clientUsers?.find((u: any) => u.id === nomination.nominated_by_id) || null,
-      }));
+      const mergedNominations = nominationsData.map((nomination: any) => {
+        if (nomination.is_external && nomination.external_reviewer_id) {
+          // External reviewer
+          return {
+            ...nomination,
+            reviewer: null,
+            external_reviewer: externalReviewers.find((e: any) => e.id === nomination.external_reviewer_id) || null,
+            nominated_by: clientUsers?.find((u: any) => u.id === nomination.nominated_by_id) || null,
+          };
+        } else {
+          // Internal reviewer
+          return {
+            ...nomination,
+            reviewer: clientUsers?.find((u: any) => u.id === nomination.reviewer_id) || null,
+            external_reviewer: null,
+            nominated_by: clientUsers?.find((u: any) => u.id === nomination.nominated_by_id) || null,
+          };
+        }
+      });
 
       console.log("Merged nominations:", mergedNominations.length);
       setNominations(mergedNominations);
@@ -447,77 +481,169 @@ export default function ParticipantNominationsPage() {
       </Card>
 
       {/* Nominations Table */}
-      <div>
-        <h2 className="text-2xl font-bold mb-4">Reviewer Nominations</h2>
-        <div className="rounded-md border">
+      <Card>
+        <CardHeader>
+          <CardTitle>Reviewer Nominations</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {/* Tabs */}
+          <div className="flex space-x-1 border-b mb-4">
+            <button
+              onClick={() => setActiveTab("internal")}
+              className={`px-4 py-2 text-sm font-medium transition-colors ${
+                activeTab === "internal"
+                  ? "border-b-2 border-primary text-primary"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Internal Nominations
+            </button>
+            <button
+              onClick={() => setActiveTab("external")}
+              className={`px-4 py-2 text-sm font-medium transition-colors ${
+                activeTab === "external"
+                  ? "border-b-2 border-primary text-primary"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              External Nominations
+            </button>
+          </div>
+
           {nominationsLoading ? (
             <div className="p-8 text-center text-muted-foreground">
               Loading nominations...
             </div>
-          ) : nominations.length === 0 ? (
-            <div className="p-8 text-center text-muted-foreground">
-              No nomination requests found for this participant.
-            </div>
+          ) : activeTab === "internal" ? (
+            (() => {
+              const internalNominations = nominations.filter((n) => !n.is_external);
+              return internalNominations.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No internal nominations found for this participant.</p>
+              ) : (
+                <div className="rounded-md border">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b bg-muted/50">
+                        <th className="px-6 py-3 text-left text-sm font-medium">Reviewer</th>
+                        <th className="px-6 py-3 text-left text-sm font-medium">Nominated By</th>
+                        <th className="px-6 py-3 text-left text-sm font-medium">Status</th>
+                        <th className="px-6 py-3 text-left text-sm font-medium">Review Submitted</th>
+                        <th className="px-6 py-3 text-left text-sm font-medium">Created</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {internalNominations.map((nomination) => {
+                        const reviewer = nomination.reviewer as any;
+                        const nominatedBy = nomination.nominated_by as any;
+                        return (
+                          <tr key={nomination.id} className="border-b hover:bg-muted/50 transition-colors">
+                            <td className="px-6 py-4 text-sm">
+                              <div>
+                                <div className="font-medium">
+                                  {reviewer?.name || ""} {reviewer?.surname || ""}
+                                </div>
+                                <div className="text-muted-foreground text-xs">{reviewer?.email || "-"}</div>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-sm">
+                              <div>
+                                <div className="font-medium">
+                                  {nominatedBy?.name || ""} {nominatedBy?.surname || ""}
+                                </div>
+                                <div className="text-muted-foreground text-xs">{nominatedBy?.email || "-"}</div>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-sm">
+                              {nomination.status ? (
+                                <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(nomination.status)}`}>
+                                  {nomination.status}
+                                </span>
+                              ) : (
+                                "-"
+                              )}
+                            </td>
+                            <td className="px-6 py-4 text-sm">
+                              {nomination.review_submitted_at
+                                ? new Date(nomination.review_submitted_at).toLocaleDateString()
+                                : "-"}
+                            </td>
+                            <td className="px-6 py-4 text-sm">
+                              {nomination.created_at
+                                ? new Date(nomination.created_at).toLocaleDateString()
+                                : "-"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()
           ) : (
-            <table className="w-full">
-              <thead>
-                <tr className="border-b bg-muted/50">
-                  <th className="px-6 py-3 text-left text-sm font-medium">Reviewer</th>
-                  <th className="px-6 py-3 text-left text-sm font-medium">Nominated By</th>
-                  <th className="px-6 py-3 text-left text-sm font-medium">Status</th>
-                  <th className="px-6 py-3 text-left text-sm font-medium">Review Submitted</th>
-                  <th className="px-6 py-3 text-left text-sm font-medium">Created</th>
-                </tr>
-              </thead>
-              <tbody>
-                {nominations.map((nomination) => {
-                  const reviewer = nomination.reviewer as any;
-                  const nominatedBy = nomination.nominated_by as any;
-                  return (
-                    <tr key={nomination.id} className="border-b hover:bg-muted/50 transition-colors">
-                      <td className="px-6 py-4 text-sm">
-                        <div>
-                          <div className="font-medium">
-                            {reviewer?.name || ""} {reviewer?.surname || ""}
-                          </div>
-                          <div className="text-muted-foreground text-xs">{reviewer?.email || "-"}</div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm">
-                        <div>
-                          <div className="font-medium">
-                            {nominatedBy?.name || ""} {nominatedBy?.surname || ""}
-                          </div>
-                          <div className="text-muted-foreground text-xs">{nominatedBy?.email || "-"}</div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm">
-                        {nomination.status ? (
-                          <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(nomination.status)}`}>
-                            {nomination.status}
-                          </span>
-                        ) : (
-                          "-"
-                        )}
-                      </td>
-                      <td className="px-6 py-4 text-sm">
-                        {nomination.review_submitted_at
-                          ? new Date(nomination.review_submitted_at).toLocaleDateString()
-                          : "-"}
-                      </td>
-                      <td className="px-6 py-4 text-sm">
-                        {nomination.created_at
-                          ? new Date(nomination.created_at).toLocaleDateString()
-                          : "-"}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            (() => {
+              const externalNominations = nominations.filter((n) => n.is_external);
+              return externalNominations.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No external nominations found for this participant.</p>
+              ) : (
+                <div className="rounded-md border">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b bg-muted/50">
+                        <th className="px-6 py-3 text-left text-sm font-medium">Email</th>
+                        <th className="px-6 py-3 text-left text-sm font-medium">Nominated By</th>
+                        <th className="px-6 py-3 text-left text-sm font-medium">Status</th>
+                        <th className="px-6 py-3 text-left text-sm font-medium">Review Submitted</th>
+                        <th className="px-6 py-3 text-left text-sm font-medium">Created</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {externalNominations.map((nomination) => {
+                        const externalReviewer = nomination.external_reviewer as any;
+                        const nominatedBy = nomination.nominated_by as any;
+                        return (
+                          <tr key={nomination.id} className="border-b hover:bg-muted/50 transition-colors">
+                            <td className="px-6 py-4 text-sm font-medium">
+                              {externalReviewer?.email || "-"}
+                            </td>
+                            <td className="px-6 py-4 text-sm">
+                              <div>
+                                <div className="font-medium">
+                                  {nominatedBy?.name || ""} {nominatedBy?.surname || ""}
+                                </div>
+                                <div className="text-muted-foreground text-xs">{nominatedBy?.email || "-"}</div>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-sm">
+                              {nomination.status ? (
+                                <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(nomination.status)}`}>
+                                  {nomination.status}
+                                </span>
+                              ) : (
+                                "-"
+                              )}
+                            </td>
+                            <td className="px-6 py-4 text-sm">
+                              {nomination.review_submitted_at
+                                ? new Date(nomination.review_submitted_at).toLocaleDateString()
+                                : "-"}
+                            </td>
+                            <td className="px-6 py-4 text-sm">
+                              {nomination.created_at
+                                ? new Date(nomination.created_at).toLocaleDateString()
+                                : "-"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()
           )}
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
