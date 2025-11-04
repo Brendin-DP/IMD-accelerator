@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { supabase } from "@/lib/supabaseClient";
 
 interface ReviewerNomination {
@@ -54,15 +55,50 @@ export default function ParticipantNominationsPage() {
 
   const [participantAssessment, setParticipantAssessment] = useState<ParticipantAssessment | null>(null);
   const [nominations, setNominations] = useState<ReviewerNomination[]>([]);
+  const [cohortName, setCohortName] = useState<string>("Cohort");
+  const [assessmentName, setAssessmentName] = useState<string>("Assessment");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (participantAssessmentId) {
+    if (participantAssessmentId && cohortId && assessmentId) {
       fetchParticipantAssessment();
       fetchNominations();
+      fetchCohortAndAssessmentNames();
     }
-  }, [participantAssessmentId]);
+  }, [participantAssessmentId, cohortId, assessmentId]);
+
+  async function fetchCohortAndAssessmentNames() {
+    try {
+      // Fetch cohort name
+      const { data: cohortData, error: cohortError } = await supabase
+        .from("cohorts")
+        .select("name")
+        .eq("id", cohortId)
+        .single();
+
+      if (!cohortError && cohortData) {
+        setCohortName(cohortData.name);
+      }
+
+      // Fetch assessment name
+      const { data: assessmentData, error: assessmentError } = await supabase
+        .from("cohort_assessments")
+        .select(`
+          name,
+          assessment_type:assessment_types(name)
+        `)
+        .eq("id", assessmentId)
+        .single();
+
+      if (!assessmentError && assessmentData) {
+        const name = assessmentData.name || (assessmentData.assessment_type as any)?.name || "Assessment";
+        setAssessmentName(name);
+      }
+    } catch (err) {
+      console.error("Error fetching cohort/assessment names:", err);
+    }
+  }
 
   async function fetchParticipantAssessment() {
     try {
@@ -228,6 +264,16 @@ export default function ParticipantNominationsPage() {
 
   return (
     <div className="space-y-6">
+      {/* Breadcrumbs */}
+      <Breadcrumb
+        items={[
+          { label: "Cohorts", href: "/cohorts" },
+          { label: cohortName, href: `/cohorts/${cohortId}` },
+          { label: assessmentName, href: `/cohorts/${cohortId}/assessments/${assessmentId}` },
+          { label: `${participantName} - Nominations` },
+        ]}
+      />
+
       {/* Header */}
       <div className="flex items-center gap-4">
         <Button variant="outline" onClick={() => router.push(`/cohorts/${cohortId}/assessments/${assessmentId}`)}>

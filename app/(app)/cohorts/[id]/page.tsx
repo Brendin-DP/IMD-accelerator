@@ -6,6 +6,7 @@ import { Plus, ArrowLeft, MoreVertical, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 import {
   Dialog,
   DialogContent,
@@ -532,6 +533,14 @@ export default function CohortDetailPage() {
 
   return (
     <div className="space-y-6">
+      {/* Breadcrumbs */}
+      <Breadcrumb
+        items={[
+          { label: "Cohorts", href: "/cohorts" },
+          { label: cohort.name },
+        ]}
+      />
+
       {/* Header with Back and Add Participant Button */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">

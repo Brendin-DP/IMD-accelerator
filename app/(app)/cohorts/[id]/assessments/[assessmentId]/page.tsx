@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { supabase } from "@/lib/supabaseClient";
 
 interface CohortAssessment {
@@ -283,8 +284,19 @@ export default function AssessmentDetailPage() {
     return "bg-gray-100 text-gray-800";
   };
 
+  const cohortName = (assessment.cohort as any)?.name || "Cohort";
+
   return (
     <div className="space-y-6">
+      {/* Breadcrumbs */}
+      <Breadcrumb
+        items={[
+          { label: "Cohorts", href: "/cohorts" },
+          { label: cohortName, href: `/cohorts/${cohortId}` },
+          { label: assessmentName },
+        ]}
+      />
+
       {/* Header */}
       <div className="flex items-center gap-4">
         <Button variant="outline" onClick={() => router.push(`/cohorts/${cohortId}`)}>
@@ -294,7 +306,7 @@ export default function AssessmentDetailPage() {
         <div>
           <h1 className="text-3xl font-bold">{assessmentName}</h1>
           <p className="text-muted-foreground mt-2">
-            Assessment participants for {(assessment.cohort as any)?.name || "Cohort"}
+            Assessment participants for {cohortName}
           </p>
         </div>
       </div>
