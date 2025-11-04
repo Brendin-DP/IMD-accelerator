@@ -351,7 +351,7 @@ export default function TenantDashboardPage() {
 
   async function fetchMyActions(userId: string) {
     try {
-      // Fetch nominations where this user is the reviewer and status is "pending"
+      // Fetch nominations where this user is the reviewer and status is NULL (pending review)
       const { data: nominations, error: nominationsError } = await supabase
         .from("reviewer_nominations")
         .select(`
@@ -372,7 +372,7 @@ export default function TenantDashboardPage() {
           )
         `)
         .eq("reviewer_id", userId)
-        .eq("status", "pending")
+        .is("status", null)
         .order("created_at", { ascending: false });
 
       // Handle relationship cache issues
@@ -383,7 +383,7 @@ export default function TenantDashboardPage() {
           .from("reviewer_nominations")
           .select("id, status, created_at, nominated_by_id, participant_assessment_id")
           .eq("reviewer_id", userId)
-          .eq("status", "pending")
+          .is("status", null)
           .order("created_at", { ascending: false });
 
         if (nominationsOnlyError) {

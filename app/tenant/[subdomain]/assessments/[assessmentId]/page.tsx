@@ -367,7 +367,7 @@ export default function TenantAssessmentDetailPage() {
         participant_assessment_id: participantAssessment.id,
         reviewer_id: reviewerId,
         nominated_by_id: user.id,
-        status: "pending", // Default status
+        status: null, // Status will be set when reviewer accepts/rejects
       }));
 
       const { error: insertError } = await supabase
