@@ -15,10 +15,10 @@ export default function LoginPage() {
     e.preventDefault();
     setError("");
 
-    // Query your custom imd_users table
+    // Query your custom imd_users table - explicitly select name and surname fields
     const { data: user, error: dbError } = await supabase
       .from("imd_users")
-      .select("*")
+      .select("id, email, name, surname, role, status, created_at")
       .eq("email", email)
       .eq("password_hash", password)
       .eq("status", "active")
