@@ -4,6 +4,12 @@ import type { NextRequest } from "next/server";
 export function middleware(req: NextRequest) {
   const host = req.headers.get("host") || "";
   const subdomain = host.split(".")[0];
+  const pathname = req.nextUrl.pathname;
+
+  // Skip if already a tenant route (to prevent double rewriting)
+  if (pathname.startsWith("/tenant/")) {
+    return NextResponse.next();
+  }
 
   // Skip admin and local routes (or routes without subdomain)
   if (
@@ -14,8 +20,6 @@ export function middleware(req: NextRequest) {
   ) {
     return NextResponse.next();
   }
-
-  const pathname = req.nextUrl.pathname;
 
   // Rewrite requests for subdomain tenants
   // Map common routes to tenant structure
@@ -51,7 +55,8 @@ export const config = {
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
+     * - tenant/ (already rewritten routes)
      */
-    "/((?!api|_next/static|_next/image|favicon.ico).*)",
+    "/((?!api|_next/static|_next/image|favicon.ico|tenant/).*)",
   ],
 };
