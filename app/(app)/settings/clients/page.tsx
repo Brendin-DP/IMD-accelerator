@@ -18,7 +18,7 @@ import { supabase } from "@/lib/supabaseClient";
 interface Client {
   id: string;
   name: string;
-  domain?: string;
+  subdomain?: string;
   primary_contact_email?: string;
   status?: string;
   created_at?: string;
@@ -33,12 +33,14 @@ export default function ClientsPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
-    domain: "",
+    subdomain: "",
     primary_contact_email: "",
     status: "active",
   });
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [checkingSubdomain, setCheckingSubdomain] = useState(false);
+  const [subdomainAvailable, setSubdomainAvailable] = useState<boolean | null>(null);
 
   useEffect(() => {
     fetchClients();
@@ -76,13 +78,33 @@ export default function ClientsPage() {
     setSubmitting(true);
     setSubmitError(null);
 
+    // Validate subdomain if provided
+    if (formData.subdomain && formData.subdomain.trim() !== "") {
+      // Re-check availability before submitting
+      await checkSubdomainAvailability(formData.subdomain);
+      
+      if (subdomainAvailable === false) {
+        setSubmitError("Subdomain is already taken. Please choose a different one.");
+        setSubmitting(false);
+        return;
+      }
+
+      // Validate subdomain format
+      const subdomainRegex = /^[a-z0-9-]+$/;
+      if (!subdomainRegex.test(formData.subdomain.toLowerCase().trim())) {
+        setSubmitError("Subdomain can only contain lowercase letters, numbers, and hyphens.");
+        setSubmitting(false);
+        return;
+      }
+    }
+
     try {
       const { data, error: dbError } = await supabase
         .from("clients")
         .insert([
           {
             name: formData.name,
-            domain: formData.domain || null,
+            subdomain: formData.subdomain ? formData.subdomain.toLowerCase().trim() : null,
             primary_contact_email: formData.primary_contact_email || null,
             status: formData.status,
           },
@@ -99,10 +121,11 @@ export default function ClientsPage() {
       // Reset form and close dialog
       setFormData({
         name: "",
-        domain: "",
+        subdomain: "",
         primary_contact_email: "",
         status: "active",
       });
+      setSubdomainAvailable(null);
       setIsDialogOpen(false);
       
       // Refresh the clients list
@@ -115,9 +138,53 @@ export default function ClientsPage() {
     }
   }
 
+  async function checkSubdomainAvailability(subdomain: string) {
+    if (!subdomain || subdomain.trim() === "") {
+      setSubdomainAvailable(null);
+      return;
+    }
+
+    // Validate subdomain format (alphanumeric and hyphens only, lowercase)
+    const subdomainRegex = /^[a-z0-9-]+$/;
+    if (!subdomainRegex.test(subdomain.toLowerCase())) {
+      setSubdomainAvailable(false);
+      return;
+    }
+
+    setCheckingSubdomain(true);
+    try {
+      const { data, error } = await supabase
+        .from("clients")
+        .select("id, subdomain")
+        .eq("subdomain", subdomain.toLowerCase().trim())
+        .maybeSingle();
+
+      if (error) {
+        console.error("Error checking subdomain:", error);
+        setSubdomainAvailable(null);
+        return;
+      }
+
+      setSubdomainAvailable(!data); // Available if no existing client found
+    } catch (err) {
+      console.error("Error checking subdomain:", err);
+      setSubdomainAvailable(null);
+    } finally {
+      setCheckingSubdomain(false);
+    }
+  }
+
   function handleInputChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
+    
+    // Check subdomain availability when subdomain field changes
+    if (name === "subdomain") {
+      // Normalize to lowercase
+      const normalizedValue = value.toLowerCase().trim();
+      setFormData((prev) => ({ ...prev, subdomain: normalizedValue }));
+      checkSubdomainAvailability(normalizedValue);
+    }
   }
 
   return (
@@ -149,7 +216,7 @@ export default function ClientsPage() {
             <thead>
               <tr className="border-b bg-muted/50">
                 <th className="px-6 py-3 text-left text-sm font-medium">Client Name</th>
-                <th className="px-6 py-3 text-left text-sm font-medium">Domain</th>
+                <th className="px-6 py-3 text-left text-sm font-medium">Subdomain</th>
                 <th className="px-6 py-3 text-left text-sm font-medium">Primary Contact Email</th>
                 <th className="px-6 py-3 text-left text-sm font-medium">Status</th>
                 <th className="px-6 py-3 text-left text-sm font-medium">Created</th>
@@ -164,7 +231,7 @@ export default function ClientsPage() {
                 >
                   <td className="px-6 py-4 text-sm font-medium">{client.name || "-"}</td>
                   <td className="px-6 py-4 text-sm text-muted-foreground">
-                    {client.domain || "-"}
+                    {client.subdomain || "-"}
                   </td>
                   <td className="px-6 py-4 text-sm">{client.primary_contact_email || "-"}</td>
                   <td className="px-6 py-4 text-sm">
@@ -222,16 +289,32 @@ export default function ClientsPage() {
             </div>
 
             <div className="space-y-2">
-              <label htmlFor="domain" className="text-sm font-medium">
-                Client Domain
+              <label htmlFor="subdomain" className="text-sm font-medium">
+                Subdomain
               </label>
               <Input
-                id="domain"
-                name="domain"
-                value={formData.domain}
+                id="subdomain"
+                name="subdomain"
+                value={formData.subdomain}
                 onChange={handleInputChange}
-                placeholder="example.com"
+                placeholder="client-name"
+                className={subdomainAvailable === false ? "border-red-500" : subdomainAvailable === true ? "border-green-500" : ""}
               />
+              {checkingSubdomain && (
+                <p className="text-xs text-muted-foreground">Checking availability...</p>
+              )}
+              {subdomainAvailable === true && formData.subdomain && (
+                <p className="text-xs text-green-600">✓ Subdomain is available</p>
+              )}
+              {subdomainAvailable === false && formData.subdomain && (
+                <p className="text-xs text-red-600">✗ Subdomain is already taken</p>
+              )}
+              {formData.subdomain && !/^[a-z0-9-]+$/.test(formData.subdomain.toLowerCase()) && (
+                <p className="text-xs text-red-600">Subdomain can only contain lowercase letters, numbers, and hyphens</p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                This will be used for the subdomain URL (e.g., {formData.subdomain || "client-name"}.yourdomain.com)
+              </p>
             </div>
 
             <div className="space-y-2">

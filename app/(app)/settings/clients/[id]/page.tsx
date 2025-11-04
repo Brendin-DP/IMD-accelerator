@@ -25,7 +25,7 @@ import { supabase } from "@/lib/supabaseClient";
 interface Client {
   id: string;
   name: string;
-  domain?: string;
+  subdomain?: string;
   primary_contact_email?: string;
   status?: string;
   created_at?: string;
@@ -61,6 +61,17 @@ export default function ClientDetailPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    name: "",
+    subdomain: "",
+    primary_contact_email: "",
+    status: "active" as string,
+  });
+  const [editing, setEditing] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [checkingSubdomain, setCheckingSubdomain] = useState(false);
+  const [subdomainAvailable, setSubdomainAvailable] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (clientId) {
@@ -76,7 +87,7 @@ export default function ClientDetailPage() {
 
       const { data, error: dbError } = await supabase
         .from("clients")
-        .select("*")
+        .select("id, name, subdomain, primary_contact_email, status, created_at")
         .eq("id", clientId)
         .single();
 
@@ -85,7 +96,15 @@ export default function ClientDetailPage() {
         setError(`Failed to load client: ${dbError.message}`);
         setClient(null);
       } else {
+        console.log("Fetched client data:", data); // Debug log
         setClient(data);
+        // Populate edit form with current client data
+        setEditFormData({
+          name: data.name || "",
+          subdomain: data.subdomain || "",
+          primary_contact_email: data.primary_contact_email || "",
+          status: data.status || "active",
+        });
       }
     } catch (err) {
       console.error("Unexpected error:", err);
@@ -164,6 +183,110 @@ export default function ClientDetailPage() {
   function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
+  }
+
+  async function checkSubdomainAvailability(subdomain: string, currentClientId: string) {
+    if (!subdomain || subdomain.trim() === "") {
+      setSubdomainAvailable(null);
+      return;
+    }
+
+    // Validate subdomain format (alphanumeric and hyphens only, lowercase)
+    const subdomainRegex = /^[a-z0-9-]+$/;
+    if (!subdomainRegex.test(subdomain.toLowerCase())) {
+      setSubdomainAvailable(false);
+      return;
+    }
+
+    setCheckingSubdomain(true);
+    try {
+      const { data, error } = await supabase
+        .from("clients")
+        .select("id, subdomain")
+        .eq("subdomain", subdomain.toLowerCase().trim())
+        .maybeSingle();
+
+      if (error) {
+        console.error("Error checking subdomain:", error);
+        setSubdomainAvailable(null);
+        return;
+      }
+
+      // Available if no existing client found, or if it's the current client
+      setSubdomainAvailable(!data || data.id === currentClientId);
+    } catch (err) {
+      console.error("Error checking subdomain:", err);
+      setSubdomainAvailable(null);
+    } finally {
+      setCheckingSubdomain(false);
+    }
+  }
+
+  function handleEditInputChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
+    const { name, value } = e.target;
+    setEditFormData((prev) => ({ ...prev, [name]: value }));
+    
+    // Check subdomain availability when subdomain field changes
+    if (name === "subdomain") {
+      // Normalize to lowercase
+      const normalizedValue = value.toLowerCase().trim();
+      setEditFormData((prev) => ({ ...prev, subdomain: normalizedValue }));
+      checkSubdomainAvailability(normalizedValue, clientId);
+    }
+  }
+
+  async function handleEditSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setEditing(true);
+    setEditError(null);
+
+    // Validate subdomain if provided
+    if (editFormData.subdomain && editFormData.subdomain.trim() !== "") {
+      // Re-check availability before submitting
+      await checkSubdomainAvailability(editFormData.subdomain, clientId);
+      
+      if (subdomainAvailable === false) {
+        setEditError("Subdomain is already taken. Please choose a different one.");
+        setEditing(false);
+        return;
+      }
+
+      // Validate subdomain format
+      const subdomainRegex = /^[a-z0-9-]+$/;
+      if (!subdomainRegex.test(editFormData.subdomain.toLowerCase().trim())) {
+        setEditError("Subdomain can only contain lowercase letters, numbers, and hyphens.");
+        setEditing(false);
+        return;
+      }
+    }
+
+    try {
+      const { error: dbError } = await supabase
+        .from("clients")
+        .update({
+          name: editFormData.name,
+          subdomain: editFormData.subdomain ? editFormData.subdomain.toLowerCase().trim() : null,
+          primary_contact_email: editFormData.primary_contact_email || null,
+          status: editFormData.status,
+        })
+        .eq("id", clientId);
+
+      if (dbError) {
+        console.error("Error updating client:", dbError);
+        setEditError(dbError.message);
+        return;
+      }
+
+      // Refresh client data
+      await fetchClientDetails();
+      setSubdomainAvailable(null);
+      setIsEditDialogOpen(false);
+    } catch (err) {
+      console.error("Unexpected error:", err);
+      setEditError(err instanceof Error ? err.message : "An unexpected error occurred");
+    } finally {
+      setEditing(false);
+    }
   }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -360,8 +483,35 @@ export default function ClientDetailPage() {
               <p className="text-sm font-medium mt-1">{client.name || "-"}</p>
             </div>
             <div>
-              <label className="text-sm font-medium text-muted-foreground">Domain</label>
-              <p className="text-sm font-medium mt-1">{client.domain || "-"}</p>
+              <label className="text-sm font-medium text-muted-foreground">Subdomain</label>
+              <div className="flex items-center gap-2 mt-1">
+                <p className="text-sm font-medium">{client?.subdomain || "-"}</p>
+                {client?.subdomain && (
+                  <span className="text-xs text-muted-foreground">
+                    ({client.subdomain}.yourdomain.com)
+                  </span>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    // Refresh edit form data from current client state
+                    if (client) {
+                      setEditFormData({
+                        name: client.name || "",
+                        subdomain: client.subdomain || "",
+                        primary_contact_email: client.primary_contact_email || "",
+                        status: client.status || "active",
+                      });
+                      setSubdomainAvailable(null);
+                    }
+                    setIsEditDialogOpen(true);
+                  }}
+                  className="ml-auto"
+                >
+                  Edit
+                </Button>
+              </div>
             </div>
             <div>
               <label className="text-sm font-medium text-muted-foreground">Primary Contact Email</label>
@@ -602,6 +752,114 @@ export default function ClientDetailPage() {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Client Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent>
+          <DialogClose onClick={() => setIsEditDialogOpen(false)} />
+          <DialogHeader>
+            <DialogTitle>Edit Client</DialogTitle>
+            <DialogDescription>
+              Update client information below.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleEditSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <label htmlFor="edit_name" className="text-sm font-medium">
+                Client Name <span className="text-destructive">*</span>
+              </label>
+              <Input
+                id="edit_name"
+                name="name"
+                value={editFormData.name}
+                onChange={handleEditInputChange}
+                required
+                placeholder="Client name"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="edit_subdomain" className="text-sm font-medium">
+                Subdomain
+              </label>
+              <Input
+                id="edit_subdomain"
+                name="subdomain"
+                value={editFormData.subdomain}
+                onChange={handleEditInputChange}
+                placeholder="client-name"
+                className={subdomainAvailable === false ? "border-red-500" : subdomainAvailable === true ? "border-green-500" : ""}
+              />
+              {checkingSubdomain && (
+                <p className="text-xs text-muted-foreground">Checking availability...</p>
+              )}
+              {subdomainAvailable === true && editFormData.subdomain && (
+                <p className="text-xs text-green-600">✓ Subdomain is available</p>
+              )}
+              {subdomainAvailable === false && editFormData.subdomain && (
+                <p className="text-xs text-red-600">✗ Subdomain is already taken</p>
+              )}
+              {editFormData.subdomain && !/^[a-z0-9-]+$/.test(editFormData.subdomain.toLowerCase()) && (
+                <p className="text-xs text-red-600">Subdomain can only contain lowercase letters, numbers, and hyphens</p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                This will be used for the subdomain URL (e.g., {editFormData.subdomain || "client-name"}.yourdomain.com)
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="edit_primary_contact_email" className="text-sm font-medium">
+                Primary Contact Email
+              </label>
+              <Input
+                id="edit_primary_contact_email"
+                name="primary_contact_email"
+                type="email"
+                value={editFormData.primary_contact_email}
+                onChange={handleEditInputChange}
+                placeholder="contact@example.com"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="edit_status" className="text-sm font-medium">
+                Status
+              </label>
+              <select
+                id="edit_status"
+                name="status"
+                value={editFormData.status}
+                onChange={handleEditInputChange}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
+
+            {editError && (
+              <p className="text-sm text-destructive">{editError}</p>
+            )}
+
+            <div className="flex justify-end gap-2 pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setIsEditDialogOpen(false);
+                  setSubdomainAvailable(null);
+                }}
+                disabled={editing}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={editing}>
+                {editing ? "Updating..." : "Update Client"}
+              </Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
     </div>
