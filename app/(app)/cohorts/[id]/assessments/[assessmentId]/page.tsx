@@ -262,7 +262,7 @@ export default function AssessmentDetailPage() {
         <div className="p-8 text-center text-destructive">
           {error || "Assessment not found"}
         </div>
-        <Button variant="ghost" onClick={() => router.push(`/cohorts/${cohortId}`)} className="p-0 h-auto">
+        <Button variant="tertiary" onClick={() => router.push(`/cohorts/${cohortId}`)} className="p-0 h-auto">
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to Cohort
         </Button>
@@ -298,7 +298,7 @@ export default function AssessmentDetailPage() {
       />
 
       {/* Back Button */}
-      <Button variant="ghost" onClick={() => router.push(`/cohorts/${cohortId}`)} className="p-0 h-auto">
+      <Button variant="tertiary" onClick={() => router.push(`/cohorts/${cohortId}`)} className="p-0 h-auto">
         <ArrowLeft className="mr-2 h-4 w-4" />
         Back to Cohort
       </Button>

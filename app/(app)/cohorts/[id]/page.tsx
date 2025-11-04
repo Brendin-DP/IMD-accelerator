@@ -523,7 +523,7 @@ export default function CohortDetailPage() {
         <div className="p-8 text-center text-destructive">
           {error || "Cohort not found"}
         </div>
-        <Button variant="ghost" onClick={() => router.push("/cohorts")} className="p-0 h-auto">
+        <Button variant="tertiary" onClick={() => router.push("/cohorts")} className="p-0 h-auto">
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to Cohorts
         </Button>
@@ -542,7 +542,7 @@ export default function CohortDetailPage() {
       />
 
       {/* Back Button */}
-      <Button variant="ghost" onClick={() => router.push("/cohorts")} className="p-0 h-auto">
+      <Button variant="tertiary" onClick={() => router.push("/cohorts")} className="p-0 h-auto">
         <ArrowLeft className="mr-2 h-4 w-4" />
         Back to Cohorts
       </Button>

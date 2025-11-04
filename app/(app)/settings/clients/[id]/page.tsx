@@ -425,7 +425,7 @@ export default function ClientDetailPage() {
         <div className="p-8 text-center text-destructive">
           {error || "Client not found"}
         </div>
-        <Button variant="ghost" onClick={() => router.push("/settings/clients")} className="p-0 h-auto">
+        <Button variant="tertiary" onClick={() => router.push("/settings/clients")} className="p-0 h-auto">
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to Clients
         </Button>
@@ -445,7 +445,7 @@ export default function ClientDetailPage() {
       />
 
       {/* Back Button */}
-      <Button variant="ghost" onClick={() => router.push("/settings/clients")} className="p-0 h-auto">
+      <Button variant="tertiary" onClick={() => router.push("/settings/clients")} className="p-0 h-auto">
         <ArrowLeft className="mr-2 h-4 w-4" />
         Back to Clients
       </Button>

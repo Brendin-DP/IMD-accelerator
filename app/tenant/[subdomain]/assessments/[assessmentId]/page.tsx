@@ -710,7 +710,7 @@ export default function TenantAssessmentDetailPage() {
       />
 
       {/* Back Button */}
-      <Button variant="ghost" onClick={() => {
+      <Button variant="tertiary" onClick={() => {
         if (assessment.cohort_id) {
           router.push(`/tenant/${subdomain}/cohort/${assessment.cohort_id}`);
         } else {

@@ -311,7 +311,7 @@ export default function TenantNotificationsPage() {
       />
 
       {/* Back Button */}
-      <Button variant="ghost" onClick={() => router.push(`/tenant/${subdomain}/dashboard`)} className="p-0 h-auto">
+      <Button variant="tertiary" onClick={() => router.push(`/tenant/${subdomain}/dashboard`)} className="p-0 h-auto">
         <ArrowLeft className="mr-2 h-4 w-4" />
         Back to Dashboard
       </Button>

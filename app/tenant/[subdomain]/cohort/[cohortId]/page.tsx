@@ -237,7 +237,7 @@ export default function TenantCohortDetailPage() {
       />
 
       {/* Back Button */}
-      <Button variant="ghost" onClick={() => router.push(`/tenant/${subdomain}/cohort`)} className="p-0 h-auto">
+      <Button variant="tertiary" onClick={() => router.push(`/tenant/${subdomain}/cohort`)} className="p-0 h-auto">
         <ArrowLeft className="mr-2 h-4 w-4" />
         Back to Cohorts
       </Button>
