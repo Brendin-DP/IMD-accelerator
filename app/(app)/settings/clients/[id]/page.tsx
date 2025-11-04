@@ -6,6 +6,7 @@ import { Plus, ArrowLeft, ChevronDown, UserPlus, Upload, Download, FileUp } from
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 import {
   Dialog,
   DialogContent,
@@ -424,7 +425,7 @@ export default function ClientDetailPage() {
         <div className="p-8 text-center text-destructive">
           {error || "Client not found"}
         </div>
-        <Button variant="outline" onClick={() => router.push("/settings/clients")}>
+        <Button variant="ghost" onClick={() => router.push("/settings/clients")} className="p-0 h-auto">
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to Clients
         </Button>
@@ -434,17 +435,26 @@ export default function ClientDetailPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header with Back and Add User Button */}
+      {/* Breadcrumbs */}
+      <Breadcrumb
+        items={[
+          { label: "Settings", href: "/settings" },
+          { label: "Clients", href: "/settings/clients" },
+          { label: client.name },
+        ]}
+      />
+
+      {/* Back Button */}
+      <Button variant="ghost" onClick={() => router.push("/settings/clients")} className="p-0 h-auto">
+        <ArrowLeft className="mr-2 h-4 w-4" />
+        Back to Clients
+      </Button>
+
+      {/* Header with Add User Button */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="outline" onClick={() => router.push("/settings/clients")}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back
-          </Button>
-          <div>
-            <h1 className="text-3xl font-bold">{client.name}</h1>
-            <p className="text-muted-foreground mt-2">Client details and user management</p>
-          </div>
+        <div>
+          <h1 className="text-3xl font-bold">{client.name}</h1>
+          <p className="text-muted-foreground mt-2">Client details and user management</p>
         </div>
         <div className="flex items-center">
           <Button onClick={() => setIsDialogOpen(true)} className="rounded-r-none border-r-0">

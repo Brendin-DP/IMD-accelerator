@@ -49,6 +49,37 @@ interface MyReview {
   };
 }
 
+interface MyAction {
+  id: string;
+  status: string | null;
+  created_at: string | null;
+  nominated_by?: {
+    id: string;
+    name: string | null;
+    surname: string | null;
+    email: string;
+  };
+  participant_assessment: {
+    id: string;
+    participant?: {
+      client_user?: {
+        name: string | null;
+        surname: string | null;
+        email: string;
+      };
+    };
+    cohort_assessment?: {
+      name: string | null;
+      assessment_type?: {
+        name: string;
+      };
+      cohort?: {
+        name: string;
+      };
+    };
+  };
+}
+
 export default function TenantDashboardPage() {
   const params = useParams();
   const router = useRouter();
@@ -57,7 +88,7 @@ export default function TenantDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [myAssessments, setMyAssessments] = useState<MyAssessment[]>([]);
   const [myReviews, setMyReviews] = useState<MyReview[]>([]);
-  const [myActions, setMyActions] = useState<any[]>([]); // Will be blank for now
+  const [myActions, setMyActions] = useState<MyAction[]>([]);
 
   useEffect(() => {
     const storedUser = localStorage.getItem("participant");
@@ -319,8 +350,157 @@ export default function TenantDashboardPage() {
   }
 
   async function fetchMyActions(userId: string) {
-    // This will be blank for now as requested
-    setMyActions([]);
+    try {
+      // Fetch nominations where this user is the reviewer and status is "pending"
+      const { data: nominations, error: nominationsError } = await supabase
+        .from("reviewer_nominations")
+        .select(`
+          id,
+          status,
+          created_at,
+          nominated_by_id,
+          participant_assessment:participant_assessments(
+            id,
+            participant:cohort_participants(
+              client_user:client_users(id, name, surname, email)
+            ),
+            cohort_assessment:cohort_assessments(
+              name,
+              assessment_type:assessment_types(name),
+              cohort:cohorts(name)
+            )
+          )
+        `)
+        .eq("reviewer_id", userId)
+        .eq("status", "pending")
+        .order("created_at", { ascending: false });
+
+      // Handle relationship cache issues
+      if (nominationsError && (nominationsError.message?.includes("relationship") || nominationsError.message?.includes("cache"))) {
+        console.warn("Relationship query failed, fetching separately");
+        
+        const { data: nominationsOnly, error: nominationsOnlyError } = await supabase
+          .from("reviewer_nominations")
+          .select("id, status, created_at, nominated_by_id, participant_assessment_id")
+          .eq("reviewer_id", userId)
+          .eq("status", "pending")
+          .order("created_at", { ascending: false });
+
+        if (nominationsOnlyError) {
+          setMyActions([]);
+          return;
+        }
+
+        if (nominationsOnly && nominationsOnly.length > 0) {
+          const participantAssessmentIds = nominationsOnly.map((n: any) => n.participant_assessment_id);
+          const nominatedByIds = [...new Set(nominationsOnly.map((n: any) => n.nominated_by_id) || [])];
+          
+          // Fetch participant assessments
+          const { data: participantAssessments, error: paError } = await supabase
+            .from("participant_assessments")
+            .select("id, participant_id, cohort_assessment_id")
+            .in("id", participantAssessmentIds);
+
+          if (paError) {
+            setMyActions([]);
+            return;
+          }
+
+          // Fetch cohort participants and client users (both for participants and nominated_by)
+          const participantIds = [...new Set(participantAssessments?.map((pa: any) => pa.participant_id) || [])];
+          const { data: cohortParticipants, error: cpError } = await supabase
+            .from("cohort_participants")
+            .select("id, client_user_id")
+            .in("id", participantIds);
+
+          const clientUserIds = [
+            ...new Set([
+              ...(cohortParticipants?.map((cp: any) => cp.client_user_id) || []),
+              ...nominatedByIds
+            ])
+          ];
+          const { data: clientUsers, error: cuError } = await supabase
+            .from("client_users")
+            .select("id, name, surname, email")
+            .in("id", clientUserIds);
+
+          // Fetch cohort assessments
+          const cohortAssessmentIds = [...new Set(participantAssessments?.map((pa: any) => pa.cohort_assessment_id) || [])];
+          const { data: cohortAssessments, error: caError } = await supabase
+            .from("cohort_assessments")
+            .select("id, name, assessment_type_id, cohort_id")
+            .in("id", cohortAssessmentIds);
+
+          // Fetch assessment types and cohorts
+          const assessmentTypeIds = [...new Set(cohortAssessments?.map((ca: any) => ca.assessment_type_id).filter(Boolean) || [])];
+          const { data: assessmentTypes } = await supabase
+            .from("assessment_types")
+            .select("id, name")
+            .in("id", assessmentTypeIds);
+
+          const cohortIds = [...new Set(cohortAssessments?.map((ca: any) => ca.cohort_id).filter(Boolean) || [])];
+          const { data: cohorts } = await supabase
+            .from("cohorts")
+            .select("id, name")
+            .in("id", cohortIds);
+
+          // Merge data
+          const merged = nominationsOnly.map((nomination: any) => {
+            const participantAssessment = participantAssessments?.find((pa: any) => pa.id === nomination.participant_assessment_id);
+            const cohortParticipant = cohortParticipants?.find((cp: any) => cp.id === participantAssessment?.participant_id);
+            const clientUser = clientUsers?.find((cu: any) => cu.id === cohortParticipant?.client_user_id);
+            const nominatedBy = clientUsers?.find((cu: any) => cu.id === nomination.nominated_by_id);
+            const cohortAssessment = cohortAssessments?.find((ca: any) => ca.id === participantAssessment?.cohort_assessment_id);
+            const assessmentType = assessmentTypes?.find((at: any) => at.id === cohortAssessment?.assessment_type_id);
+            const cohort = cohorts?.find((c: any) => c.id === cohortAssessment?.cohort_id);
+
+            return {
+              ...nomination,
+              nominated_by: nominatedBy,
+              participant_assessment: {
+                id: participantAssessment?.id,
+                participant: {
+                  client_user: clientUser,
+                },
+                cohort_assessment: {
+                  name: cohortAssessment?.name,
+                  assessment_type: assessmentType,
+                  cohort: cohort,
+                },
+              },
+            };
+          });
+
+          setMyActions(merged || []);
+        } else {
+          setMyActions([]);
+        }
+      } else if (nominations) {
+        // If we got data with relationships, we still need to fetch nominated_by separately
+        const nominatedByIds = [...new Set(nominations.map((n: any) => n.nominated_by_id).filter(Boolean) || [])];
+        
+        if (nominatedByIds.length > 0) {
+          const { data: clientUsers } = await supabase
+            .from("client_users")
+            .select("id, name, surname, email")
+            .in("id", nominatedByIds);
+
+          const merged = nominations.map((nomination: any) => ({
+            ...nomination,
+            nominated_by: clientUsers?.find((cu: any) => cu.id === nomination.nominated_by_id) || null,
+          }));
+
+          setMyActions(merged || []);
+        } else {
+          setMyActions(nominations || []);
+        }
+      } else {
+        setMyActions([]);
+      }
+    } catch (err) {
+      console.error("Error fetching my actions:", err);
+      setMyActions([]);
+    }
   }
 
   const getStatusColor = (status: string | null) => {
@@ -464,7 +644,45 @@ export default function TenantDashboardPage() {
             <CardTitle>My Actions</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-muted-foreground">No actions required</p>
+            {myActions.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No actions required</p>
+            ) : (
+              <div className="space-y-3">
+                {myActions.map((action) => {
+                  const nominatedBy = action.nominated_by;
+                  const nominatedByName = nominatedBy
+                    ? `${nominatedBy.name || ""} ${nominatedBy.surname || ""}`.trim() || nominatedBy.email
+                    : "Someone";
+                  const assessmentName = action.participant_assessment?.cohort_assessment?.name ||
+                    action.participant_assessment?.cohort_assessment?.assessment_type?.name ||
+                    "Assessment";
+                  
+                  return (
+                    <div
+                      key={action.id}
+                      className="p-3 border rounded-lg hover:bg-accent transition-colors cursor-pointer"
+                      onClick={() => {
+                        // Navigate to review request page if needed
+                        const participantAssessmentId = action.participant_assessment?.id;
+                        if (participantAssessmentId) {
+                          // You can navigate to a review request page here
+                        }
+                      }}
+                    >
+                      <p className="text-sm font-medium">
+                        Review request from {nominatedByName}
+                      </p>
+                      <p className="text-xs text-muted-foreground">{assessmentName}</p>
+                      {action.created_at && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Requested: {new Date(action.created_at).toLocaleDateString()}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </CardContent>
         </Card>
 

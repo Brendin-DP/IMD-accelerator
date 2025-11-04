@@ -523,7 +523,7 @@ export default function CohortDetailPage() {
         <div className="p-8 text-center text-destructive">
           {error || "Cohort not found"}
         </div>
-        <Button variant="outline" onClick={() => router.push("/cohorts")}>
+        <Button variant="ghost" onClick={() => router.push("/cohorts")} className="p-0 h-auto">
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to Cohorts
         </Button>
@@ -541,17 +541,17 @@ export default function CohortDetailPage() {
         ]}
       />
 
-      {/* Header with Back and Add Participant Button */}
+      {/* Back Button */}
+      <Button variant="ghost" onClick={() => router.push("/cohorts")} className="p-0 h-auto">
+        <ArrowLeft className="mr-2 h-4 w-4" />
+        Back to Cohorts
+      </Button>
+
+      {/* Header with Add Participant Button */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="outline" onClick={() => router.push("/cohorts")}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back
-          </Button>
-          <div>
-            <h1 className="text-3xl font-bold">{cohort.name}</h1>
-            <p className="text-muted-foreground mt-2">Cohort details and participant management</p>
-          </div>
+        <div>
+          <h1 className="text-3xl font-bold">{cohort.name}</h1>
+          <p className="text-muted-foreground mt-2">Cohort details and participant management</p>
         </div>
         <Button onClick={() => setIsDialogOpen(true)}>
           <Plus className="mr-2 h-4 w-4" />

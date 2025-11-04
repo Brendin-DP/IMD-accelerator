@@ -456,18 +456,18 @@ export default function TenantAssessmentDetailPage() {
         ]}
       />
 
+      {/* Back Button */}
+      <Button variant="ghost" onClick={() => router.push(`/dashboard`)} className="p-0 h-auto">
+        <ArrowLeft className="mr-2 h-4 w-4" />
+        Back to Dashboard
+      </Button>
+
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <Button variant="outline" onClick={() => router.push(`/dashboard`)}>
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to Dashboard
-        </Button>
-        <div>
-          <h1 className="text-3xl font-bold">{assessmentName}</h1>
-          <p className="text-muted-foreground mt-2">
-            {cohortName}
-          </p>
-        </div>
+      <div>
+        <h1 className="text-3xl font-bold">{assessmentName}</h1>
+        <p className="text-muted-foreground mt-2">
+          {cohortName}
+        </p>
       </div>
 
       {/* Assessment Details Card */}
@@ -573,20 +573,6 @@ export default function TenantAssessmentDetailPage() {
           )}
         </CardContent>
       </Card>
-
-      {/* Assessment Description/Instructions */}
-      {assessment.assessment_type?.description && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Instructions</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground whitespace-pre-line">
-              {assessment.assessment_type.description}
-            </p>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Nominate for Review Section */}
       {participantAssessment && participantAssessment.allow_reviewer_nominations && (

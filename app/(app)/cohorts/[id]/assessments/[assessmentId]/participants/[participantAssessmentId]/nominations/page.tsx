@@ -234,7 +234,7 @@ export default function ParticipantNominationsPage() {
         <div className="p-8 text-center text-destructive">
           {error || "Participant assessment not found"}
         </div>
-        <Button variant="outline" onClick={() => router.push(`/cohorts/${cohortId}/assessments/${assessmentId}`)}>
+        <Button variant="ghost" onClick={() => router.push(`/cohorts/${cohortId}/assessments/${assessmentId}`)} className="p-0 h-auto">
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to Assessment
         </Button>
@@ -274,18 +274,18 @@ export default function ParticipantNominationsPage() {
         ]}
       />
 
+      {/* Back Button */}
+      <Button variant="ghost" onClick={() => router.push(`/cohorts/${cohortId}/assessments/${assessmentId}`)} className="p-0 h-auto">
+        <ArrowLeft className="mr-2 h-4 w-4" />
+        Back to Assessment
+      </Button>
+
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <Button variant="outline" onClick={() => router.push(`/cohorts/${cohortId}/assessments/${assessmentId}`)}>
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to Assessment
-        </Button>
-        <div>
-          <h1 className="text-3xl font-bold">Nomination Requests</h1>
-          <p className="text-muted-foreground mt-2">
-            Review nominations for {participantName}
-          </p>
-        </div>
+      <div>
+        <h1 className="text-3xl font-bold">Nomination Requests</h1>
+        <p className="text-muted-foreground mt-2">
+          Review nominations for {participantName}
+        </p>
       </div>
 
       {/* Participant Info Card */}
