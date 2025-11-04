@@ -4,6 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { ToastContainer, useToast } from "@/components/ui/toast";
 import { supabase } from "@/lib/supabaseClient";
 
 interface MyAssessment {
@@ -89,6 +90,8 @@ export default function TenantDashboardPage() {
   const [myAssessments, setMyAssessments] = useState<MyAssessment[]>([]);
   const [myReviews, setMyReviews] = useState<MyReview[]>([]);
   const [myActions, setMyActions] = useState<MyAction[]>([]);
+  const [processingAction, setProcessingAction] = useState<string | null>(null);
+  const { toasts, showToast, removeToast } = useToast();
 
   useEffect(() => {
     const storedUser = localStorage.getItem("participant");
@@ -351,7 +354,7 @@ export default function TenantDashboardPage() {
 
   async function fetchMyActions(userId: string) {
     try {
-      // Fetch nominations where this user is the reviewer and status is NULL (pending review)
+      // Fetch nominations where this user is the reviewer and status is "pending"
       const { data: nominations, error: nominationsError } = await supabase
         .from("reviewer_nominations")
         .select(`
@@ -372,7 +375,7 @@ export default function TenantDashboardPage() {
           )
         `)
         .eq("reviewer_id", userId)
-        .is("status", null)
+        .eq("status", "pending")
         .order("created_at", { ascending: false });
 
       // Handle relationship cache issues
@@ -383,7 +386,7 @@ export default function TenantDashboardPage() {
           .from("reviewer_nominations")
           .select("id, status, created_at, nominated_by_id, participant_assessment_id")
           .eq("reviewer_id", userId)
-          .is("status", null)
+          .eq("status", "pending")
           .order("created_at", { ascending: false });
 
         if (nominationsOnlyError) {
@@ -515,6 +518,69 @@ export default function TenantDashboardPage() {
     }
     return "bg-gray-100 text-gray-800";
   };
+
+  async function handleAcceptNomination(nominationId: string, e: React.MouseEvent) {
+    e.stopPropagation(); // Prevent card click
+    if (!user || processingAction) return;
+
+    try {
+      setProcessingAction(nominationId);
+
+      // Update nomination status to "accepted"
+      const { error: updateError } = await supabase
+        .from("reviewer_nominations")
+        .update({ status: "accepted" })
+        .eq("id", nominationId);
+
+      if (updateError) {
+        console.error("Error accepting nomination:", updateError);
+        showToast("Error accepting nomination. Please try again.", "error");
+        return;
+      }
+
+      // Refresh both My Actions and My Reviews lists
+      await fetchMyActions(user.id);
+      await fetchMyReviews(user.id);
+
+      showToast("Nomination accepted successfully.", "success");
+    } catch (err) {
+      console.error("Error accepting nomination:", err);
+      showToast("An unexpected error occurred. Please try again.", "error");
+    } finally {
+      setProcessingAction(null);
+    }
+  }
+
+  async function handleRejectNomination(nominationId: string, e: React.MouseEvent) {
+    e.stopPropagation(); // Prevent card click
+    if (!user || processingAction) return;
+
+    try {
+      setProcessingAction(nominationId);
+
+      // Update nomination status to "rejected"
+      const { error: updateError } = await supabase
+        .from("reviewer_nominations")
+        .update({ status: "rejected" })
+        .eq("id", nominationId);
+
+      if (updateError) {
+        console.error("Error rejecting nomination:", updateError);
+        showToast("Error rejecting nomination. Please try again.", "error");
+        return;
+      }
+
+      // Refresh My Actions list
+      await fetchMyActions(user.id);
+
+      showToast("Nomination rejected.", "info");
+    } catch (err) {
+      console.error("Error rejecting nomination:", err);
+      showToast("An unexpected error occurred. Please try again.", "error");
+    } finally {
+      setProcessingAction(null);
+    }
+  }
 
   if (loading) {
     return (
@@ -660,24 +726,39 @@ export default function TenantDashboardPage() {
                   return (
                     <div
                       key={action.id}
-                      className="p-3 border rounded-lg hover:bg-accent transition-colors cursor-pointer"
-                      onClick={() => {
-                        // Navigate to review request page if needed
-                        const participantAssessmentId = action.participant_assessment?.id;
-                        if (participantAssessmentId) {
-                          // You can navigate to a review request page here
-                        }
-                      }}
+                      className="p-3 border rounded-lg hover:bg-accent transition-colors"
                     >
-                      <p className="text-sm font-medium">
-                        Review request from {nominatedByName}
-                      </p>
-                      <p className="text-xs text-muted-foreground">{assessmentName}</p>
-                      {action.created_at && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Requested: {new Date(action.created_at).toLocaleDateString()}
-                        </p>
-                      )}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          <p className="text-sm font-medium">
+                            Review request from {nominatedByName}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">{assessmentName}</p>
+                          {action.created_at && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Requested: {new Date(action.created_at).toLocaleDateString()}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={(e) => handleRejectNomination(action.id, e)}
+                            disabled={processingAction === action.id}
+                            className="text-red-600 border-red-200 hover:bg-red-50"
+                          >
+                            {processingAction === action.id ? "..." : "Reject"}
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={(e) => handleAcceptNomination(action.id, e)}
+                            disabled={processingAction === action.id}
+                          >
+                            {processingAction === action.id ? "..." : "Accept"}
+                          </Button>
+                        </div>
+                      </div>
                     </div>
                   );
                 })}
@@ -732,6 +813,9 @@ export default function TenantDashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Toast Container */}
+      <ToastContainer toasts={toasts} onClose={removeToast} />
     </div>
   );
 }

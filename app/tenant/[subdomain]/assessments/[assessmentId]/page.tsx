@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose } from "@/components/ui/dialog";
+import { ToastContainer, useToast } from "@/components/ui/toast";
 import { supabase } from "@/lib/supabaseClient";
 
 interface CohortAssessment {
@@ -81,6 +82,7 @@ export default function TenantAssessmentDetailPage() {
   const [submittingNominations, setSubmittingNominations] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { toasts, showToast, removeToast } = useToast();
 
   useEffect(() => {
     const storedUser = localStorage.getItem("participant");
@@ -226,11 +228,13 @@ export default function TenantAssessmentDetailPage() {
   async function fetchNominations(participantAssessmentId: string, userId: string) {
     try {
       // Fetch nominations where this user nominated reviewers
+      // Only fetch active nominations (pending or accepted), exclude rejected ones for counting
       const { data: nominationsData, error: nominationsError } = await supabase
         .from("reviewer_nominations")
         .select("*")
         .eq("participant_assessment_id", participantAssessmentId)
         .eq("nominated_by_id", userId)
+        .or("status.eq.pending,status.eq.accepted")
         .order("created_at", { ascending: false });
 
       if (nominationsError) {
@@ -322,10 +326,12 @@ export default function TenantAssessmentDetailPage() {
       if (prev.includes(reviewerId)) {
         return prev.filter((id) => id !== reviewerId);
       } else {
-        // Limit to 10 total nominations (existing + new selections)
-        const maxNewSelections = 10 - nominations.length;
+        // Limit to 10 total active nominations (existing active + new selections)
+        // Only count active nominations (pending or accepted), not rejected ones
+        const activeNominationsCount = nominations.filter(n => n.status === "pending" || n.status === "accepted").length;
+        const maxNewSelections = 10 - activeNominationsCount;
         if (prev.length >= maxNewSelections) {
-          alert(`You can only select up to ${maxNewSelections} more reviewer(s). You already have ${nominations.length} nomination(s).`);
+          showToast(`You can only select up to ${maxNewSelections} more reviewer(s). You already have ${activeNominationsCount} active nomination(s).`, "info");
           return prev;
         }
         return [...prev, reviewerId];
@@ -342,15 +348,18 @@ export default function TenantAssessmentDetailPage() {
       setSubmittingNominations(true);
 
       // Check existing nominations to avoid duplicates
+      // Only check for active nominations (pending or accepted), not rejected ones
       const { data: existingNominations, error: checkError } = await supabase
         .from("reviewer_nominations")
-        .select("reviewer_id")
+        .select("reviewer_id, status")
         .eq("participant_assessment_id", participantAssessment.id)
-        .eq("nominated_by_id", user.id);
+        .eq("nominated_by_id", user.id)
+        .or("status.eq.pending,status.eq.accepted");
 
       if (checkError) {
         console.error("Error checking existing nominations:", checkError);
-        alert("Error checking existing nominations. Please try again.");
+        showToast("Error checking existing nominations. Please try again.", "error");
+        setSubmittingNominations(false);
         return;
       }
 
@@ -358,7 +367,8 @@ export default function TenantAssessmentDetailPage() {
       const newReviewerIds = selectedReviewers.filter((id) => !existingReviewerIds.has(id));
 
       if (newReviewerIds.length === 0) {
-        alert("All selected reviewers have already been nominated.");
+        showToast("All selected reviewers have already been nominated or have pending/accepted nominations.", "info");
+        setSubmittingNominations(false);
         return;
       }
 
@@ -367,7 +377,7 @@ export default function TenantAssessmentDetailPage() {
         participant_assessment_id: participantAssessment.id,
         reviewer_id: reviewerId,
         nominated_by_id: user.id,
-        status: null, // Status will be set when reviewer accepts/rejects
+        status: "pending", // Default status - pending review
       }));
 
       const { error: insertError } = await supabase
@@ -376,7 +386,7 @@ export default function TenantAssessmentDetailPage() {
 
       if (insertError) {
         console.error("Error creating nominations:", insertError);
-        alert("Error creating nominations. Please try again.");
+        showToast("Error creating nominations. Please try again.", "error");
         return;
       }
 
@@ -387,10 +397,14 @@ export default function TenantAssessmentDetailPage() {
       setIsNominationModalOpen(false);
       setSelectedReviewers([]);
       
-      alert(`Successfully requested ${newReviewerIds.length} nomination(s).`);
+      // Show success toast
+      showToast(
+        `Successfully requested ${newReviewerIds.length} nomination${newReviewerIds.length > 1 ? "s" : ""}.`,
+        "success"
+      );
     } catch (err) {
       console.error("Error submitting nominations:", err);
-      alert("An unexpected error occurred. Please try again.");
+      showToast("An unexpected error occurred. Please try again.", "error");
     } finally {
       setSubmittingNominations(false);
     }
@@ -582,14 +596,14 @@ export default function TenantAssessmentDetailPage() {
               <CardTitle>Nominate for Review</CardTitle>
               <Button
                 onClick={handleOpenNominationModal}
-                disabled={nominations.length >= 10}
+                disabled={nominations.filter(n => n.status === "pending" || n.status === "accepted").length >= 10}
               >
                 Request Nomination
               </Button>
             </div>
-            {nominations.length >= 10 && (
+            {nominations.filter(n => n.status === "pending" || n.status === "accepted").length >= 10 && (
               <p className="text-sm text-muted-foreground mt-2">
-                You have reached the maximum of 10 nominations.
+                You have reached the maximum of 10 active nominations.
               </p>
             )}
           </CardHeader>
@@ -652,7 +666,7 @@ export default function TenantAssessmentDetailPage() {
           <DialogHeader>
             <DialogTitle>Request Nomination</DialogTitle>
             <DialogDescription>
-              Select up to {10 - nominations.length} reviewers from your client roster. You have {nominations.length} existing nomination(s).
+              Select up to {10 - nominations.filter(n => n.status === "pending" || n.status === "accepted").length} reviewers from your client roster. You have {nominations.filter(n => n.status === "pending" || n.status === "accepted").length} active nomination(s).
             </DialogDescription>
           </DialogHeader>
           <DialogClose onClick={() => setIsNominationModalOpen(false)} />
@@ -677,8 +691,10 @@ export default function TenantAssessmentDetailPage() {
                     <tbody>
                       {clientRoster.map((user) => {
                         const isSelected = selectedReviewers.includes(user.id);
+                        // Only disable if they have an active nomination (pending or accepted), not rejected
+                        const activeNominationsCount = nominations.filter(n => n.status === "pending" || n.status === "accepted").length;
                         const isAlreadyNominated = nominations.some(
-                          (n) => n.reviewer_id === user.id
+                          (n) => n.reviewer_id === user.id && (n.status === "pending" || n.status === "accepted")
                         );
                         
                         return (
@@ -694,7 +710,7 @@ export default function TenantAssessmentDetailPage() {
                                 checked={isSelected}
                                 disabled={
                                   isAlreadyNominated ||
-                                  (!isSelected && selectedReviewers.length >= (10 - nominations.length))
+                                  (!isSelected && selectedReviewers.length >= (10 - activeNominationsCount))
                                 }
                                 onChange={() => handleToggleReviewer(user.id)}
                                 className="h-4 w-4 rounded border-gray-300"
@@ -716,7 +732,7 @@ export default function TenantAssessmentDetailPage() {
 
                 <div className="flex items-center justify-between pt-4 border-t">
                   <p className="text-sm text-muted-foreground">
-                    {selectedReviewers.length} of {10 - nominations.length} selected
+                    {selectedReviewers.length} of {10 - nominations.filter(n => n.status === "pending" || n.status === "accepted").length} selected
                   </p>
                   <div className="flex gap-2">
                     <Button
@@ -740,6 +756,9 @@ export default function TenantAssessmentDetailPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Toast Container */}
+      <ToastContainer toasts={toasts} onClose={removeToast} />
     </div>
   );
 }
