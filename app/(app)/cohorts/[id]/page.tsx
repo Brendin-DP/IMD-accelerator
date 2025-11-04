@@ -534,7 +534,11 @@ export default function CohortDetailPage() {
               };
 
               return (
-                <Card key={assessment.id} className="hover:shadow-md transition-shadow cursor-pointer">
+                <Card 
+                  key={assessment.id} 
+                  className="hover:shadow-md transition-shadow cursor-pointer"
+                  onClick={() => router.push(`/cohorts/${cohortId}/assessments/${assessment.id}`)}
+                >
                   <CardHeader>
                     <div className="flex items-start justify-between">
                       <CardTitle className="text-lg">{assessmentName}</CardTitle>
