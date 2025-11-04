@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { LayoutDashboard, Users, Settings, User, LogOut, ChevronDown } from "lucide-react";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
+import { supabase } from "@/lib/supabaseClient";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -15,8 +16,30 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const storedUser = localStorage.getItem("imd_admin");
     if (storedUser) {
-      const userData = JSON.parse(storedUser);
-      setUser(userData);
+      try {
+        const userData = JSON.parse(storedUser);
+        // If user data doesn't have name/surname, fetch fresh from database
+        if (userData && (!userData.name || !userData.surname) && userData.id) {
+          // Fetch fresh user data from imd_users table
+          supabase
+            .from("imd_users")
+            .select("id, email, name, surname, role, status, created_at")
+            .eq("id", userData.id)
+            .single()
+            .then(({ data, error }: { data: any; error: any }) => {
+              if (!error && data) {
+                localStorage.setItem("imd_admin", JSON.stringify(data));
+                setUser(data);
+              } else {
+                setUser(userData);
+              }
+            });
+        } else {
+          setUser(userData);
+        }
+      } catch (error) {
+        console.error("Error parsing user data:", error);
+      }
     }
   }, []);
 
@@ -77,13 +100,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   <span className="text-sm font-medium truncate">
                     {user?.name && user?.surname 
                       ? `${user.name} ${user.surname}`
-                      : user?.name || user?.surname || user?.email || "Profile"}
+                      : user?.name 
+                        ? user.name
+                        : user?.surname 
+                          ? user.surname 
+                          : user?.email || "Profile"}
                   </span>
                   <span className="text-xs text-muted-foreground">View Profile</span>
                 </div>
                 <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground ml-auto" />
               </DropdownMenuTrigger>
-              <DropdownMenuContent className="left-0 right-auto">
+              <DropdownMenuContent className="right-0 bottom-full mb-2">
                 <DropdownMenuItem onClick={() => router.push("/profile")}>
                   <User className="mr-2 h-4 w-4" />
                   View Profile
