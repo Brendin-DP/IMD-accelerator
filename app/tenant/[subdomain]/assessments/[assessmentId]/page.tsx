@@ -98,6 +98,8 @@ export default function TenantAssessmentDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"internal" | "external">("internal");
   const [startingAssessment, setStartingAssessment] = useState(false);
+  const [completingAssessment, setCompletingAssessment] = useState(false);
+  const [resettingAssessment, setResettingAssessment] = useState(false);
   const { toasts, showToast, removeToast } = useToast();
 
   useEffect(() => {
@@ -770,6 +772,74 @@ export default function TenantAssessmentDetailPage() {
     }
   }
 
+  async function handleCompleteAssessment() {
+    if (!user?.id || !participantAssessment?.id) {
+      showToast("Assessment not found. Please try again.", "error");
+      return;
+    }
+
+    setCompletingAssessment(true);
+    try {
+      const { error: updateError } = await supabase
+        .from("participant_assessments")
+        .update({ status: "Completed" })
+        .eq("id", participantAssessment.id);
+
+      if (updateError) {
+        console.error("Error completing assessment:", updateError);
+        showToast(`Error: ${updateError.message}`, "error");
+        setCompletingAssessment(false);
+        return;
+      }
+
+      // Update local state
+      setParticipantAssessment((prev) => 
+        prev ? { ...prev, status: "Completed" } : null
+      );
+
+      showToast("Assessment completed successfully!", "success");
+    } catch (err) {
+      console.error("Error completing assessment:", err);
+      showToast("An unexpected error occurred. Please try again.", "error");
+    } finally {
+      setCompletingAssessment(false);
+    }
+  }
+
+  async function handleResetAssessment() {
+    if (!user?.id || !participantAssessment?.id) {
+      showToast("Assessment not found. Please try again.", "error");
+      return;
+    }
+
+    setResettingAssessment(true);
+    try {
+      const { error: updateError } = await supabase
+        .from("participant_assessments")
+        .update({ status: "Not started" })
+        .eq("id", participantAssessment.id);
+
+      if (updateError) {
+        console.error("Error resetting assessment:", updateError);
+        showToast(`Error: ${updateError.message}`, "error");
+        setResettingAssessment(false);
+        return;
+      }
+
+      // Update local state
+      setParticipantAssessment((prev) => 
+        prev ? { ...prev, status: "Not started" } : null
+      );
+
+      showToast("Assessment reset to not started.", "success");
+    } catch (err) {
+      console.error("Error resetting assessment:", err);
+      showToast("An unexpected error occurred. Please try again.", "error");
+    } finally {
+      setResettingAssessment(false);
+    }
+  }
+
   const getStatusColor = (status: string | null) => {
     if (!status) return "bg-gray-100 text-gray-800";
     const statusLower = status.toLowerCase();
@@ -908,9 +978,9 @@ export default function TenantAssessmentDetailPage() {
               </p>
             </div>
           </div>
-          {/* Start Assessment Button */}
-          {(!participantAssessment || participantAssessment.status === "Not started" || !participantAssessment.status) && (
-            <div className="mt-6 pt-6 border-t">
+          {/* Assessment Action Buttons */}
+          <div className="mt-6 pt-6 border-t">
+            {(!participantAssessment || participantAssessment.status === "Not started" || !participantAssessment.status) && (
               <Button
                 onClick={handleStartAssessment}
                 disabled={!user?.id || startingAssessment}
@@ -918,8 +988,29 @@ export default function TenantAssessmentDetailPage() {
               >
                 {startingAssessment ? "Starting..." : "Start Assessment"}
               </Button>
-            </div>
-          )}
+            )}
+            {participantAssessment?.status === "In Progress" && (
+              <Button
+                onClick={handleCompleteAssessment}
+                disabled={!user?.id || completingAssessment}
+                className="w-full sm:w-auto"
+              >
+                {completingAssessment ? "Completing..." : "Complete Assessment"}
+              </Button>
+            )}
+            {participantAssessment?.status === "Completed" && (
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleResetAssessment}
+                  disabled={!user?.id || resettingAssessment}
+                  variant="secondary"
+                  className="w-full sm:w-auto"
+                >
+                  {resettingAssessment ? "Resetting..." : "Not started yet"}
+                </Button>
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
