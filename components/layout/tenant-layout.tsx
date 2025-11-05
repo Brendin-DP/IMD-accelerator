@@ -115,6 +115,8 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
 
   async function fetchNotificationCount(userId: string) {
     try {
+      console.log("🔔 fetchNotificationCount called with userId:", userId, "type:", typeof userId);
+      
       // Get session start timestamp - only reset on new login
       const sessionStart = sessionStorage.getItem(`session_start_${userId}`);
       if (!sessionStart) {
@@ -123,16 +125,23 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
       }
       const sessionStartTime = sessionStorage.getItem(`session_start_${userId}`) || new Date(0).toISOString();
       const lastChecked = sessionStorage.getItem(`notifications_last_checked_${userId}`) || sessionStartTime;
+      console.log("🔔 lastChecked:", lastChecked, "sessionStartTime:", sessionStartTime);
 
       // Count new review requests (where user is reviewer, request_status = pending, created after last check)
       // This way the count resets when they visit the notifications page, but messages persist
       // Exclude self-nominated external reviewers
+      console.log("🔔 Counting review requests for userId:", userId, "lastChecked:", lastChecked);
       const { data: reviewRequests } = await supabase
         .from("reviewer_nominations")
-        .select("id, is_external, nominated_by_id, created_at")
+        .select("id, is_external, nominated_by_id, reviewer_id, created_at")
         .eq("reviewer_id", userId)
         .eq("request_status", "pending")
         .gt("created_at", lastChecked);
+      
+      console.log("🔔 Review requests count query result:", { 
+        count: reviewRequests?.length || 0, 
+        requests: reviewRequests 
+      });
 
       // Filter out self-nominated external reviewers
       const validReviewRequests = reviewRequests?.filter((req: any) => {

@@ -57,6 +57,7 @@ export default function TenantNotificationsPage() {
   async function fetchNotifications(userId: string) {
     try {
       setLoading(true);
+      console.log("🔔 fetchNotifications called with userId:", userId, "type:", typeof userId);
 
       // Get last checked timestamp from sessionStorage (or set to session start)
       const sessionStart = sessionStorage.getItem(`session_start_${userId}`);
@@ -66,9 +67,11 @@ export default function TenantNotificationsPage() {
       // For notifications page, show all notifications from session start (not filtered by lastChecked)
       // This ensures users see all notifications when they visit the page
       const sessionStartTime = sessionStorage.getItem(`session_start_${userId}`) || new Date(0).toISOString();
+      console.log("🔔 sessionStartTime:", sessionStartTime);
 
       // Fetch new review requests (where user is reviewer, request_status = pending, created after session start)
       // Exclude self-nominated external reviewers
+      console.log("🔔 Fetching review requests for userId:", userId, "sessionStartTime:", sessionStartTime);
       const { data: reviewRequests, error: reviewError } = await supabase
         .from("reviewer_nominations")
         .select(`
@@ -76,6 +79,7 @@ export default function TenantNotificationsPage() {
           created_at,
           is_external,
           nominated_by_id,
+          reviewer_id,
           nominated_by:client_users!reviewer_nominations_nominated_by_id_fkey(id, name, surname, email),
           participant_assessment:participant_assessments(
             cohort_assessment:cohort_assessments(name)
@@ -85,6 +89,12 @@ export default function TenantNotificationsPage() {
         .eq("request_status", "pending")
         .gt("created_at", sessionStartTime)
         .order("created_at", { ascending: false });
+      
+      console.log("🔔 Review requests query result:", { 
+        count: reviewRequests?.length || 0, 
+        requests: reviewRequests,
+        error: reviewError 
+      });
 
       // Handle relationship cache issues for review requests
       let reviewRequestsData = reviewRequests;
@@ -227,7 +237,7 @@ export default function TenantNotificationsPage() {
           allNotifications.push({
             id: `review_request_${req.id}`,
             type: "review_request",
-            message: `${requesterName} requested you to review their ${assessmentName}`,
+            message: `${requesterName} has requested a review nomination from you`,
             nomination_id: req.id,
             created_at: req.created_at,
             reviewer: nominatedBy && typeof nominatedBy === 'object' ? nominatedBy : undefined,
