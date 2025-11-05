@@ -15,23 +15,76 @@ export default function LoginPage() {
     e.preventDefault();
     setError("");
 
-    // Query your custom imd_users table - explicitly select name and surname fields
-    const { data: user, error: dbError } = await supabase
-      .from("imd_users")
-      .select("id, email, name, surname, role, status, created_at")
-      .eq("email", email)
-      .eq("password_hash", password)
-      .eq("status", "active")
-      .single();
+    try {
+      // Normalize email
+      const normalizedEmail = email.toLowerCase().trim();
+      console.log("🔐 Login attempt:", { email: normalizedEmail, passwordLength: password.length });
 
-    if (dbError || !user) {
-      setError("Invalid credentials");
-      return;
+      // First, fetch the user by email and status
+      const { data: user, error: dbError } = await supabase
+        .from("imd_users")
+        .select("id, email, name, surname, role, status, created_at, password_hash")
+        .eq("email", normalizedEmail)
+        .eq("status", "active")
+        .maybeSingle();
+
+      console.log("📡 Database response:", { 
+        user: user ? { id: user.id, email: user.email, role: user.role, status: user.status, hasPassword: !!user.password_hash } : null,
+        error: dbError 
+      });
+
+      if (dbError) {
+        console.error("❌ Error fetching user:", dbError);
+        setError(`Database error: ${dbError.message}`);
+        return;
+      }
+
+      if (!user) {
+        console.error("❌ User not found or not active");
+        setError("Invalid credentials - User not found or account is not active");
+        return;
+      }
+
+      // Check if password_hash exists
+      if (!user.password_hash) {
+        console.error("❌ No password_hash found for user");
+        setError("Password not set for this user. Please contact support.");
+        return;
+      }
+
+      console.log("🔑 Password comparison:", {
+        storedPassword: user.password_hash,
+        enteredPassword: password,
+        match: user.password_hash === password,
+        storedLength: user.password_hash.length,
+        enteredLength: password.length
+      });
+
+      // Compare passwords (assuming plain text storage for now)
+      if (user.password_hash !== password) {
+        console.error("❌ Password mismatch");
+        setError("Invalid credentials - Password does not match");
+        return;
+      }
+
+      // Check role if needed (optional - admin role check)
+      if (user.role && user.role !== "admin") {
+        console.warn("⚠️ User role is not admin:", user.role);
+        // Still allow login, but log it
+      }
+
+      console.log("✅ Login successful:", { id: user.id, email: user.email, role: user.role });
+
+      // Remove password_hash from user object before storing
+      const { password_hash, ...userWithoutPassword } = user;
+
+      // Temporarily store login info in localStorage
+      localStorage.setItem("imd_admin", JSON.stringify(userWithoutPassword));
+      router.push("/dashboard");
+    } catch (err) {
+      console.error("❌ Login error:", err);
+      setError(`An error occurred: ${err instanceof Error ? err.message : "Unknown error"}`);
     }
-
-    // Temporarily store login info in localStorage
-    localStorage.setItem("imd_admin", JSON.stringify(user));
-    router.push("/dashboard");
   }
 
   return (

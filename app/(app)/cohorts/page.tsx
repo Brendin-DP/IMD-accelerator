@@ -85,11 +85,13 @@ export default function CohortsPage() {
   }, []);
 
   useEffect(() => {
-    if (isDialogOpen && editingCohortId) {
+    if (isDialogOpen) {
       fetchClients();
       fetchPlans();
-      fetchCohortForEdit(editingCohortId);
-    } else if (!isDialogOpen) {
+      if (editingCohortId) {
+        fetchCohortForEdit(editingCohortId);
+      }
+    } else {
       // Reset form when dialog closes
       setEditingCohortId(null);
       setFormData({
@@ -669,20 +671,8 @@ export default function CohortsPage() {
     setSubmitError(null);
 
     try {
-      if (!editingCohortId) {
-        setSubmitError("Cannot create new cohorts. Please edit an existing cohort.");
-        setSubmitting(false);
-        return;
-      }
-
-      if (!formData.name || !formData.client_id || !formData.plan_id || !formData.start_date || !formData.end_date) {
-        setSubmitError("Please fill in all required fields");
-        setSubmitting(false);
-        return;
-      }
-
-      if (formData.participant_ids.length === 0) {
-        setSubmitError("Please select at least one participant");
+      if (!formData.name || !formData.client_id || !formData.plan_id) {
+        setSubmitError("Please fill in all required fields (Name, Client, and Type)");
         setSubmitting(false);
         return;
       }
@@ -723,27 +713,102 @@ export default function CohortsPage() {
           console.error("Error deleting existing participants:", deleteError);
         }
       } else {
-        // Creation is disabled - only editing is allowed
-        setSubmitError("Cannot create new cohorts. Please edit an existing cohort.");
-        setSubmitting(false);
-        return;
+        // Create new cohort
+        const insertData: any = {
+          name: formData.name,
+          client_id: formData.client_id,
+          plan_id: formData.plan_id,
+          status: "draft",
+        };
+        
+        if (formData.start_date) {
+          insertData.start_date = formData.start_date;
+        }
+        if (formData.end_date) {
+          insertData.end_date = formData.end_date;
+        }
+
+        const { data: cohort, error: cohortError } = await supabase
+          .from("cohorts")
+          .insert([insertData])
+          .select()
+          .single();
+
+        if (cohortError) {
+          console.error("Error creating cohort:", cohortError);
+          setSubmitError(cohortError.message);
+          setSubmitting(false);
+          return;
+        }
+
+        cohortId = cohort.id;
+
+        // Create cohort assessments from plan assessments
+        console.log("📋 Fetching plan assessments for plan_id:", formData.plan_id);
+        const { data: planAssessments, error: planAssessmentsError } = await supabase
+          .from("plan_assessments")
+          .select("assessment_type_id")
+          .eq("plan_id", formData.plan_id);
+
+        if (planAssessmentsError) {
+          console.error("❌ Error fetching plan assessments:", planAssessmentsError);
+          setSubmitError(`Failed to fetch plan assessments: ${planAssessmentsError.message}`);
+          setSubmitting(false);
+          return;
+        }
+
+        console.log("📋 Plan assessments found:", planAssessments);
+
+        if (planAssessments && planAssessments.length > 0) {
+          // Create cohort assessments for each plan assessment
+          const cohortAssessmentsToCreate = planAssessments.map((pa: any) => {
+            const assessmentTypeId = pa.assessment_type_id;
+            return {
+              cohort_id: cohortId,
+              assessment_type_id: assessmentTypeId,
+              name: null,
+              assessment_status: "Not started",
+            };
+          });
+
+          console.log("📝 Creating cohort assessments:", cohortAssessmentsToCreate);
+
+          const { data: createdAssessments, error: assessmentsError } = await supabase
+            .from("cohort_assessments")
+            .insert(cohortAssessmentsToCreate)
+            .select();
+
+          if (assessmentsError) {
+            console.error("❌ Error creating cohort assessments:", assessmentsError);
+            setSubmitError(`Failed to create cohort assessments: ${assessmentsError.message}`);
+            setSubmitting(false);
+            return;
+          }
+
+          console.log("✅ Successfully created cohort assessments:", createdAssessments);
+        } else {
+          console.warn("⚠️ No plan assessments found for plan_id:", formData.plan_id);
+        }
       }
 
-      // Add participants to cohort
-      const cohortParticipants = formData.participant_ids.map((client_user_id) => ({
-        cohort_id: cohortId,
-        client_user_id,
-      }));
+      // Add participants to cohort (if any selected)
+      if (formData.participant_ids.length > 0) {
 
-      const { error: participantsError } = await supabase
-        .from("cohort_participants")
-        .insert(cohortParticipants);
+        const cohortParticipants = formData.participant_ids.map((client_user_id) => ({
+          cohort_id: cohortId,
+          client_user_id,
+        }));
 
-      if (participantsError) {
-        console.error("Error adding participants:", participantsError);
-        setSubmitError(participantsError.message);
-        setSubmitting(false);
-        return;
+        const { error: participantsError } = await supabase
+          .from("cohort_participants")
+          .insert(cohortParticipants);
+
+        if (participantsError) {
+          console.error("Error adding participants:", participantsError);
+          setSubmitError(participantsError.message);
+          setSubmitting(false);
+          return;
+        }
       }
 
       // Reset form and close dialog
@@ -779,6 +844,13 @@ export default function CohortsPage() {
           <Button variant="secondary" onClick={handleDownloadData}>
             <Download className="mr-2 h-4 w-4" />
             Download Data
+          </Button>
+          <Button onClick={() => {
+            setEditingCohortId(null);
+            setIsDialogOpen(true);
+          }}>
+            <Plus className="mr-2 h-4 w-4" />
+            Create Cohort
           </Button>
         </div>
       </div>
@@ -878,18 +950,18 @@ export default function CohortsPage() {
         )}
       </div>
 
-      {/* Edit Cohort Dialog */}
-      <Dialog open={isDialogOpen && !!editingCohortId} onOpenChange={(open) => {
-        if (!open) {
-          setIsDialogOpen(false);
-        }
-      }}>
+      {/* Create/Edit Cohort Dialog */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogClose onClick={() => setIsDialogOpen(false)} />
           <DialogHeader>
-            <DialogTitle>Edit Cohort</DialogTitle>
+            <DialogTitle>
+              {editingCohortId ? "Edit Cohort" : "Create Cohort"}
+            </DialogTitle>
             <DialogDescription>
-              Update the cohort details below.
+              {editingCohortId
+                ? "Update the cohort details below."
+                : "Create a new cohort by selecting a client, type, and optionally dates and participants."}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -930,10 +1002,10 @@ export default function CohortsPage() {
               </select>
             </div>
 
-            {/* Plan Selection */}
+            {/* Type (Plan) Selection */}
             <div className="space-y-2.5">
               <label htmlFor="plan_id" className="text-sm font-medium">
-                Plan <span className="text-destructive">*</span>
+                Type <span className="text-destructive">*</span>
               </label>
               <select
                 id="plan_id"
@@ -943,7 +1015,7 @@ export default function CohortsPage() {
                 required
                 className="flex h-10 w-full rounded-md border border-input bg-background pl-3 pr-10 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
-                <option value="">Select a plan</option>
+                <option value="">Select a type</option>
                 {plans.map((plan) => (
                   <option key={plan.id} value={plan.id}>
                     {plan.name}
@@ -956,7 +1028,7 @@ export default function CohortsPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2.5">
                 <label htmlFor="start_date" className="text-sm font-medium">
-                  Start Date <span className="text-destructive">*</span>
+                  Start Date
                 </label>
                 <div className="relative">
                   <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
@@ -966,14 +1038,13 @@ export default function CohortsPage() {
                     type="date"
                     value={formData.start_date}
                     onChange={handleInputChange}
-                    required
                     className="pl-10"
                   />
                 </div>
               </div>
               <div className="space-y-2.5">
                 <label htmlFor="end_date" className="text-sm font-medium">
-                  End Date <span className="text-destructive">*</span>
+                  End Date
                 </label>
                 <div className="relative">
                   <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
@@ -983,7 +1054,6 @@ export default function CohortsPage() {
                     type="date"
                     value={formData.end_date}
                     onChange={handleInputChange}
-                    required
                     className="pl-10"
                   />
                 </div>
@@ -993,7 +1063,7 @@ export default function CohortsPage() {
             {/* Participants Selection */}
             <div className="space-y-2.5">
               <label className="text-sm font-medium">
-                Participants <span className="text-destructive">*</span>
+                Participants
               </label>
               {!formData.client_id ? (
                 <div className="border rounded-md p-4 text-center text-sm text-muted-foreground">
@@ -1064,8 +1134,14 @@ export default function CohortsPage() {
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={submitting || !editingCohortId}>
-                {submitting ? "Updating..." : "Update Cohort"}
+              <Button type="submit" disabled={submitting}>
+                {submitting
+                  ? editingCohortId
+                    ? "Updating..."
+                    : "Creating..."
+                  : editingCohortId
+                  ? "Update Cohort"
+                  : "Create Cohort"}
               </Button>
             </div>
           </form>

@@ -268,7 +268,7 @@ export default function CohortDetailPage() {
         // Get plan assessments
         const { data: planAssessments, error: planAssessmentsError } = await supabase
           .from("plan_assessments")
-          .select("assessment_id")
+          .select("assessment_type_id")
           .eq("plan_id", cohort.plan_id);
 
         if (planAssessmentsError) {
@@ -278,16 +278,16 @@ export default function CohortDetailPage() {
         }
 
         // Create cohort assessments from plan assessments
-        // Use assessment_id from plan_assessments to link to assessment_types
+        // Use assessment_type_id from plan_assessments to link to assessment_types
         if (planAssessments && planAssessments.length > 0) {
           // Explicitly create objects with only the fields we want to insert
           // Ensure we don't include 'status' field - only use 'assessment_status'
           const cohortAssessmentsToCreate = planAssessments.map((pa: any) => {
-            // Only extract assessment_id from pa to avoid any unexpected fields
-            const assessmentId = pa.assessment_id;
+            // Extract assessment_type_id from pa
+            const assessmentTypeId = pa.assessment_type_id;
             return {
               cohort_id: cohortId,
-              assessment_type_id: assessmentId,
+              assessment_type_id: assessmentTypeId,
               name: null,
               assessment_status: "Not started",
             };
