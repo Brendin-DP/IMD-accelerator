@@ -212,43 +212,49 @@ export default function TenantAssessmentDetailPage() {
       if (participantsError || !participants || participants.length === 0) {
         console.warn("No participants found for this user");
         setParticipantAssessment(null);
+        setNominations([]);
         return;
       }
 
       const participantIds = participants.map((p: any) => p.id);
 
       // Fetch the participant_assessment for this assessment and user
+      // Use limit(1) instead of maybeSingle() to handle potential duplicates
       const { data: participantAssessmentData, error: paError } = await supabase
         .from("participant_assessments")
         .select("*")
         .eq("cohort_assessment_id", assessmentId)
         .in("participant_id", participantIds)
-        .maybeSingle();
+        .limit(1);
 
       if (paError) {
         console.error("Error fetching participant assessment:", paError);
         setParticipantAssessment(null);
+        setNominations([]);
         return;
       }
 
-      setParticipantAssessment(participantAssessmentData as ParticipantAssessment);
+      const pa = participantAssessmentData && participantAssessmentData.length > 0 
+        ? participantAssessmentData[0] 
+        : null;
+
+      setParticipantAssessment(pa as ParticipantAssessment | null);
       
       // Fetch nominations if we have a participant assessment
-      if (participantAssessmentData) {
-        fetchNominations(participantAssessmentData.id, userId);
+      if (pa?.id) {
+        fetchNominations(pa.id, userId);
       } else {
-        // Even if participant assessment doesn't exist, try to fetch nominations
-        // by finding any participant_assessment for this assessment and user
-        // This handles cases where nominations exist but participant_assessment wasn't found
+        // Check if there are any nominations for this assessment that might exist
+        // by checking all participant_assessments for this assessment
         const { data: allPAs } = await supabase
           .from("participant_assessments")
           .select("id")
           .eq("cohort_assessment_id", assessmentId)
           .in("participant_id", participantIds)
-          .maybeSingle();
+          .limit(1);
         
-        if (allPAs?.id) {
-          fetchNominations(allPAs.id, userId);
+        if (allPAs && allPAs.length > 0 && allPAs[0]?.id) {
+          fetchNominations(allPAs[0].id, userId);
         } else {
           setNominations([]);
         }
@@ -494,7 +500,8 @@ export default function TenantAssessmentDetailPage() {
   }
 
   async function handleSubmitNominations() {
-    if (!participantAssessment || !user || selectedReviewers.length === 0) {
+    if (!user || selectedReviewers.length === 0) {
+      showToast("Please select at least one reviewer.", "error");
       return;
     }
 
@@ -510,12 +517,53 @@ export default function TenantAssessmentDetailPage() {
         return;
       }
 
+      // If participant assessment doesn't exist, create it first
+      let participantAssessmentId = participantAssessment?.id;
+      
+      if (!participantAssessmentId) {
+        // Find the cohort_participant for this user
+        const { data: participants, error: participantsError } = await supabase
+          .from("cohort_participants")
+          .select("id")
+          .eq("client_user_id", user.id);
+
+        if (participantsError || !participants || participants.length === 0) {
+          showToast("Error: Participant not found.", "error");
+          setSubmittingNominations(false);
+          return;
+        }
+
+        const participantIds = participants.map((p: any) => p.id);
+
+        // Create participant_assessment if it doesn't exist
+        const { data: newPA, error: createError } = await supabase
+          .from("participant_assessments")
+          .insert({
+            participant_id: participantIds[0], // Use first participant ID
+            cohort_assessment_id: assessmentId,
+            status: participantAssessment?.status || "Not started",
+            allow_reviewer_nominations: true, // Default to true for new assessments
+          })
+          .select()
+          .single();
+
+        if (createError) {
+          console.error("Error creating participant assessment:", createError);
+          showToast(`Error: ${createError.message}`, "error");
+          setSubmittingNominations(false);
+          return;
+        }
+
+        participantAssessmentId = newPA.id;
+        setParticipantAssessment(newPA as ParticipantAssessment);
+      }
+
       // Check existing nominations to avoid duplicates
       // Only check for active nominations (pending or accepted), not rejected ones
       const { data: existingNominations, error: checkError } = await supabase
         .from("reviewer_nominations")
         .select("reviewer_id, external_reviewer_id, request_status")
-        .eq("participant_assessment_id", participantAssessment.id)
+        .eq("participant_assessment_id", participantAssessmentId)
         .eq("nominated_by_id", user.id)
         .or("request_status.eq.pending,request_status.eq.accepted");
 
@@ -543,7 +591,7 @@ export default function TenantAssessmentDetailPage() {
       // Process internal reviewers
       for (const reviewerId of newInternalReviewers) {
         nominationPayload.push({
-          participant_assessment_id: participantAssessment.id,
+          participant_assessment_id: participantAssessmentId,
           reviewer_id: reviewerId,
           nominated_by_id: user.id,
           is_external: false,
@@ -600,7 +648,7 @@ export default function TenantAssessmentDetailPage() {
           // Since reviewer_id has NOT NULL constraint, we'll use a workaround
           // The database schema should ideally allow reviewer_id to be nullable for external reviewers
           nominationPayload.push({
-            participant_assessment_id: participantAssessment.id,
+            participant_assessment_id: participantAssessmentId,
             reviewer_id: user.id, // Temporary workaround: use nominated_by_id to satisfy NOT NULL constraint
             is_external: true,
             external_reviewer_id: external.id,
@@ -643,8 +691,12 @@ export default function TenantAssessmentDetailPage() {
         return;
       }
 
-      // Refresh nominations list
-      await fetchNominations(participantAssessment.id, user.id);
+      // Refresh nominations list and participant assessment
+      if (participantAssessmentId) {
+        await fetchNominations(participantAssessmentId, user.id);
+        // Refresh participant assessment to get updated state
+        await fetchParticipantAssessment(user.id);
+      }
       
       // Trigger notification count update for reviewers who received the nominations
       window.dispatchEvent(new CustomEvent('notification-update'));
@@ -686,7 +738,9 @@ export default function TenantAssessmentDetailPage() {
       }
 
       // Refresh nominations list
-      await fetchNominations(participantAssessment.id, user.id);
+      if (participantAssessment?.id) {
+        await fetchNominations(participantAssessment.id, user.id);
+      }
 
       showToast("Nomination request removed successfully.", "success");
     } catch (err) {
@@ -1077,14 +1131,18 @@ export default function TenantAssessmentDetailPage() {
       )}
 
       {/* Nominate for Review Section */}
-      {participantAssessment && participantAssessment.allow_reviewer_nominations && (
+      {/* Show nominations section if participant assessment exists and allows nominations, OR if assessment exists and we should allow by default */}
+      {(participantAssessment?.allow_reviewer_nominations !== false) && (
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle>Nominate for Review</CardTitle>
               <Button
                 onClick={handleOpenNominationModal}
-                disabled={nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length >= 10}
+                disabled={
+                  (!participantAssessment?.id && !assessment) || 
+                  nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length >= 10
+                }
               >
                 Request Nomination
               </Button>

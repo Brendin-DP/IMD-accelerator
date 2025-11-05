@@ -690,16 +690,14 @@ export default function TenantDashboardPage() {
                                   <dt className="text-sm font-medium text-gray-900">{assessmentName}</dt>
                                   <dd className="text-sm text-gray-500">{cohortName}</dd>
                                 </div>
-                                {assessment.status && (
-                                  <div className="flex-shrink-0">
-                                    <dt className="sr-only">Status</dt>
-                                    <dd>
-                                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(assessment.status)}`}>
-                                        {assessment.status}
-                                      </span>
-                                    </dd>
-                                  </div>
-                                )}
+                                <div className="flex-shrink-0">
+                                  <dt className="sr-only">Status</dt>
+                                  <dd>
+                                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(assessment.status || "Not started")}`}>
+                                      {assessment.status || "Not started"}
+                                    </span>
+                                  </dd>
+                                </div>
                                 {assessment.score !== null && (
                                   <div className="w-full">
                                     <dt className="sr-only">Score</dt>
