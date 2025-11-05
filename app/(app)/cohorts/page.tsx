@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Pencil, Trash2, Download, MoreVertical, Calendar } from "lucide-react";
+import { Plus, Pencil, Trash2, Download, MoreVertical, Calendar, ArrowUp, ArrowDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { supabase } from "@/lib/supabaseClient";
 import * as XLSX from "xlsx";
+import { useTableSort } from "@/hooks/useTableSort";
 
 interface Client {
   id: string;
@@ -79,6 +80,15 @@ export default function CohortsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Prepare cohorts data for sorting (flatten nested objects)
+  const cohortsForSorting = cohorts.map((cohort) => ({
+    ...cohort,
+    clientName: (cohort.client as any)?.name || "",
+    planName: (cohort.plan as any)?.name || "",
+  }));
+
+  const { sortedData: sortedCohorts, sortConfig, handleSort } = useTableSort(cohortsForSorting);
 
   useEffect(() => {
     fetchCohorts();
@@ -869,18 +879,78 @@ export default function CohortsPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b bg-muted/50">
-                <th className="px-6 py-3 text-left text-sm font-medium">Name</th>
-                <th className="px-6 py-3 text-left text-sm font-medium">Client</th>
-                <th className="px-6 py-3 text-left text-sm font-medium">Plan</th>
-                <th className="px-6 py-3 text-left text-sm font-medium">Start Date</th>
-                <th className="px-6 py-3 text-left text-sm font-medium">End Date</th>
+                <th 
+                  className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                  onClick={() => handleSort("name")}
+                >
+                  <div className="flex items-center gap-2">
+                    Name
+                    {sortConfig.key === "name" && (
+                      sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                    )}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                  onClick={() => handleSort("clientName")}
+                >
+                  <div className="flex items-center gap-2">
+                    Client
+                    {sortConfig.key === "clientName" && (
+                      sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                    )}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                  onClick={() => handleSort("planName")}
+                >
+                  <div className="flex items-center gap-2">
+                    Plan
+                    {sortConfig.key === "planName" && (
+                      sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                    )}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                  onClick={() => handleSort("start_date")}
+                >
+                  <div className="flex items-center gap-2">
+                    Start Date
+                    {sortConfig.key === "start_date" && (
+                      sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                    )}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                  onClick={() => handleSort("end_date")}
+                >
+                  <div className="flex items-center gap-2">
+                    End Date
+                    {sortConfig.key === "end_date" && (
+                      sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                    )}
+                  </div>
+                </th>
                 <th className="px-6 py-3 text-left text-sm font-medium">Status</th>
-                <th className="px-6 py-3 text-left text-sm font-medium">Created</th>
+                <th 
+                  className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                  onClick={() => handleSort("created_at")}
+                >
+                  <div className="flex items-center gap-2">
+                    Created
+                    {sortConfig.key === "created_at" && (
+                      sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                    )}
+                  </div>
+                </th>
                 <th className="px-6 py-3 text-left text-sm font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {cohorts.map((cohort) => (
+              {sortedCohorts.map((cohort) => (
                 <tr
                   key={cohort.id}
                   className="border-b hover:bg-muted/50 transition-colors cursor-pointer"

@@ -2,11 +2,13 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ArrowUp, ArrowDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { supabase } from "@/lib/supabaseClient";
+import { useTableSort } from "@/hooks/useTableSort";
 
 interface ReviewerNomination {
   id: string;
@@ -67,6 +69,7 @@ export default function ParticipantNominationsPage() {
   const [error, setError] = useState<string | null>(null);
   const [nominationsLoading, setNominationsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"internal" | "external">("internal");
+  const [nominationSearch, setNominationSearch] = useState("");
 
   useEffect(() => {
     if (participantAssessmentId && cohortId && assessmentId) {
@@ -486,28 +489,37 @@ export default function ParticipantNominationsPage() {
           <CardTitle>Reviewer Nominations</CardTitle>
         </CardHeader>
         <CardContent>
-          {/* Tabs */}
-          <div className="flex space-x-1 border-b mb-4">
-            <button
-              onClick={() => setActiveTab("internal")}
-              className={`px-4 py-2 text-sm font-medium transition-colors ${
-                activeTab === "internal"
-                  ? "border-b-2 border-primary text-primary"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Internal Nominations
-            </button>
-            <button
-              onClick={() => setActiveTab("external")}
-              className={`px-4 py-2 text-sm font-medium transition-colors ${
-                activeTab === "external"
-                  ? "border-b-2 border-primary text-primary"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              External Nominations
-            </button>
+          {/* Tabs and Search */}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex space-x-1 border-b">
+              <button
+                onClick={() => setActiveTab("internal")}
+                className={`px-4 py-2 text-sm font-medium transition-colors ${
+                  activeTab === "internal"
+                    ? "border-b-2 border-primary text-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Internal Nominations
+              </button>
+              <button
+                onClick={() => setActiveTab("external")}
+                className={`px-4 py-2 text-sm font-medium transition-colors ${
+                  activeTab === "external"
+                    ? "border-b-2 border-primary text-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                External Nominations
+              </button>
+            </div>
+            <Input
+              type="text"
+              placeholder="Search nominations..."
+              value={nominationSearch}
+              onChange={(e) => setNominationSearch(e.target.value)}
+              className="w-64"
+            />
           </div>
 
           {nominationsLoading ? (
@@ -516,23 +528,101 @@ export default function ParticipantNominationsPage() {
             </div>
           ) : activeTab === "internal" ? (
             (() => {
-              const internalNominations = nominations.filter((n) => !n.is_external);
-              return internalNominations.length === 0 ? (
+              let internalNominations = nominations.filter((n) => !n.is_external);
+              
+              // Filter by search
+              if (nominationSearch.trim()) {
+                const searchLower = nominationSearch.toLowerCase();
+                internalNominations = internalNominations.filter((nomination) => {
+                  const reviewer = nomination.reviewer as any;
+                  const nominatedBy = nomination.nominated_by as any;
+                  const reviewerName = `${reviewer?.name || ""} ${reviewer?.surname || ""}`.trim().toLowerCase() || reviewer?.email?.toLowerCase() || "";
+                  const nominatedByName = `${nominatedBy?.name || ""} ${nominatedBy?.surname || ""}`.trim().toLowerCase() || nominatedBy?.email?.toLowerCase() || "";
+                  const status = (nomination.status || "").toLowerCase();
+                  
+                  return reviewerName.includes(searchLower) || 
+                         nominatedByName.includes(searchLower) || 
+                         status.includes(searchLower);
+                });
+              }
+              
+              // Prepare internal nominations for sorting
+              const internalForSorting = internalNominations.map((nomination) => ({
+                ...nomination,
+                reviewerName: `${(nomination.reviewer as any)?.name || ""} ${(nomination.reviewer as any)?.surname || ""}`.trim() || (nomination.reviewer as any)?.email || "",
+                nominatedByName: nomination.nominated_by
+                  ? `${nomination.nominated_by.name || ""} ${nomination.nominated_by.surname || ""}`.trim() || nomination.nominated_by.email || ""
+                  : "",
+              }));
+
+              const { sortedData: sortedInternal, sortConfig: sortConfigInternal, handleSort: handleSortInternal } = useTableSort(internalForSorting);
+
+              return sortedInternal.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No internal nominations found for this participant.</p>
               ) : (
                 <div className="rounded-md border">
                   <table className="w-full">
                     <thead>
                       <tr className="border-b bg-muted/50">
-                        <th className="px-6 py-3 text-left text-sm font-medium">Reviewer</th>
-                        <th className="px-6 py-3 text-left text-sm font-medium">Nominated By</th>
-                        <th className="px-6 py-3 text-left text-sm font-medium">Status</th>
-                        <th className="px-6 py-3 text-left text-sm font-medium">Review Submitted</th>
-                        <th className="px-6 py-3 text-left text-sm font-medium">Created</th>
+                        <th 
+                          className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                          onClick={() => handleSortInternal("reviewerName")}
+                        >
+                          <div className="flex items-center gap-2">
+                            Reviewer
+                            {sortConfigInternal.key === "reviewerName" && (
+                              sortConfigInternal.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                            )}
+                          </div>
+                        </th>
+                        <th 
+                          className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                          onClick={() => handleSortInternal("nominatedByName")}
+                        >
+                          <div className="flex items-center gap-2">
+                            Nominated By
+                            {sortConfigInternal.key === "nominatedByName" && (
+                              sortConfigInternal.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                            )}
+                          </div>
+                        </th>
+                        <th 
+                          className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                          onClick={() => handleSortInternal("status")}
+                        >
+                          <div className="flex items-center gap-2">
+                            Status
+                            {sortConfigInternal.key === "status" && (
+                              sortConfigInternal.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                            )}
+                          </div>
+                        </th>
+                        <th 
+                          className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                          onClick={() => handleSortInternal("review_submitted_at")}
+                        >
+                          <div className="flex items-center gap-2">
+                            Review Submitted
+                            {sortConfigInternal.key === "review_submitted_at" && (
+                              sortConfigInternal.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                            )}
+                          </div>
+                        </th>
+                        <th 
+                          className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                          onClick={() => handleSortInternal("created_at")}
+                        >
+                          <div className="flex items-center gap-2">
+                            Created
+                            {sortConfigInternal.key === "created_at" && (
+                              sortConfigInternal.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                            )}
+                          </div>
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
-                      {internalNominations.map((nomination) => {
+                      {sortedInternal.map((nomination) => {
                         const reviewer = nomination.reviewer as any;
                         const nominatedBy = nomination.nominated_by as any;
                         return (
@@ -582,23 +672,101 @@ export default function ParticipantNominationsPage() {
             })()
           ) : (
             (() => {
-              const externalNominations = nominations.filter((n) => n.is_external);
-              return externalNominations.length === 0 ? (
+              let externalNominations = nominations.filter((n) => n.is_external);
+              
+              // Filter by search
+              if (nominationSearch.trim()) {
+                const searchLower = nominationSearch.toLowerCase();
+                externalNominations = externalNominations.filter((nomination) => {
+                  const externalReviewer = nomination.external_reviewer as any;
+                  const nominatedBy = nomination.nominated_by as any;
+                  const email = (externalReviewer?.email || "").toLowerCase();
+                  const nominatedByName = `${nominatedBy?.name || ""} ${nominatedBy?.surname || ""}`.trim().toLowerCase() || nominatedBy?.email?.toLowerCase() || "";
+                  const status = (nomination.status || "").toLowerCase();
+                  
+                  return email.includes(searchLower) || 
+                         nominatedByName.includes(searchLower) || 
+                         status.includes(searchLower);
+                });
+              }
+              
+              // Prepare external nominations for sorting
+              const externalForSorting = externalNominations.map((nomination) => ({
+                ...nomination,
+                email: (nomination.external_reviewer as any)?.email || "",
+                nominatedByName: nomination.nominated_by
+                  ? `${nomination.nominated_by.name || ""} ${nomination.nominated_by.surname || ""}`.trim() || nomination.nominated_by.email || ""
+                  : "",
+              }));
+
+              const { sortedData: sortedExternal, sortConfig: sortConfigExternal, handleSort: handleSortExternal } = useTableSort(externalForSorting);
+
+              return sortedExternal.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No external nominations found for this participant.</p>
               ) : (
                 <div className="rounded-md border">
                   <table className="w-full">
                     <thead>
                       <tr className="border-b bg-muted/50">
-                        <th className="px-6 py-3 text-left text-sm font-medium">Email</th>
-                        <th className="px-6 py-3 text-left text-sm font-medium">Nominated By</th>
-                        <th className="px-6 py-3 text-left text-sm font-medium">Status</th>
-                        <th className="px-6 py-3 text-left text-sm font-medium">Review Submitted</th>
-                        <th className="px-6 py-3 text-left text-sm font-medium">Created</th>
+                        <th 
+                          className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                          onClick={() => handleSortExternal("email")}
+                        >
+                          <div className="flex items-center gap-2">
+                            Email
+                            {sortConfigExternal.key === "email" && (
+                              sortConfigExternal.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                            )}
+                          </div>
+                        </th>
+                        <th 
+                          className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                          onClick={() => handleSortExternal("nominatedByName")}
+                        >
+                          <div className="flex items-center gap-2">
+                            Nominated By
+                            {sortConfigExternal.key === "nominatedByName" && (
+                              sortConfigExternal.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                            )}
+                          </div>
+                        </th>
+                        <th 
+                          className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                          onClick={() => handleSortExternal("status")}
+                        >
+                          <div className="flex items-center gap-2">
+                            Status
+                            {sortConfigExternal.key === "status" && (
+                              sortConfigExternal.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                            )}
+                          </div>
+                        </th>
+                        <th 
+                          className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                          onClick={() => handleSortExternal("review_submitted_at")}
+                        >
+                          <div className="flex items-center gap-2">
+                            Review Submitted
+                            {sortConfigExternal.key === "review_submitted_at" && (
+                              sortConfigExternal.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                            )}
+                          </div>
+                        </th>
+                        <th 
+                          className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                          onClick={() => handleSortExternal("created_at")}
+                        >
+                          <div className="flex items-center gap-2">
+                            Created
+                            {sortConfigExternal.key === "created_at" && (
+                              sortConfigExternal.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                            )}
+                          </div>
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
-                      {externalNominations.map((nomination) => {
+                      {sortedExternal.map((nomination) => {
                         const externalReviewer = nomination.external_reviewer as any;
                         const nominatedBy = nomination.nominated_by as any;
                         return (

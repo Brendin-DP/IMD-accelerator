@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus } from "lucide-react";
+import { Plus, ArrowUp, ArrowDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -13,6 +13,7 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import { supabase } from "@/lib/supabaseClient";
+import { useTableSort } from "@/hooks/useTableSort";
 
 interface User {
   id: string;
@@ -27,6 +28,7 @@ interface User {
 
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
+  const { sortedData: sortedUsers, sortConfig, handleSort } = useTableSort(users);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -159,16 +161,76 @@ export default function UsersPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b bg-muted/50">
-                <th className="px-6 py-3 text-left text-sm font-medium">Name</th>
-                <th className="px-6 py-3 text-left text-sm font-medium">Surname</th>
-                <th className="px-6 py-3 text-left text-sm font-medium">Email</th>
-                <th className="px-6 py-3 text-left text-sm font-medium">Role</th>
-                <th className="px-6 py-3 text-left text-sm font-medium">Status</th>
-                <th className="px-6 py-3 text-left text-sm font-medium">Created</th>
+                <th 
+                  className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                  onClick={() => handleSort("name")}
+                >
+                  <div className="flex items-center gap-2">
+                    Name
+                    {sortConfig.key === "name" && (
+                      sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                    )}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                  onClick={() => handleSort("surname")}
+                >
+                  <div className="flex items-center gap-2">
+                    Surname
+                    {sortConfig.key === "surname" && (
+                      sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                    )}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                  onClick={() => handleSort("email")}
+                >
+                  <div className="flex items-center gap-2">
+                    Email
+                    {sortConfig.key === "email" && (
+                      sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                    )}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                  onClick={() => handleSort("role")}
+                >
+                  <div className="flex items-center gap-2">
+                    Role
+                    {sortConfig.key === "role" && (
+                      sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                    )}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                  onClick={() => handleSort("status")}
+                >
+                  <div className="flex items-center gap-2">
+                    Status
+                    {sortConfig.key === "status" && (
+                      sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                    )}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                  onClick={() => handleSort("created_at")}
+                >
+                  <div className="flex items-center gap-2">
+                    Created
+                    {sortConfig.key === "created_at" && (
+                      sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                    )}
+                  </div>
+                </th>
               </tr>
             </thead>
             <tbody>
-              {users.map((user) => (
+              {sortedUsers.map((user) => (
                 <tr key={user.id} className="border-b hover:bg-muted/50 transition-colors">
                   <td className="px-6 py-4 text-sm font-medium">{user.name || "-"}</td>
                   <td className="px-6 py-4 text-sm font-medium">{user.surname || "-"}</td>

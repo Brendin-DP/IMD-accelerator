@@ -2,11 +2,12 @@
 
 import { useState, useEffect, Fragment } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, ChevronDown, ChevronRight } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronRight, ArrowUp, ArrowDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { supabase } from "@/lib/supabaseClient";
+import { useTableSort } from "@/hooks/useTableSort";
 
 interface CohortAssessment {
   id: string;
@@ -25,6 +26,18 @@ interface CohortAssessment {
   cohort?: {
     id: string;
     name: string;
+    client_id?: string;
+    plan_id?: string;
+    start_date?: string;
+    end_date?: string;
+    client?: {
+      id: string;
+      name: string;
+    };
+    plan?: {
+      id: string;
+      name: string;
+    };
   };
 }
 
@@ -90,6 +103,17 @@ export default function AssessmentDetailPage() {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [nominationSortStates, setNominationSortStates] = useState<Map<string, { key: string | null; direction: "asc" | "desc" | null }>>(new Map());
+
+  // Prepare participant assessments for sorting
+  const participantsForSorting = participantAssessments.map((pa) => ({
+    ...pa,
+    name: ((pa.participant as any)?.client_user as any)?.name || "",
+    surname: ((pa.participant as any)?.client_user as any)?.surname || "",
+    email: ((pa.participant as any)?.client_user as any)?.email || "",
+  }));
+
+  const { sortedData: sortedParticipantAssessments, sortConfig, handleSort } = useTableSort(participantsForSorting);
 
   useEffect(() => {
     if (assessmentId && cohortId) {
@@ -116,7 +140,16 @@ export default function AssessmentDetailPage() {
         .select(`
           *,
           assessment_type:assessment_types(id, name, description),
-          cohort:cohorts(id, name)
+          cohort:cohorts(
+            id,
+            name,
+            client_id,
+            plan_id,
+            start_date,
+            end_date,
+            client:clients(id, name),
+            plan:plans(id, name)
+          )
         `)
         .eq("id", assessmentId)
         .single();
@@ -142,15 +175,35 @@ export default function AssessmentDetailPage() {
             ? supabase.from("assessment_types").select("id, name, description").eq("id", assessmentData.assessment_type_id).single()
             : { data: null, error: null },
           assessmentData?.cohort_id
-            ? supabase.from("cohorts").select("id, name").eq("id", assessmentData.cohort_id).single()
+            ? supabase.from("cohorts").select("id, name, client_id, plan_id, start_date, end_date").eq("id", assessmentData.cohort_id).single()
             : { data: null, error: null }
         ]);
+
+        // Fetch client and plan separately if cohort exists
+        let clientData = null;
+        let planData = null;
+        if (cohortResult.data) {
+          const [clientResult, planResult] = await Promise.all([
+            cohortResult.data.client_id
+              ? supabase.from("clients").select("id, name").eq("id", cohortResult.data.client_id).single()
+              : { data: null, error: null },
+            cohortResult.data.plan_id
+              ? supabase.from("plans").select("id, name").eq("id", cohortResult.data.plan_id).single()
+              : { data: null, error: null }
+          ]);
+          clientData = clientResult.data;
+          planData = planResult.data;
+        }
 
         // Merge the data
         data = {
           ...assessmentData,
           assessment_type: assessmentTypeResult.data || null,
-          cohort: cohortResult.data || null,
+          cohort: cohortResult.data ? {
+            ...cohortResult.data,
+            client: clientData,
+            plan: planData,
+          } : null,
         };
 
         dbError = null;
@@ -395,6 +448,49 @@ export default function AssessmentDetailPage() {
     return nominations.filter((n) => n.participant_assessment_id === participantAssessmentId);
   }
 
+  function sortNominationsForParticipant(participantNominations: ReviewerNomination[], sortKey: string | null, sortDirection: "asc" | "desc" | null) {
+    if (!sortKey || !sortDirection) return participantNominations;
+
+    return [...participantNominations].sort((a, b) => {
+      let aValue: any;
+      let bValue: any;
+
+      if (sortKey === "reviewerName") {
+        aValue = a.is_external
+          ? a.external_reviewer?.email || ""
+          : a.reviewer
+          ? `${a.reviewer.name || ""} ${a.reviewer.surname || ""}`.trim() || a.reviewer.email || ""
+          : "";
+        bValue = b.is_external
+          ? b.external_reviewer?.email || ""
+          : b.reviewer
+          ? `${b.reviewer.name || ""} ${b.reviewer.surname || ""}`.trim() || b.reviewer.email || ""
+          : "";
+      } else if (sortKey === "nominatedByName") {
+        aValue = a.nominated_by
+          ? `${a.nominated_by.name || ""} ${a.nominated_by.surname || ""}`.trim() || a.nominated_by.email || ""
+          : "";
+        bValue = b.nominated_by
+          ? `${b.nominated_by.name || ""} ${b.nominated_by.surname || ""}`.trim() || b.nominated_by.email || ""
+          : "";
+      } else if (sortKey === "isExternalText") {
+        aValue = a.is_external ? "External" : "Internal";
+        bValue = b.is_external ? "External" : "Internal";
+      } else {
+        aValue = (a as any)[sortKey];
+        bValue = (b as any)[sortKey];
+      }
+
+      if (aValue == null && bValue == null) return 0;
+      if (aValue == null) return 1;
+      if (bValue == null) return -1;
+
+      if (aValue < bValue) return sortDirection === "asc" ? -1 : 1;
+      if (aValue > bValue) return sortDirection === "asc" ? 1 : -1;
+      return 0;
+    });
+  }
+
   function getNominationStatusColor(status: string | null): string {
     if (!status) return "bg-gray-100 text-gray-800";
     const statusLower = status.toLowerCase();
@@ -491,26 +587,44 @@ export default function AssessmentDetailPage() {
               <label className="text-sm font-medium text-muted-foreground">Assessment Name</label>
               <p className="text-sm font-medium mt-1">{assessmentName}</p>
             </div>
-            {assessment.assessment_type?.description && (
+            {assessment.status && (
               <div>
-                <label className="text-sm font-medium text-muted-foreground">Description</label>
-                <p className="text-sm font-medium mt-1">{assessment.assessment_type.description}</p>
+                <label className="text-sm font-medium text-muted-foreground">Status</label>
+                <p className="text-sm font-medium mt-1">
+                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(assessment.status)}`}>
+                    {assessment.status}
+                  </span>
+                </p>
               </div>
             )}
-            {assessment.start_date && (
+            <div>
+              <label className="text-sm font-medium text-muted-foreground">Participants</label>
+              <p className="text-sm font-medium mt-1">{participantAssessments.length}</p>
+            </div>
+            {assessment.start_date ? (
               <div>
                 <label className="text-sm font-medium text-muted-foreground">Start Date</label>
                 <p className="text-sm font-medium mt-1">
                   {new Date(assessment.start_date).toLocaleDateString()}
                 </p>
               </div>
+            ) : (
+              <div>
+                <label className="text-sm font-medium text-muted-foreground">Start Date</label>
+                <p className="text-sm font-medium mt-1 text-muted-foreground">Not set</p>
+              </div>
             )}
-            {assessment.end_date && (
+            {assessment.end_date ? (
               <div>
                 <label className="text-sm font-medium text-muted-foreground">End Date</label>
                 <p className="text-sm font-medium mt-1">
                   {new Date(assessment.end_date).toLocaleDateString()}
                 </p>
+              </div>
+            ) : (
+              <div>
+                <label className="text-sm font-medium text-muted-foreground">End Date</label>
+                <p className="text-sm font-medium mt-1 text-muted-foreground">Not set</p>
               </div>
             )}
           </div>
@@ -530,22 +644,107 @@ export default function AssessmentDetailPage() {
               <thead>
                 <tr className="border-b bg-muted/50">
                   <th className="px-6 py-3 text-left text-sm font-medium w-10"></th>
-                  <th className="px-6 py-3 text-left text-sm font-medium">Name</th>
-                  <th className="px-6 py-3 text-left text-sm font-medium">Surname</th>
-                  <th className="px-6 py-3 text-left text-sm font-medium">Email</th>
-                  <th className="px-6 py-3 text-left text-sm font-medium">Status</th>
-                  <th className="px-6 py-3 text-left text-sm font-medium">Score</th>
-                  <th className="px-6 py-3 text-left text-sm font-medium">Submitted</th>
+                  <th 
+                    className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                    onClick={() => handleSort("name")}
+                  >
+                    <div className="flex items-center gap-2">
+                      Name
+                      {sortConfig.key === "name" && (
+                        sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                    onClick={() => handleSort("surname")}
+                  >
+                    <div className="flex items-center gap-2">
+                      Surname
+                      {sortConfig.key === "surname" && (
+                        sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                    onClick={() => handleSort("email")}
+                  >
+                    <div className="flex items-center gap-2">
+                      Email
+                      {sortConfig.key === "email" && (
+                        sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                    onClick={() => handleSort("status")}
+                  >
+                    <div className="flex items-center gap-2">
+                      Status
+                      {sortConfig.key === "status" && (
+                        sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                    onClick={() => handleSort("score")}
+                  >
+                    <div className="flex items-center gap-2">
+                      Score
+                      {sortConfig.key === "score" && (
+                        sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                    onClick={() => handleSort("submitted_at")}
+                  >
+                    <div className="flex items-center gap-2">
+                      Submitted
+                      {sortConfig.key === "submitted_at" && (
+                        sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                      )}
+                    </div>
+                  </th>
                   <th className="px-6 py-3 text-left text-sm font-medium">Nominations</th>
                 </tr>
               </thead>
               <tbody>
-                {participantAssessments.map((pa) => {
+                {sortedParticipantAssessments.map((pa) => {
                   const clientUser = (pa.participant as any)?.client_user as any;
                   const participantNominations = getNominationsForParticipant(pa.id);
                   const isExpanded = pa.id ? expandedRows.has(pa.id) : false;
                   const nominationsCount = participantNominations.length;
                   const acceptedCount = participantNominations.filter((n) => n.request_status?.toLowerCase() === "accepted").length;
+                  
+                  // Get sort state for this participant
+                  const participantId = pa.id || `pa-${pa.participant_id}`;
+                  const sortState = nominationSortStates.get(participantId) || { key: null, direction: null };
+                  
+                  const sortedParticipantNominations = sortNominationsForParticipant(
+                    participantNominations,
+                    sortState.key,
+                    sortState.direction
+                  );
+
+                  const handleNominationSort = (key: string) => {
+                    const newMap = new Map(nominationSortStates);
+                    const currentState = newMap.get(participantId) || { key: null, direction: null };
+                    
+                    if (currentState.key === key && currentState.direction === "asc") {
+                      newMap.set(participantId, { key, direction: "desc" });
+                    } else if (currentState.key === key && currentState.direction === "desc") {
+                      newMap.set(participantId, { key: null, direction: null });
+                    } else {
+                      newMap.set(participantId, { key, direction: "asc" });
+                    }
+                    
+                    setNominationSortStates(newMap);
+                  };
 
                   const rowKey = pa.id || `pa-${pa.participant_id}`;
                   
@@ -668,16 +867,76 @@ export default function AssessmentDetailPage() {
                               <table className="w-full border rounded-md">
                                 <thead>
                                   <tr className="bg-muted/50 border-b">
-                                    <th className="px-4 py-2 text-left text-xs font-medium">Type</th>
-                                    <th className="px-4 py-2 text-left text-xs font-medium">Reviewer</th>
-                                    <th className="px-4 py-2 text-left text-xs font-medium">Status</th>
-                                    <th className="px-4 py-2 text-left text-xs font-medium">Nominated By</th>
-                                    <th className="px-4 py-2 text-left text-xs font-medium">Submitted</th>
-                                    <th className="px-4 py-2 text-left text-xs font-medium">Created</th>
+                                    <th 
+                                      className="px-4 py-2 text-left text-xs font-medium cursor-pointer hover:bg-muted/70 select-none"
+                                      onClick={() => handleNominationSort("isExternalText")}
+                                    >
+                                      <div className="flex items-center gap-1">
+                                        Type
+                                        {sortState.key === "isExternalText" && (
+                                          sortState.direction === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                                        )}
+                                      </div>
+                                    </th>
+                                    <th 
+                                      className="px-4 py-2 text-left text-xs font-medium cursor-pointer hover:bg-muted/70 select-none"
+                                      onClick={() => handleNominationSort("reviewerName")}
+                                    >
+                                      <div className="flex items-center gap-1">
+                                        Reviewer
+                                        {sortState.key === "reviewerName" && (
+                                          sortState.direction === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                                        )}
+                                      </div>
+                                    </th>
+                                    <th 
+                                      className="px-4 py-2 text-left text-xs font-medium cursor-pointer hover:bg-muted/70 select-none"
+                                      onClick={() => handleNominationSort("request_status")}
+                                    >
+                                      <div className="flex items-center gap-1">
+                                        Status
+                                        {sortState.key === "request_status" && (
+                                          sortState.direction === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                                        )}
+                                      </div>
+                                    </th>
+                                    <th 
+                                      className="px-4 py-2 text-left text-xs font-medium cursor-pointer hover:bg-muted/70 select-none"
+                                      onClick={() => handleNominationSort("nominatedByName")}
+                                    >
+                                      <div className="flex items-center gap-1">
+                                        Nominated By
+                                        {sortState.key === "nominatedByName" && (
+                                          sortState.direction === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                                        )}
+                                      </div>
+                                    </th>
+                                    <th 
+                                      className="px-4 py-2 text-left text-xs font-medium cursor-pointer hover:bg-muted/70 select-none"
+                                      onClick={() => handleNominationSort("review_submitted_at")}
+                                    >
+                                      <div className="flex items-center gap-1">
+                                        Submitted
+                                        {sortState.key === "review_submitted_at" && (
+                                          sortState.direction === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                                        )}
+                                      </div>
+                                    </th>
+                                    <th 
+                                      className="px-4 py-2 text-left text-xs font-medium cursor-pointer hover:bg-muted/70 select-none"
+                                      onClick={() => handleNominationSort("created_at")}
+                                    >
+                                      <div className="flex items-center gap-1">
+                                        Created
+                                        {sortState.key === "created_at" && (
+                                          sortState.direction === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                                        )}
+                                      </div>
+                                    </th>
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {participantNominations.map((nomination) => {
+                                  {sortedParticipantNominations.map((nomination) => {
                                     const reviewerName = nomination.is_external
                                       ? nomination.external_reviewer?.email || "-"
                                       : nomination.reviewer

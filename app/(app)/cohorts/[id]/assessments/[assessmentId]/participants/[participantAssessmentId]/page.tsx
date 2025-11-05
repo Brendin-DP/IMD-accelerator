@@ -2,11 +2,13 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ArrowUp, ArrowDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { supabase } from "@/lib/supabaseClient";
+import { useTableSort } from "@/hooks/useTableSort";
 
 interface ReviewerNomination {
   id: string;
@@ -83,6 +85,44 @@ export default function ParticipantAssessmentDetailPage() {
   const [assessmentName, setAssessmentName] = useState<string>("Assessment");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [nominationSearch, setNominationSearch] = useState("");
+
+  // Filter nominations based on search
+  const filteredNominations = nominations.filter((nomination) => {
+    if (!nominationSearch.trim()) return true;
+    const searchLower = nominationSearch.toLowerCase();
+    const reviewerName = nomination.is_external
+      ? (nomination.external_reviewer?.email || "").toLowerCase()
+      : nomination.reviewer
+      ? `${nomination.reviewer.name || ""} ${nomination.reviewer.surname || ""}`.trim().toLowerCase() || nomination.reviewer.email.toLowerCase()
+      : "";
+    const nominatedByName = nomination.nominated_by
+      ? `${nomination.nominated_by.name || ""} ${nomination.nominated_by.surname || ""}`.trim().toLowerCase() || nomination.nominated_by.email.toLowerCase()
+      : "";
+    const status = (nomination.request_status || "").toLowerCase();
+    const type = nomination.is_external ? "external" : "internal";
+    
+    return reviewerName.includes(searchLower) || 
+           nominatedByName.includes(searchLower) || 
+           status.includes(searchLower) ||
+           type.includes(searchLower);
+  });
+
+  // Prepare nominations for sorting
+  const nominationsForSorting = filteredNominations.map((nomination) => ({
+    ...nomination,
+    reviewerName: nomination.is_external
+      ? nomination.external_reviewer?.email || ""
+      : nomination.reviewer
+      ? `${nomination.reviewer.name || ""} ${nomination.reviewer.surname || ""}`.trim() || nomination.reviewer.email || ""
+      : "",
+    nominatedByName: nomination.nominated_by
+      ? `${nomination.nominated_by.name || ""} ${nomination.nominated_by.surname || ""}`.trim() || nomination.nominated_by.email || ""
+      : "",
+    isExternalText: nomination.is_external ? "External" : "Internal",
+  }));
+
+  const { sortedData: sortedNominations, sortConfig, handleSort } = useTableSort(nominationsForSorting);
 
   useEffect(() => {
     if (participantAssessmentId && cohortId && assessmentId) {
@@ -485,28 +525,99 @@ export default function ParticipantAssessmentDetailPage() {
       {/* Nominations Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Nominations</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle>Nominations</CardTitle>
+            <Input
+              type="text"
+              placeholder="Search nominations..."
+              value={nominationSearch}
+              onChange={(e) => setNominationSearch(e.target.value)}
+              className="w-64"
+            />
+          </div>
         </CardHeader>
         <CardContent>
-          {nominations.length === 0 ? (
+          {sortedNominations.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground">
-              No nominations found for this participant assessment.
+              {nominationSearch.trim() 
+                ? "No nominations match your search." 
+                : "No nominations found for this participant assessment."}
             </div>
           ) : (
             <div className="rounded-md border">
               <table className="w-full">
                 <thead>
                   <tr className="border-b bg-muted/50">
-                    <th className="px-6 py-3 text-left text-sm font-medium">Type</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium">Reviewer</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium">Status</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium">Nominated By</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium">Review Submitted</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium">Created</th>
+                    <th 
+                      className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                      onClick={() => handleSort("isExternalText")}
+                    >
+                      <div className="flex items-center gap-2">
+                        Type
+                        {sortConfig.key === "isExternalText" && (
+                          sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                        )}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                      onClick={() => handleSort("reviewerName")}
+                    >
+                      <div className="flex items-center gap-2">
+                        Reviewer
+                        {sortConfig.key === "reviewerName" && (
+                          sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                        )}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                      onClick={() => handleSort("request_status")}
+                    >
+                      <div className="flex items-center gap-2">
+                        Status
+                        {sortConfig.key === "request_status" && (
+                          sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                        )}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                      onClick={() => handleSort("nominatedByName")}
+                    >
+                      <div className="flex items-center gap-2">
+                        Nominated By
+                        {sortConfig.key === "nominatedByName" && (
+                          sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                        )}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                      onClick={() => handleSort("review_submitted_at")}
+                    >
+                      <div className="flex items-center gap-2">
+                        Review Submitted
+                        {sortConfig.key === "review_submitted_at" && (
+                          sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                        )}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                      onClick={() => handleSort("created_at")}
+                    >
+                      <div className="flex items-center gap-2">
+                        Created
+                        {sortConfig.key === "created_at" && (
+                          sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                        )}
+                      </div>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {nominations.map((nomination) => {
+                  {sortedNominations.map((nomination) => {
                     const reviewerName = nomination.is_external
                       ? nomination.external_reviewer?.email || "-"
                       : nomination.reviewer

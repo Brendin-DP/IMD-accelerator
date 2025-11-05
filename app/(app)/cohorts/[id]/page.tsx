@@ -2,11 +2,12 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Plus, ArrowLeft, MoreVertical, Pencil } from "lucide-react";
+import { Plus, ArrowLeft, MoreVertical, Pencil, Calendar, ArrowUp, ArrowDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -22,6 +23,7 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import { supabase } from "@/lib/supabaseClient";
+import { useTableSort } from "@/hooks/useTableSort";
 
 interface Cohort {
   id: string;
@@ -86,12 +88,35 @@ export default function CohortDetailPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
   const [isEditAssessmentDialogOpen, setIsEditAssessmentDialogOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("details");
+  const [participantSearch, setParticipantSearch] = useState("");
   const [editingAssessment, setEditingAssessment] = useState<CohortAssessment | null>(null);
   const [assessmentFormData, setAssessmentFormData] = useState({
     start_date: "",
     end_date: "",
   });
   const [updatingAssessment, setUpdatingAssessment] = useState(false);
+
+  // Filter participants based on search
+  const filteredParticipants = participants.filter((participant) => {
+    if (!participantSearch.trim()) return true;
+    const user = participant.client_user as any;
+    const searchLower = participantSearch.toLowerCase();
+    const name = (user?.name || "").toLowerCase();
+    const surname = (user?.surname || "").toLowerCase();
+    const email = (user?.email || "").toLowerCase();
+    return name.includes(searchLower) || surname.includes(searchLower) || email.includes(searchLower);
+  });
+
+  // Prepare participants for sorting (flatten nested objects)
+  const participantsForSorting = filteredParticipants.map((participant) => ({
+    ...participant,
+    name: (participant.client_user as any)?.name || "",
+    surname: (participant.client_user as any)?.surname || "",
+    email: (participant.client_user as any)?.email || "",
+  }));
+
+  const { sortedData: sortedParticipants, sortConfig, handleSort } = useTableSort(participantsForSorting);
 
   useEffect(() => {
     if (cohortId) {
@@ -591,22 +616,25 @@ export default function CohortDetailPage() {
 
       {/* Back Button */}
       <Button variant="tertiary" onClick={() => router.push("/cohorts")} className="p-0 h-auto">
-        <ArrowLeft className="mr-2 h-4 w-4" />
+            <ArrowLeft className="mr-2 h-4 w-4" />
         Back to Cohorts
-      </Button>
+          </Button>
 
-      {/* Header with Add Participant Button */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">{cohort.name}</h1>
-          <p className="text-muted-foreground mt-2">Cohort details and participant management</p>
-        </div>
-        <Button onClick={() => setIsDialogOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Add Participant
-        </Button>
-      </div>
+      {/* Header */}
+          <div>
+            <h1 className="text-3xl font-bold">{cohort.name}</h1>
+            <p className="text-muted-foreground mt-2">Cohort details and participant management</p>
+          </div>
 
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList>
+          <TabsTrigger value="details">Details</TabsTrigger>
+          <TabsTrigger value="participants">Participants</TabsTrigger>
+        </TabsList>
+
+        {/* Details Tab */}
+        <TabsContent value="details" className="space-y-6">
       {/* Cohort Details Card */}
       <Card>
         <CardHeader>
@@ -658,9 +686,9 @@ export default function CohortDetailPage() {
         </CardContent>
       </Card>
 
-      {/* Assessments Section */}
-      <div>
-        <h2 className="text-2xl font-bold mb-4">Assessments</h2>
+          {/* Assessments Section */}
+          <div>
+            <h2 className="text-2xl font-bold mb-4">Assessments</h2>
         {assessmentsLoading ? (
           <div className="p-8 text-center text-muted-foreground">Loading assessments...</div>
         ) : assessments.length === 0 ? (
@@ -721,23 +749,28 @@ export default function CohortDetailPage() {
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <div className="space-y-2 text-sm">
-                      <div>
-                        <span className="text-muted-foreground">Start: </span>
-                        <span className="font-medium">
-                          {assessment.start_date
-                            ? new Date(assessment.start_date).toLocaleDateString()
-                            : "Not set"}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">End: </span>
-                        <span className="font-medium">
-                          {assessment.end_date
-                            ? new Date(assessment.end_date).toLocaleDateString()
-                            : "Not set"}
-                        </span>
-                      </div>
+                    <div className="space-y-1 text-sm">
+                      {assessment.start_date && (
+                        <div>
+                          <span className="text-muted-foreground">Start: </span>
+                          <span className="font-medium">
+                            {new Date(assessment.start_date).toLocaleDateString()}
+                          </span>
+                        </div>
+                      )}
+                      {assessment.end_date && (
+                        <div>
+                          <span className="text-muted-foreground">End: </span>
+                          <span className="font-medium">
+                            {new Date(assessment.end_date).toLocaleDateString()}
+                          </span>
+                        </div>
+                      )}
+                      {!assessment.start_date && !assessment.end_date && (
+                        <div className="text-muted-foreground text-xs">
+                          No dates set
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -745,38 +778,87 @@ export default function CohortDetailPage() {
             })}
           </div>
         )}
-      </div>
+          </div>
+        </TabsContent>
 
-      {/* Participants Table */}
+        {/* Participants Tab */}
+        <TabsContent value="participants">
       <div>
-        <h2 className="text-2xl font-bold mb-4">Participants</h2>
-        <div className="rounded-md border">
-          {participants.length === 0 ? (
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-bold">Participants</h2>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="text"
+                  placeholder="Search participants..."
+                  value={participantSearch}
+                  onChange={(e) => setParticipantSearch(e.target.value)}
+                  className="w-64"
+                />
+                <Button onClick={() => setIsDialogOpen(true)}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Participant
+                </Button>
+              </div>
+            </div>
+            <div className="rounded-md border">
+          {sortedParticipants.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground">
-              No participants found. Click "Add Participant" to add participants to this cohort.
+              {participantSearch.trim() 
+                ? "No participants match your search." 
+                : "No participants found. Click \"Add Participant\" to add participants to this cohort."}
             </div>
           ) : (
             <table className="w-full">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="px-6 py-3 text-left text-sm font-medium">Name</th>
-                  <th className="px-6 py-3 text-left text-sm font-medium">Surname</th>
-                  <th className="px-6 py-3 text-left text-sm font-medium">Email</th>
+                  <th 
+                    className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                    onClick={() => handleSort("name")}
+                  >
+                    <div className="flex items-center gap-2">
+                      Name
+                      {sortConfig.key === "name" && (
+                        sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                    onClick={() => handleSort("surname")}
+                  >
+                    <div className="flex items-center gap-2">
+                      Surname
+                      {sortConfig.key === "surname" && (
+                        sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                    onClick={() => handleSort("email")}
+                  >
+                    <div className="flex items-center gap-2">
+                      Email
+                      {sortConfig.key === "email" && (
+                        sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                      )}
+                    </div>
+                  </th>
                   <th className="px-6 py-3 text-left text-sm font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {participants.map((participant) => {
+                  {sortedParticipants.map((participant) => {
                   const user = participant.client_user as any;
                   return (
-                    <tr 
-                      key={participant.id} 
-                      className="border-b hover:bg-muted/50 transition-colors"
-                    >
+                      <tr 
+                        key={participant.id} 
+                        className="border-b hover:bg-muted/50 transition-colors"
+                      >
                       <td className="px-6 py-4 text-sm font-medium">{user?.name || "-"}</td>
                       <td className="px-6 py-4 text-sm font-medium">{user?.surname || "-"}</td>
                       <td className="px-6 py-4 text-sm">{user?.email || "-"}</td>
-                      <td className="px-6 py-4 text-sm" onClick={(e) => e.stopPropagation()}>
+                        <td className="px-6 py-4 text-sm" onClick={(e) => e.stopPropagation()}>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
@@ -802,6 +884,8 @@ export default function CohortDetailPage() {
           )}
         </div>
       </div>
+        </TabsContent>
+      </Tabs>
 
       {/* Add Participant Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -896,25 +980,61 @@ export default function CohortDetailPage() {
           <form onSubmit={handleUpdateAssessment} className="space-y-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Start Date</label>
-              <Input
-                type="date"
-                value={assessmentFormData.start_date}
-                onChange={(e) =>
-                  setAssessmentFormData((prev) => ({ ...prev, start_date: e.target.value }))
-                }
-                placeholder="Select start date (optional)"
-              />
+              <div className="relative">
+                <Calendar 
+                  className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground cursor-pointer z-10" 
+                  onClick={(e) => {
+                    const input = e.currentTarget.nextElementSibling as HTMLInputElement;
+                    if (input) {
+                      input.showPicker?.();
+                      input.focus();
+                    }
+                  }}
+                />
+                <Input
+                  type="date"
+                  value={assessmentFormData.start_date}
+                  onChange={(e) =>
+                    setAssessmentFormData((prev) => ({ ...prev, start_date: e.target.value }))
+                  }
+                  onClick={(e) => {
+                    const input = e.currentTarget as HTMLInputElement;
+                    input.showPicker?.();
+                  }}
+                  placeholder="Select start date (optional)"
+                  className="pl-10 [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none cursor-pointer"
+                  style={{ WebkitAppearance: 'none' }}
+                />
+              </div>
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">End Date</label>
-              <Input
-                type="date"
-                value={assessmentFormData.end_date}
-                onChange={(e) =>
-                  setAssessmentFormData((prev) => ({ ...prev, end_date: e.target.value }))
-                }
-                placeholder="Select end date (optional)"
-              />
+              <div className="relative">
+                <Calendar 
+                  className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground cursor-pointer z-10" 
+                  onClick={(e) => {
+                    const input = e.currentTarget.nextElementSibling as HTMLInputElement;
+                    if (input) {
+                      input.showPicker?.();
+                      input.focus();
+                    }
+                  }}
+                />
+                <Input
+                  type="date"
+                  value={assessmentFormData.end_date}
+                  onChange={(e) =>
+                    setAssessmentFormData((prev) => ({ ...prev, end_date: e.target.value }))
+                  }
+                  onClick={(e) => {
+                    const input = e.currentTarget as HTMLInputElement;
+                    input.showPicker?.();
+                  }}
+                  placeholder="Select end date (optional)"
+                  className="pl-10 [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none cursor-pointer"
+                  style={{ WebkitAppearance: 'none' }}
+                />
+              </div>
             </div>
 
             {submitError && <p className="text-sm text-destructive">{submitError}</p>}

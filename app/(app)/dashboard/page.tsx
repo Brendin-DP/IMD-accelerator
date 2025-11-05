@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Users, FileText, CheckCircle2 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 
 interface Cohort {
@@ -136,37 +136,55 @@ export default function DashboardPage() {
       {/* Stats Panels Section */}
       <div className="grid gap-6 md:grid-cols-3">
         {/* Active Cohorts Stat */}
-        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => router.push("/cohorts")}>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium text-muted-foreground">Active Cohorts</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-4xl font-bold">{activeCohortsCount}</div>
-            <p className="text-xs text-muted-foreground mt-2">Cohorts currently active</p>
-          </CardContent>
-        </Card>
+        <div 
+          className="relative overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:px-6 cursor-pointer hover:shadow-md transition-shadow border border-gray-200"
+          onClick={() => router.push("/cohorts")}
+        >
+          <dt>
+            <div className="absolute rounded-md bg-blue-500 p-3">
+              <Users className="h-6 w-6 text-white" aria-hidden="true" />
+            </div>
+            <p className="ml-16 truncate text-sm font-medium text-gray-500">Active Cohorts</p>
+          </dt>
+          <dd className="ml-16 flex items-baseline">
+            <p className="text-2xl font-semibold text-gray-900">{activeCohortsCount}</p>
+            <p className="ml-2 text-sm text-gray-500">cohorts</p>
+          </dd>
+        </div>
 
         {/* Assessments Stat */}
-        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => router.push("/cohorts")}>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium text-muted-foreground">Assessments</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-4xl font-bold">{assessmentsCount}</div>
-            <p className="text-xs text-muted-foreground mt-2">Total assessments</p>
-          </CardContent>
-        </Card>
+        <div 
+          className="relative overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:px-6 cursor-pointer hover:shadow-md transition-shadow border border-gray-200"
+          onClick={() => router.push("/cohorts")}
+        >
+          <dt>
+            <div className="absolute rounded-md bg-indigo-500 p-3">
+              <FileText className="h-6 w-6 text-white" aria-hidden="true" />
+            </div>
+            <p className="ml-16 truncate text-sm font-medium text-gray-500">Assessments</p>
+          </dt>
+          <dd className="ml-16 flex items-baseline">
+            <p className="text-2xl font-semibold text-gray-900">{assessmentsCount}</p>
+            <p className="ml-2 text-sm text-gray-500">total</p>
+          </dd>
+        </div>
 
         {/* Completed Cohorts Stat */}
-        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => router.push("/cohorts")}>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium text-muted-foreground">Completed</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-4xl font-bold">{completedCohortsCount}</div>
-            <p className="text-xs text-muted-foreground mt-2">Completed cohorts</p>
-          </CardContent>
-        </Card>
+        <div 
+          className="relative overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:px-6 cursor-pointer hover:shadow-md transition-shadow border border-gray-200"
+          onClick={() => router.push("/cohorts")}
+        >
+          <dt>
+            <div className="absolute rounded-md bg-green-500 p-3">
+              <CheckCircle2 className="h-6 w-6 text-white" aria-hidden="true" />
+            </div>
+            <p className="ml-16 truncate text-sm font-medium text-gray-500">Completed</p>
+          </dt>
+          <dd className="ml-16 flex items-baseline">
+            <p className="text-2xl font-semibold text-gray-900">{completedCohortsCount}</p>
+            <p className="ml-2 text-sm text-gray-500">cohorts</p>
+          </dd>
+        </div>
       </div>
     </div>
   );
