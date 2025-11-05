@@ -151,6 +151,13 @@ export default function TenantLogin() {
 
       localStorage.setItem("participant", JSON.stringify(user));
       
+      // Reset session storage for notifications on new login
+      // This starts a fresh session and clears old notification tracking
+      const userId = user.id;
+      sessionStorage.setItem(`session_start_${userId}`, new Date().toISOString());
+      sessionStorage.setItem(`seen_notifications_${userId}`, JSON.stringify([]));
+      sessionStorage.removeItem(`notifications_last_checked_${userId}`);
+      
       // Redirect to tenant dashboard with subdomain
       const dashboardPath = `/tenant/${subdomain}/dashboard`;
       console.log("🔄 Redirecting to:", dashboardPath);

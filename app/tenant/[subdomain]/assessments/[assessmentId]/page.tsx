@@ -627,6 +627,9 @@ export default function TenantAssessmentDetailPage() {
       // Refresh nominations list
       await fetchNominations(participantAssessment.id, user.id);
       
+      // Trigger notification count update for reviewers who received the nominations
+      window.dispatchEvent(new CustomEvent('notification-update'));
+      
       // Close modal and reset
       setIsNominationModalOpen(false);
       setSelectedReviewers([]);

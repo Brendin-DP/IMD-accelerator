@@ -86,7 +86,16 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
             fetchNotificationCount(userData.id);
           }, 30000);
           
-          return () => clearInterval(interval);
+          // Listen for custom events to refresh notification count
+          const handleNotificationUpdate = () => {
+            fetchNotificationCount(userData.id);
+          };
+          window.addEventListener('notification-update', handleNotificationUpdate);
+          
+          return () => {
+            clearInterval(interval);
+            window.removeEventListener('notification-update', handleNotificationUpdate);
+          };
         }
       } catch (err) {
         console.error("Error validating subdomain:", err);
@@ -106,38 +115,42 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
 
   async function fetchNotificationCount(userId: string) {
     try {
-      // Get session start timestamp
+      // Get session start timestamp - only reset on new login
       const sessionStart = sessionStorage.getItem(`session_start_${userId}`);
       if (!sessionStart) {
+        // Initialize session start if it doesn't exist (should only happen on first load after login)
         sessionStorage.setItem(`session_start_${userId}`, new Date().toISOString());
       }
-      const lastChecked = sessionStorage.getItem(`notifications_last_checked_${userId}`) || sessionStorage.getItem(`session_start_${userId}`) || new Date(0).toISOString();
+      const sessionStartTime = sessionStorage.getItem(`session_start_${userId}`) || new Date(0).toISOString();
+      const lastChecked = sessionStorage.getItem(`notifications_last_checked_${userId}`) || sessionStartTime;
 
-      // Count new review requests (where user is reviewer, status = pending, created after last check)
-      const { count: reviewRequestsCount } = await supabase
+      // Count new review requests (where user is reviewer, request_status = pending, created after last check)
+      // This way the count resets when they visit the notifications page, but messages persist
+      // Exclude self-nominated external reviewers
+      const { data: reviewRequests } = await supabase
         .from("reviewer_nominations")
-        .select("*", { count: "exact", head: true })
+        .select("id, is_external, nominated_by_id, created_at")
         .eq("reviewer_id", userId)
-        .eq("status", "pending")
+        .eq("request_status", "pending")
         .gt("created_at", lastChecked);
 
+      // Filter out self-nominated external reviewers
+      const validReviewRequests = reviewRequests?.filter((req: any) => {
+        return !(req.is_external === true && req.nominated_by_id === userId);
+      }) || [];
+
       // For status changes, we need to check nominations user created that are accepted/rejected
-      // and haven't been seen yet
+      // Show status changes created after last check (so count resets when visiting notifications page)
       const { data: statusChanges } = await supabase
         .from("reviewer_nominations")
-        .select("id")
+        .select("id, created_at")
         .eq("nominated_by_id", userId)
-        .in("status", ["accepted", "rejected"]);
+        .in("request_status", ["accepted", "rejected"])
+        .gt("created_at", lastChecked);
 
-      const seenNotifications = JSON.parse(sessionStorage.getItem(`seen_notifications_${userId}`) || "[]");
-      const sessionStartTime = sessionStorage.getItem(`session_start_${userId}`) || new Date(0).toISOString();
-      
-      // Filter to only show unseen status changes from this session
-      const unseenStatusChanges = statusChanges?.filter((change: any) => 
-        !seenNotifications.includes(change.id)
-      ).length || 0;
+      const statusChangesCount = statusChanges?.length || 0;
 
-      const totalCount = (reviewRequestsCount || 0) + unseenStatusChanges;
+      const totalCount = validReviewRequests.length + statusChangesCount;
       setNotificationCount(totalCount);
     } catch (err) {
       console.error("Error fetching notification count:", err);

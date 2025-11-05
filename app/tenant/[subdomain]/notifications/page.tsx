@@ -45,6 +45,7 @@ export default function TenantNotificationsPage() {
         setUser(userData);
         if (userData.id) {
           fetchNotifications(userData.id);
+          // Don't trigger update - notifications should persist until new session
         }
       } catch (error) {
         console.error("Error parsing user data:", error);
@@ -66,19 +67,22 @@ export default function TenantNotificationsPage() {
       // This ensures users see all notifications when they visit the page
       const sessionStartTime = sessionStorage.getItem(`session_start_${userId}`) || new Date(0).toISOString();
 
-      // Fetch new review requests (where user is reviewer, status = pending, created after session start)
+      // Fetch new review requests (where user is reviewer, request_status = pending, created after session start)
+      // Exclude self-nominated external reviewers
       const { data: reviewRequests, error: reviewError } = await supabase
         .from("reviewer_nominations")
         .select(`
           id,
           created_at,
+          is_external,
+          nominated_by_id,
           nominated_by:client_users!reviewer_nominations_nominated_by_id_fkey(id, name, surname, email),
           participant_assessment:participant_assessments(
             cohort_assessment:cohort_assessments(name)
           )
         `)
         .eq("reviewer_id", userId)
-        .eq("status", "pending")
+        .eq("request_status", "pending")
         .gt("created_at", sessionStartTime)
         .order("created_at", { ascending: false });
 
@@ -89,9 +93,9 @@ export default function TenantNotificationsPage() {
         
         const { data: requestsOnly, error: requestsOnlyError } = await supabase
           .from("reviewer_nominations")
-          .select("id, created_at, nominated_by_id, participant_assessment_id")
+          .select("id, created_at, nominated_by_id, participant_assessment_id, is_external")
           .eq("reviewer_id", userId)
-          .eq("status", "pending")
+          .eq("request_status", "pending")
           .gt("created_at", sessionStartTime)
           .order("created_at", { ascending: false });
 
@@ -116,25 +120,30 @@ export default function TenantNotificationsPage() {
             .select("id, name")
             .in("id", cohortAssessmentIds);
 
-          // Merge the data
-          reviewRequestsData = requestsOnly.map((req: any) => ({
-            ...req,
-            nominated_by: clientUsers?.find((u: any) => u.id === req.nominated_by_id) || null,
-            participant_assessment: {
-              cohort_assessment: cohortAssessments?.find((ca: any) => 
-                participantAssessments?.find((pa: any) => pa.id === req.participant_assessment_id && pa.cohort_assessment_id === ca.id)
-              ) || null
-            }
-          }));
+          // Merge the data and filter out self-nominated external reviewers
+          reviewRequestsData = requestsOnly
+            .filter((req: any) => {
+              // Exclude self-nominated external reviewers
+              return !(req.is_external === true && req.nominated_by_id === userId);
+            })
+            .map((req: any) => ({
+              ...req,
+              nominated_by: clientUsers?.find((u: any) => u.id === req.nominated_by_id) || null,
+              participant_assessment: {
+                cohort_assessment: cohortAssessments?.find((ca: any) => 
+                  participantAssessments?.find((pa: any) => pa.id === req.participant_assessment_id && pa.cohort_assessment_id === ca.id)
+                ) || null
+              }
+            }));
         }
       }
 
-      // Fetch nomination status changes (where user created the nomination, status is accepted/rejected)
+      // Fetch nomination status changes (where user created the nomination, request_status is accepted/rejected)
       const { data: statusChanges, error: statusError } = await supabase
         .from("reviewer_nominations")
         .select(`
           id,
-          status,
+          request_status,
           created_at,
           reviewer:client_users!reviewer_nominations_reviewer_id_fkey(id, name, surname, email),
           participant_assessment:participant_assessments(
@@ -142,7 +151,7 @@ export default function TenantNotificationsPage() {
           )
         `)
         .eq("nominated_by_id", userId)
-        .in("status", ["accepted", "rejected"])
+        .in("request_status", ["accepted", "rejected"])
         .order("created_at", { ascending: false });
 
       // Handle relationship cache issues for status changes
@@ -152,9 +161,9 @@ export default function TenantNotificationsPage() {
         
         const { data: changesOnly, error: changesOnlyError } = await supabase
           .from("reviewer_nominations")
-          .select("id, status, created_at, reviewer_id, participant_assessment_id")
+          .select("id, request_status, created_at, reviewer_id, participant_assessment_id")
           .eq("nominated_by_id", userId)
-          .in("status", ["accepted", "rejected"])
+          .in("request_status", ["accepted", "rejected"])
           .order("created_at", { ascending: false });
 
         if (!changesOnlyError && changesOnly) {
@@ -192,17 +201,22 @@ export default function TenantNotificationsPage() {
       }
 
       // Filter status changes by session start (only show those that changed during this session)
+      // Don't filter by seenNotifications - show all notifications from this session
       const filteredStatusChanges = statusChangesData?.filter((change: any) => {
-        // Show if created after session start, or if we don't have seen notifications
-        const seenNotifications = JSON.parse(sessionStorage.getItem(`seen_notifications_${userId}`) || "[]");
-        return !seenNotifications.includes(change.id) && new Date(change.created_at) >= new Date(sessionStartTime);
+        // Show if created after session start
+        return new Date(change.created_at) >= new Date(sessionStartTime);
       }) || [];
 
       const allNotifications: Notification[] = [];
 
-      // Process review requests
+      // Process review requests (already filtered for self-nominated external reviewers in fallback query)
       if (reviewRequestsData) {
-        reviewRequestsData.forEach((req: any) => {
+        // Additional filter for the main query result
+        const filteredReviewRequests = reviewRequestsData.filter((req: any) => {
+          return !(req.is_external === true && req.nominated_by_id === userId);
+        });
+
+        filteredReviewRequests.forEach((req: any) => {
           const nominatedBy = req.nominated_by || req.nominated_by_id;
           const assessment = req.participant_assessment?.cohort_assessment || null;
           const assessmentName = assessment?.name || "Assessment";
@@ -234,8 +248,8 @@ export default function TenantNotificationsPage() {
 
           allNotifications.push({
             id: `status_change_${change.id}`,
-            type: change.status === "accepted" ? "nomination_accepted" : "nomination_rejected",
-            message: `${reviewerName} ${change.status === "accepted" ? "accepted" : "rejected"} your review request for ${assessmentName}`,
+            type: change.request_status === "accepted" ? "nomination_accepted" : "nomination_rejected",
+            message: `${reviewerName} ${change.request_status === "accepted" ? "accepted" : "rejected"} your review request for ${assessmentName}`,
             nomination_id: change.id,
             created_at: change.created_at,
             participant: reviewer && typeof reviewer === 'object' ? reviewer : undefined,
@@ -250,14 +264,12 @@ export default function TenantNotificationsPage() {
       console.log("Fetched notifications:", allNotifications.length, allNotifications);
       setNotifications(allNotifications);
 
-      // Mark all shown notifications as seen
-      const seenIds = allNotifications.map(n => n.nomination_id);
-      const existingSeen = JSON.parse(sessionStorage.getItem(`seen_notifications_${userId}`) || "[]");
-      const updatedSeen = [...new Set([...existingSeen, ...seenIds])];
-      sessionStorage.setItem(`seen_notifications_${userId}`, JSON.stringify(updatedSeen));
-
-      // Update last checked timestamp
+      // Update last checked timestamp to reset the notification badge count
+      // But keep the notification messages visible until new login session
       sessionStorage.setItem(`notifications_last_checked_${userId}`, new Date().toISOString());
+      
+      // Trigger notification count refresh to update the badge
+      window.dispatchEvent(new CustomEvent('notification-update'));
     } catch (err) {
       console.error("Error fetching notifications:", err);
       setNotifications([]);

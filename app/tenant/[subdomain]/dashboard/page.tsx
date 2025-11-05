@@ -534,6 +534,9 @@ export default function TenantDashboardPage() {
       await fetchMyActions(user.id);
       await fetchMyReviews(user.id);
 
+      // Trigger notification count update (will create notification for the nominator)
+      window.dispatchEvent(new CustomEvent('notification-update'));
+
       showToast("Nomination accepted successfully.", "success");
     } catch (err) {
       console.error("Error accepting nomination:", err);
@@ -564,6 +567,9 @@ export default function TenantDashboardPage() {
 
       // Refresh My Actions list
       await fetchMyActions(user.id);
+
+      // Trigger notification count update (will create notification for the nominator)
+      window.dispatchEvent(new CustomEvent('notification-update'));
 
       showToast("Nomination rejected.", "info");
     } catch (err) {
