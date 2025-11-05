@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Pencil, Trash2, Download } from "lucide-react";
+import { Plus, Pencil, Trash2, Download, MoreVertical, Calendar } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -13,6 +13,12 @@ import {
   DialogDescription,
   DialogClose,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 import { supabase } from "@/lib/supabaseClient";
 import * as XLSX from "xlsx";
 
@@ -399,6 +405,27 @@ export default function CohortsPage() {
         : [...prev.participant_ids, userId];
       return { ...prev, participant_ids: participantIds };
     });
+  }
+
+  function getCohortStatus(cohort: Cohort): { label: string; color: string } {
+    if (!cohort.start_date || !cohort.end_date) {
+      return { label: "Unknown", color: "bg-gray-100 text-gray-800" };
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const startDate = new Date(cohort.start_date);
+    startDate.setHours(0, 0, 0, 0);
+    const endDate = new Date(cohort.end_date);
+    endDate.setHours(0, 0, 0, 0);
+
+    if (startDate > today) {
+      return { label: "Upcoming", color: "bg-blue-100 text-blue-800" };
+    } else if (endDate < today) {
+      return { label: "Completed", color: "bg-gray-100 text-gray-800" };
+    } else {
+      return { label: "Active", color: "bg-green-100 text-green-800" };
+    }
   }
 
   async function handleDownloadData() {
@@ -823,6 +850,7 @@ export default function CohortsPage() {
                 <th className="px-6 py-3 text-left text-sm font-medium">Plan</th>
                 <th className="px-6 py-3 text-left text-sm font-medium">Start Date</th>
                 <th className="px-6 py-3 text-left text-sm font-medium">End Date</th>
+                <th className="px-6 py-3 text-left text-sm font-medium">Status</th>
                 <th className="px-6 py-3 text-left text-sm font-medium">Created</th>
                 <th className="px-6 py-3 text-left text-sm font-medium">Actions</th>
               </tr>
@@ -847,29 +875,48 @@ export default function CohortsPage() {
                   <td className="px-6 py-4 text-sm">
                     {cohort.end_date ? new Date(cohort.end_date).toLocaleDateString() : "-"}
                   </td>
+                  <td className="px-6 py-4 text-sm">
+                    {(() => {
+                      const status = getCohortStatus(cohort);
+                      return (
+                        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${status.color}`}>
+                          {status.label}
+                        </span>
+                      );
+                    })()}
+                  </td>
                   <td className="px-6 py-4 text-sm text-muted-foreground">
                     {cohort.created_at
                       ? new Date(cohort.created_at).toLocaleDateString()
                       : "-"}
                   </td>
                   <td className="px-6 py-4 text-sm">
-                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleEdit(cohort)}
-                        className="h-8 w-8 p-0"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDeleteClick(cohort.id)}
-                        className="h-8 w-8 p-0 text-destructive hover:text-destructive"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                            onMouseDown={(e) => e.stopPropagation()}
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                          <DropdownMenuItem onClick={() => handleEdit(cohort)}>
+                            <Pencil className="mr-2 h-4 w-4" />
+                            Edit Cohort
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => handleDeleteClick(cohort.id)}
+                            className="text-destructive"
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Delete Cohort
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </td>
                 </tr>
@@ -895,7 +942,7 @@ export default function CohortsPage() {
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Cohort Name */}
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               <label htmlFor="name" className="text-sm font-medium">
                 Cohort Name <span className="text-destructive">*</span>
               </label>
@@ -910,7 +957,7 @@ export default function CohortsPage() {
             </div>
 
             {/* Client Selection */}
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               <label htmlFor="client_id" className="text-sm font-medium">
                 Client <span className="text-destructive">*</span>
               </label>
@@ -920,7 +967,7 @@ export default function CohortsPage() {
                 value={formData.client_id}
                 onChange={handleInputChange}
                 required
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                className="flex h-10 w-full rounded-md border border-input bg-background pl-3 pr-10 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
                 <option value="">Select a client</option>
                 {clients.map((client) => (
@@ -932,7 +979,7 @@ export default function CohortsPage() {
             </div>
 
             {/* Plan Selection */}
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               <label htmlFor="plan_id" className="text-sm font-medium">
                 Plan <span className="text-destructive">*</span>
               </label>
@@ -942,7 +989,7 @@ export default function CohortsPage() {
                 value={formData.plan_id}
                 onChange={handleInputChange}
                 required
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                className="flex h-10 w-full rounded-md border border-input bg-background pl-3 pr-10 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
                 <option value="">Select a plan</option>
                 {plans.map((plan) => (
@@ -955,36 +1002,44 @@ export default function CohortsPage() {
 
             {/* Date Selection */}
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 <label htmlFor="start_date" className="text-sm font-medium">
                   Start Date <span className="text-destructive">*</span>
                 </label>
-                <Input
-                  id="start_date"
-                  name="start_date"
-                  type="date"
-                  value={formData.start_date}
-                  onChange={handleInputChange}
-                  required
-                />
+                <div className="relative">
+                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                  <Input
+                    id="start_date"
+                    name="start_date"
+                    type="date"
+                    value={formData.start_date}
+                    onChange={handleInputChange}
+                    required
+                    className="pl-10"
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 <label htmlFor="end_date" className="text-sm font-medium">
                   End Date <span className="text-destructive">*</span>
                 </label>
-                <Input
-                  id="end_date"
-                  name="end_date"
-                  type="date"
-                  value={formData.end_date}
-                  onChange={handleInputChange}
-                  required
-                />
+                <div className="relative">
+                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                  <Input
+                    id="end_date"
+                    name="end_date"
+                    type="date"
+                    value={formData.end_date}
+                    onChange={handleInputChange}
+                    required
+                    className="pl-10"
+                  />
+                </div>
               </div>
             </div>
 
             {/* Participants Selection */}
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               <label className="text-sm font-medium">
                 Participants <span className="text-destructive">*</span>
               </label>

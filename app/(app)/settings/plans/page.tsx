@@ -229,7 +229,7 @@ export default function PlansPage() {
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               <label htmlFor="name" className="text-sm font-medium">
                 Plan Name <span className="text-destructive">*</span>
               </label>
@@ -243,7 +243,7 @@ export default function PlansPage() {
               />
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               <label htmlFor="description" className="text-sm font-medium">
                 Description
               </label>
@@ -256,7 +256,7 @@ export default function PlansPage() {
               />
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               <label htmlFor="price" className="text-sm font-medium">
                 Price
               </label>
@@ -271,7 +271,7 @@ export default function PlansPage() {
               />
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               <label htmlFor="duration" className="text-sm font-medium">
                 Duration (days)
               </label>
@@ -285,7 +285,7 @@ export default function PlansPage() {
               />
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               <label htmlFor="status" className="text-sm font-medium">
                 Status
               </label>

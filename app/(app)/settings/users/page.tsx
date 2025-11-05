@@ -222,7 +222,7 @@ export default function UsersPage() {
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               <label htmlFor="name" className="text-sm font-medium">
                 Name <span className="text-destructive">*</span>
               </label>
@@ -236,7 +236,7 @@ export default function UsersPage() {
               />
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               <label htmlFor="surname" className="text-sm font-medium">
                 Surname <span className="text-destructive">*</span>
               </label>
@@ -250,7 +250,7 @@ export default function UsersPage() {
               />
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               <label htmlFor="email" className="text-sm font-medium">
                 Email <span className="text-destructive">*</span>
               </label>
@@ -265,7 +265,7 @@ export default function UsersPage() {
               />
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               <label htmlFor="password" className="text-sm font-medium">
                 Password <span className="text-destructive">*</span>
               </label>
@@ -280,7 +280,7 @@ export default function UsersPage() {
               />
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               <label htmlFor="role" className="text-sm font-medium">
                 Role
               </label>
@@ -293,7 +293,7 @@ export default function UsersPage() {
               />
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               <label htmlFor="status" className="text-sm font-medium">
                 Status
               </label>
