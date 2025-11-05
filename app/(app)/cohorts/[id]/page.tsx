@@ -96,6 +96,13 @@ export default function CohortDetailPage() {
     end_date: "",
   });
   const [updatingAssessment, setUpdatingAssessment] = useState(false);
+  const [isEditCohortDialogOpen, setIsEditCohortDialogOpen] = useState(false);
+  const [cohortFormData, setCohortFormData] = useState({
+    name: "",
+    start_date: "",
+    end_date: "",
+  });
+  const [updatingCohort, setUpdatingCohort] = useState(false);
 
   // Filter participants based on search
   const filteredParticipants = participants.filter((participant) => {
@@ -582,6 +589,53 @@ export default function CohortDetailPage() {
     }
   }
 
+  async function handleUpdateCohort(e: React.FormEvent) {
+    e.preventDefault();
+    if (!cohort) return;
+
+    setUpdatingCohort(true);
+    setSubmitError(null);
+
+    try {
+      const updateData: any = {
+        name: cohortFormData.name,
+      };
+      
+      if (cohortFormData.start_date) {
+        updateData.start_date = cohortFormData.start_date;
+      } else {
+        updateData.start_date = null;
+      }
+      
+      if (cohortFormData.end_date) {
+        updateData.end_date = cohortFormData.end_date;
+      } else {
+        updateData.end_date = null;
+      }
+
+      const { error } = await supabase
+        .from("cohorts")
+        .update(updateData)
+        .eq("id", cohort.id);
+
+      if (error) {
+        console.error("Error updating cohort:", error);
+        setSubmitError(error.message);
+        setUpdatingCohort(false);
+        return;
+      }
+
+      // Close dialog and refresh cohort details
+      setIsEditCohortDialogOpen(false);
+      await fetchCohortDetails();
+    } catch (err) {
+      console.error("Unexpected error:", err);
+      setSubmitError(err instanceof Error ? err.message : "An unexpected error occurred");
+    } finally {
+      setUpdatingCohort(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -621,9 +675,25 @@ export default function CohortDetailPage() {
           </Button>
 
       {/* Header */}
-          <div>
-            <h1 className="text-3xl font-bold">{cohort.name}</h1>
-            <p className="text-muted-foreground mt-2">Cohort details and participant management</p>
+          <div className="flex items-start justify-between">
+            <div>
+              <h1 className="text-3xl font-bold">{cohort.name}</h1>
+              <p className="text-muted-foreground mt-2">Cohort details and participant management</p>
+            </div>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setCohortFormData({
+                  name: cohort.name,
+                  start_date: cohort.start_date ? cohort.start_date.split('T')[0] : "",
+                  end_date: cohort.end_date ? cohort.end_date.split('T')[0] : "",
+                });
+                setIsEditCohortDialogOpen(true);
+              }}
+            >
+              <Pencil className="mr-2 h-4 w-4" />
+              Edit Cohort
+            </Button>
           </div>
 
       {/* Tabs */}
@@ -1055,6 +1125,114 @@ export default function CohortDetailPage() {
               </Button>
               <Button type="submit" disabled={updatingAssessment}>
                 {updatingAssessment ? "Updating..." : "Update Assessment"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Cohort Dialog */}
+      <Dialog open={isEditCohortDialogOpen} onOpenChange={setIsEditCohortDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogClose onClick={() => setIsEditCohortDialogOpen(false)} />
+          <DialogHeader>
+            <DialogTitle>Edit Cohort</DialogTitle>
+            <DialogDescription>
+              Update the cohort name and dates. Dates are optional.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleUpdateCohort} className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                Cohort Name <span className="text-destructive">*</span>
+              </label>
+              <Input
+                type="text"
+                value={cohortFormData.name}
+                onChange={(e) =>
+                  setCohortFormData((prev) => ({ ...prev, name: e.target.value }))
+                }
+                required
+                placeholder="Enter cohort name"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Start Date</label>
+                <div className="relative">
+                  <Calendar 
+                    className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground cursor-pointer z-10" 
+                    onClick={(e) => {
+                      const input = e.currentTarget.nextElementSibling as HTMLInputElement;
+                      if (input) {
+                        input.showPicker?.();
+                        input.focus();
+                      }
+                    }}
+                  />
+                  <Input
+                    type="date"
+                    value={cohortFormData.start_date}
+                    onChange={(e) =>
+                      setCohortFormData((prev) => ({ ...prev, start_date: e.target.value }))
+                    }
+                    onClick={(e) => {
+                      const input = e.currentTarget as HTMLInputElement;
+                      input.showPicker?.();
+                    }}
+                    placeholder="Select start date (optional)"
+                    className="pl-10 [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none cursor-pointer"
+                    style={{ WebkitAppearance: 'none' }}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">End Date</label>
+                <div className="relative">
+                  <Calendar 
+                    className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground cursor-pointer z-10" 
+                    onClick={(e) => {
+                      const input = e.currentTarget.nextElementSibling as HTMLInputElement;
+                      if (input) {
+                        input.showPicker?.();
+                        input.focus();
+                      }
+                    }}
+                  />
+                  <Input
+                    type="date"
+                    value={cohortFormData.end_date}
+                    onChange={(e) =>
+                      setCohortFormData((prev) => ({ ...prev, end_date: e.target.value }))
+                    }
+                    onClick={(e) => {
+                      const input = e.currentTarget as HTMLInputElement;
+                      input.showPicker?.();
+                    }}
+                    placeholder="Select end date (optional)"
+                    className="pl-10 [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none cursor-pointer"
+                    style={{ WebkitAppearance: 'none' }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {submitError && <p className="text-sm text-destructive">{submitError}</p>}
+
+            <div className="flex justify-end gap-2 pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setIsEditCohortDialogOpen(false);
+                  setSubmitError(null);
+                }}
+                disabled={updatingCohort}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={updatingCohort}>
+                {updatingCohort ? "Updating..." : "Update Cohort"}
               </Button>
             </div>
           </form>
