@@ -27,7 +27,7 @@ interface MyAssessment {
 
 interface MyReview {
   id: string;
-  status: string | null;
+  request_status: string | null;
   created_at: string | null;
   participant_assessment: {
     id: string;
@@ -52,7 +52,7 @@ interface MyReview {
 
 interface MyAction {
   id: string;
-  status: string | null;
+  request_status: string | null;
   created_at: string | null;
   nominated_by?: {
     id: string;
@@ -194,12 +194,12 @@ export default function TenantDashboardPage() {
 
   async function fetchMyReviews(userId: string) {
     try {
-      // Fetch nominations where this user is the reviewer and status is "accepted"
+      // Fetch nominations where this user is the reviewer and request_status is "accepted"
       const { data: nominations, error: nominationsError } = await supabase
         .from("reviewer_nominations")
         .select(`
           id,
-          status,
+          request_status,
           created_at,
           participant_assessment:participant_assessments(
             id,
@@ -214,7 +214,7 @@ export default function TenantDashboardPage() {
           )
         `)
         .eq("reviewer_id", userId)
-        .eq("status", "accepted")
+        .eq("request_status", "accepted")
         .order("created_at", { ascending: false });
 
       // Handle relationship cache issues
@@ -223,9 +223,9 @@ export default function TenantDashboardPage() {
         
         const { data: nominationsOnly, error: nominationsOnlyError } = await supabase
           .from("reviewer_nominations")
-          .select("id, status, created_at, participant_assessment_id")
+          .select("id, request_status, created_at, participant_assessment_id")
           .eq("reviewer_id", userId)
-          .eq("status", "accepted")
+          .eq("request_status", "accepted")
           .order("created_at", { ascending: false });
 
         if (nominationsOnlyError) {
@@ -322,12 +322,12 @@ export default function TenantDashboardPage() {
 
   async function fetchMyActions(userId: string) {
     try {
-      // Fetch nominations where this user is the reviewer and status is "pending"
+      // Fetch nominations where this user is the reviewer and request_status is "pending"
       const { data: nominations, error: nominationsError } = await supabase
         .from("reviewer_nominations")
         .select(`
           id,
-          status,
+          request_status,
           created_at,
           nominated_by_id,
           participant_assessment:participant_assessments(
@@ -343,7 +343,7 @@ export default function TenantDashboardPage() {
           )
         `)
         .eq("reviewer_id", userId)
-        .eq("status", "pending")
+        .eq("request_status", "pending")
         .order("created_at", { ascending: false });
 
       // Handle relationship cache issues
@@ -352,9 +352,9 @@ export default function TenantDashboardPage() {
         
         const { data: nominationsOnly, error: nominationsOnlyError } = await supabase
           .from("reviewer_nominations")
-          .select("id, status, created_at, nominated_by_id, participant_assessment_id")
+          .select("id, request_status, created_at, nominated_by_id, participant_assessment_id")
           .eq("reviewer_id", userId)
-          .eq("status", "pending")
+          .eq("request_status", "pending")
           .order("created_at", { ascending: false });
 
         if (nominationsOnlyError) {
@@ -494,10 +494,10 @@ export default function TenantDashboardPage() {
     try {
       setProcessingAction(nominationId);
 
-      // Update nomination status to "accepted"
+      // Update nomination request_status to "accepted"
       const { error: updateError } = await supabase
         .from("reviewer_nominations")
-        .update({ status: "accepted" })
+        .update({ request_status: "accepted" })
         .eq("id", nominationId);
 
       if (updateError) {
@@ -526,10 +526,10 @@ export default function TenantDashboardPage() {
     try {
       setProcessingAction(nominationId);
 
-      // Update nomination status to "rejected"
+      // Update nomination request_status to "rejected"
       const { error: updateError } = await supabase
         .from("reviewer_nominations")
-        .update({ status: "rejected" })
+        .update({ request_status: "rejected" })
         .eq("id", nominationId);
 
       if (updateError) {

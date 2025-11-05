@@ -52,7 +52,7 @@ interface ReviewerNomination {
   external_reviewer_id: string | null;
   is_external: boolean | null;
   nominated_by_id: string;
-  status: string | null;
+  request_status: string | null;
   review_submitted_at: string | null;
   created_at: string | null;
   reviewer?: {
@@ -243,14 +243,12 @@ export default function TenantAssessmentDetailPage() {
 
   async function fetchNominations(participantAssessmentId: string, userId: string) {
     try {
-      // Fetch nominations where this user nominated reviewers
-      // Only fetch active nominations (pending or accepted), exclude rejected ones for counting
+      // Fetch all nominations where this user nominated reviewers (regardless of status)
       const { data: nominationsData, error: nominationsError } = await supabase
         .from("reviewer_nominations")
         .select("*")
         .eq("participant_assessment_id", participantAssessmentId)
         .eq("nominated_by_id", userId)
-        .or("status.eq.pending,status.eq.accepted")
         .order("created_at", { ascending: false });
 
       if (nominationsError) {
@@ -381,7 +379,7 @@ export default function TenantAssessmentDetailPage() {
       } else {
         // Limit to 10 total active nominations (existing active + new selections)
         // Only count active nominations (pending or accepted), not rejected ones
-        const activeNominationsCount = nominations.filter(n => n.status === "pending" || n.status === "accepted").length;
+        const activeNominationsCount = nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length;
         const maxNewSelections = 10 - activeNominationsCount;
         if (prev.length >= maxNewSelections) {
           showToast(`You can only select up to ${maxNewSelections} more reviewer(s). You already have ${activeNominationsCount} active nomination(s).`, "info");
@@ -426,7 +424,7 @@ export default function TenantAssessmentDetailPage() {
     }
 
     // Check if we've reached the limit
-    const activeNominationsCount = nominations.filter(n => n.status === "pending" || n.status === "accepted").length;
+    const activeNominationsCount = nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length;
     const maxNewSelections = 10 - activeNominationsCount;
     if (selectedReviewers.length >= maxNewSelections) {
       return { 
@@ -497,10 +495,10 @@ export default function TenantAssessmentDetailPage() {
       // Only check for active nominations (pending or accepted), not rejected ones
       const { data: existingNominations, error: checkError } = await supabase
         .from("reviewer_nominations")
-        .select("reviewer_id, external_reviewer_id, status")
+        .select("reviewer_id, external_reviewer_id, request_status")
         .eq("participant_assessment_id", participantAssessment.id)
         .eq("nominated_by_id", user.id)
-        .or("status.eq.pending,status.eq.accepted");
+        .or("request_status.eq.pending,request_status.eq.accepted");
 
       if (checkError) {
         console.error("Error checking existing nominations:", checkError);
@@ -530,7 +528,7 @@ export default function TenantAssessmentDetailPage() {
           reviewer_id: reviewerId,
           nominated_by_id: user.id,
           is_external: false,
-          status: "pending" as any, // Ensure exact lowercase match
+          request_status: "pending",
         });
       }
 
@@ -573,7 +571,7 @@ export default function TenantAssessmentDetailPage() {
             is_external: true,
             external_reviewer_id: external.id,
             nominated_by_id: user.id,
-            status: "pending" as any, // Ensure exact lowercase match
+            request_status: "pending",
           });
         } catch (err: any) {
           console.error(`Error processing external reviewer ${email}:`, err);
@@ -943,12 +941,12 @@ export default function TenantAssessmentDetailPage() {
               <CardTitle>Nominate for Review</CardTitle>
               <Button
                 onClick={handleOpenNominationModal}
-                disabled={nominations.filter(n => n.status === "pending" || n.status === "accepted").length >= 10}
+                disabled={nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length >= 10}
               >
                 Request Nomination
               </Button>
             </div>
-            {nominations.filter(n => n.status === "pending" || n.status === "accepted").length >= 10 && (
+            {nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length >= 10 && (
               <p className="text-sm text-muted-foreground mt-2">
                 You have reached the maximum of 10 active nominations (internal + external).
               </p>
@@ -999,7 +997,7 @@ export default function TenantAssessmentDetailPage() {
                       <tbody>
                         {internalNominations.map((nomination) => {
                           const reviewer = nomination.reviewer;
-                          const canDelete = nomination.status === "pending";
+                          const canDelete = nomination.request_status === "pending";
                           
                           return (
                             <tr key={nomination.id} className="border-b hover:bg-muted/50">
@@ -1011,9 +1009,9 @@ export default function TenantAssessmentDetailPage() {
                               </td>
                               <td className="px-6 py-4 text-sm">{reviewer?.email || "-"}</td>
                               <td className="px-6 py-4 text-sm">
-                                {nomination.status ? (
-                                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(nomination.status)}`}>
-                                    {nomination.status}
+                                {nomination.request_status ? (
+                                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(nomination.request_status)}`}>
+                                    {nomination.request_status}
                                   </span>
                                 ) : (
                                   "-"
@@ -1072,7 +1070,7 @@ export default function TenantAssessmentDetailPage() {
                       <tbody>
                         {externalNominations.map((nomination) => {
                           const externalReviewer = nomination.external_reviewer;
-                          const canDelete = nomination.status === "pending";
+                          const canDelete = nomination.request_status === "pending";
                           
                           return (
                             <tr key={nomination.id} className="border-b hover:bg-muted/50">
@@ -1080,9 +1078,9 @@ export default function TenantAssessmentDetailPage() {
                                 {externalReviewer?.email || "-"}
                               </td>
                               <td className="px-6 py-4 text-sm">
-                                {nomination.status ? (
-                                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(nomination.status)}`}>
-                                    {nomination.status}
+                                {nomination.request_status ? (
+                                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(nomination.request_status)}`}>
+                                    {nomination.request_status}
                                   </span>
                                 ) : (
                                   "-"
@@ -1133,7 +1131,7 @@ export default function TenantAssessmentDetailPage() {
           <DialogHeader>
             <DialogTitle>Request Nomination</DialogTitle>
             <DialogDescription>
-              Select up to {10 - nominations.filter(n => n.status === "pending" || n.status === "accepted").length} reviewers from your client roster or add external reviewers by email. You have {nominations.filter(n => n.status === "pending" || n.status === "accepted").length} active nomination(s).
+              Select up to {10 - nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length} reviewers from your client roster or add external reviewers by email. You have {nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length} active nomination(s).
             </DialogDescription>
           </DialogHeader>
           <DialogClose onClick={() => setIsNominationModalOpen(false)} />
@@ -1237,9 +1235,9 @@ export default function TenantAssessmentDetailPage() {
                       {clientRoster.map((user) => {
                         const isSelected = selectedReviewers.includes(user.id);
                         // Only disable if they have an active nomination (pending or accepted), not rejected
-                        const activeNominationsCount = nominations.filter(n => n.status === "pending" || n.status === "accepted").length;
+                        const activeNominationsCount = nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length;
                         const isAlreadyNominated = nominations.some(
-                          (n) => n.reviewer_id === user.id && (n.status === "pending" || n.status === "accepted")
+                          (n) => n.reviewer_id === user.id && (n.request_status === "pending" || n.request_status === "accepted")
                         );
                         
                         return (
@@ -1277,7 +1275,7 @@ export default function TenantAssessmentDetailPage() {
 
                 <div className="flex items-center justify-between pt-4 border-t">
                   <p className="text-sm text-muted-foreground">
-                    {selectedReviewers.length} of {10 - nominations.filter(n => n.status === "pending" || n.status === "accepted").length} selected
+                    {selectedReviewers.length} of {10 - nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length} selected
                     {selectedReviewers.filter(email => email.includes("@")).length > 0 && (
                       <span className="ml-2">
                         ({selectedReviewers.filter(email => email.includes("@")).length} external)
