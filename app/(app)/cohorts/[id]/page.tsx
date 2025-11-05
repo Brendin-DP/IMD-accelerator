@@ -56,7 +56,7 @@ interface CohortAssessment {
   name: string | null;
   start_date: string | null;
   end_date: string | null;
-  status: string | null;
+  assessment_status: string | null;
   created_at: string | null;
   assessment_type?: {
     id: string;
@@ -280,13 +280,20 @@ export default function CohortDetailPage() {
         // Create cohort assessments from plan assessments
         // Use assessment_id from plan_assessments to link to assessment_types
         if (planAssessments && planAssessments.length > 0) {
-          const cohortAssessmentsToCreate = planAssessments.map((pa: any) => ({
-            cohort_id: cohortId,
-            assessment_type_id: pa.assessment_id, // This links to assessment_types (e.g., "360" assessment)
-            name: null, // Will use assessment_type name
-            status: "pending",
-          }));
+          // Explicitly create objects with only the fields we want to insert
+          // Ensure we don't include 'status' field - only use 'assessment_status'
+          const cohortAssessmentsToCreate = planAssessments.map((pa: any) => {
+            // Only extract assessment_id from pa to avoid any unexpected fields
+            const assessmentId = pa.assessment_id;
+            return {
+              cohort_id: cohortId,
+              assessment_type_id: assessmentId,
+              name: null,
+              assessment_status: "Not started",
+            };
+          });
 
+          console.log("Creating cohort assessments:", JSON.stringify(cohortAssessmentsToCreate, null, 2));
           const { error: createError } = await supabase
             .from("cohort_assessments")
             .insert(cohortAssessmentsToCreate);
@@ -624,20 +631,7 @@ export default function CohortDetailPage() {
             {assessments.map((assessment) => {
               const assessmentType = assessment.assessment_type as any;
               const assessmentName = assessment.name || assessmentType?.name || "Assessment";
-              
-              // Determine status badge color
-              const getStatusColor = (status: string | null) => {
-                if (!status) return "bg-gray-100 text-gray-800";
-                const statusLower = status.toLowerCase();
-                if (statusLower === "active" || statusLower === "in_progress") {
-                  return "bg-blue-100 text-blue-800";
-                } else if (statusLower === "completed" || statusLower === "done") {
-                  return "bg-green-100 text-green-800";
-                } else if (statusLower === "draft" || statusLower === "pending") {
-                  return "bg-yellow-100 text-yellow-800";
-                }
-                return "bg-gray-100 text-gray-800";
-              };
+            
 
               return (
                 <Card 
@@ -655,11 +649,6 @@ export default function CohortDetailPage() {
                     <div className="flex items-start justify-between">
                       <CardTitle className="text-lg pr-8">{assessmentName}</CardTitle>
                       <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                        {assessment.status && (
-                          <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(assessment.status)}`}>
-                            {assessment.status}
-                          </span>
-                        )}
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button

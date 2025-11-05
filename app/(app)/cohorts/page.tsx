@@ -85,13 +85,11 @@ export default function CohortsPage() {
   }, []);
 
   useEffect(() => {
-    if (isDialogOpen) {
+    if (isDialogOpen && editingCohortId) {
       fetchClients();
       fetchPlans();
-      if (editingCohortId) {
-        fetchCohortForEdit(editingCohortId);
-      }
-    } else {
+      fetchCohortForEdit(editingCohortId);
+    } else if (!isDialogOpen) {
       // Reset form when dialog closes
       setEditingCohortId(null);
       setFormData({
@@ -671,6 +669,12 @@ export default function CohortsPage() {
     setSubmitError(null);
 
     try {
+      if (!editingCohortId) {
+        setSubmitError("Cannot create new cohorts. Please edit an existing cohort.");
+        setSubmitting(false);
+        return;
+      }
+
       if (!formData.name || !formData.client_id || !formData.plan_id || !formData.start_date || !formData.end_date) {
         setSubmitError("Please fill in all required fields");
         setSubmitting(false);
@@ -719,58 +723,10 @@ export default function CohortsPage() {
           console.error("Error deleting existing participants:", deleteError);
         }
       } else {
-        // Create new cohort
-        const { data: cohort, error: cohortError } = await supabase
-          .from("cohorts")
-          .insert([
-            {
-              name: formData.name,
-              client_id: formData.client_id,
-              plan_id: formData.plan_id,
-              start_date: formData.start_date,
-              end_date: formData.end_date,
-            },
-          ])
-          .select()
-          .single();
-
-        if (cohortError) {
-          console.error("Error creating cohort:", cohortError);
-          setSubmitError(cohortError.message);
-          setSubmitting(false);
-          return;
-        }
-
-        cohortId = cohort.id;
-
-        // Create cohort assessments from plan assessments
-        const { data: planAssessments, error: planAssessmentsError } = await supabase
-          .from("plan_assessments")
-          .select("assessment_id")
-          .eq("plan_id", formData.plan_id);
-
-        if (planAssessmentsError) {
-          console.error("Error fetching plan assessments:", planAssessmentsError);
-          // Continue anyway - don't fail cohort creation if assessments fail
-        } else if (planAssessments && planAssessments.length > 0) {
-          // Create cohort assessments for each plan assessment
-          // Use assessment_id from plan_assessments to link to assessment_types
-          const cohortAssessmentsToCreate = planAssessments.map((pa: any) => ({
-            cohort_id: cohortId,
-            assessment_type_id: pa.assessment_id, // This links to assessment_types (e.g., "360" assessment)
-            name: null, // Will use assessment_type name
-            status: "pending",
-          }));
-
-          const { error: assessmentsError } = await supabase
-            .from("cohort_assessments")
-            .insert(cohortAssessmentsToCreate);
-
-          if (assessmentsError) {
-            console.error("Error creating cohort assessments:", assessmentsError);
-            // Continue anyway - don't fail cohort creation if assessments fail
-          }
-        }
+        // Creation is disabled - only editing is allowed
+        setSubmitError("Cannot create new cohorts. Please edit an existing cohort.");
+        setSubmitting(false);
+        return;
       }
 
       // Add participants to cohort
@@ -824,10 +780,6 @@ export default function CohortsPage() {
             <Download className="mr-2 h-4 w-4" />
             Download Data
           </Button>
-          <Button onClick={() => setIsDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Create Cohort
-          </Button>
         </div>
       </div>
 
@@ -839,7 +791,7 @@ export default function CohortsPage() {
           <div className="p-8 text-center text-destructive">{cohortsError}</div>
         ) : cohorts.length === 0 ? (
           <div className="p-8 text-center text-muted-foreground">
-            No active cohorts found. Click "Create Cohort" to create your first cohort.
+            No active cohorts found.
           </div>
         ) : (
           <table className="w-full">
@@ -926,18 +878,18 @@ export default function CohortsPage() {
         )}
       </div>
 
-      {/* Create Cohort Dialog */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      {/* Edit Cohort Dialog */}
+      <Dialog open={isDialogOpen && !!editingCohortId} onOpenChange={(open) => {
+        if (!open) {
+          setIsDialogOpen(false);
+        }
+      }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogClose onClick={() => setIsDialogOpen(false)} />
           <DialogHeader>
-            <DialogTitle>
-              {editingCohortId ? "Edit Cohort" : "Create Cohort"}
-            </DialogTitle>
+            <DialogTitle>Edit Cohort</DialogTitle>
             <DialogDescription>
-              {editingCohortId
-                ? "Update the cohort details below."
-                : "Create a new cohort by selecting a client, dates, and participants."}
+              Update the cohort details below.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -1112,14 +1064,8 @@ export default function CohortsPage() {
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={submitting}>
-                {submitting
-                  ? editingCohortId
-                    ? "Updating..."
-                    : "Creating..."
-                  : editingCohortId
-                  ? "Update Cohort"
-                  : "Create Cohort"}
+              <Button type="submit" disabled={submitting || !editingCohortId}>
+                {submitting ? "Updating..." : "Update Cohort"}
               </Button>
             </div>
           </form>

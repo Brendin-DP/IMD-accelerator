@@ -16,30 +16,149 @@ export type Database = {
     Tables: {
       assessment_types: {
         Row: {
-          created_at: string | null
           description: string | null
-          engine_ref: string | null
           id: string
-          is_active: boolean | null
           name: string
         }
         Insert: {
-          created_at?: string | null
           description?: string | null
-          engine_ref?: string | null
           id?: string
-          is_active?: boolean | null
           name: string
         }
         Update: {
-          created_at?: string | null
           description?: string | null
-          engine_ref?: string | null
           id?: string
-          is_active?: boolean | null
           name?: string
         }
         Relationships: []
+      }
+      assessments_360: {
+        Row: {
+          assessment_status: Database["public"]["Enums"]["assessment_status"]
+          cohort_assessment_id: string
+          created_at: string | null
+          end_date: string | null
+          id: string
+          name: string | null
+          participant_assessment_id: string
+          participant_id: string
+          progress: number | null
+          source: string | null
+          start_date: string | null
+        }
+        Insert: {
+          assessment_status?: Database["public"]["Enums"]["assessment_status"]
+          cohort_assessment_id: string
+          created_at?: string | null
+          end_date?: string | null
+          id?: string
+          name?: string | null
+          participant_assessment_id: string
+          participant_id: string
+          progress?: number | null
+          source?: string | null
+          start_date?: string | null
+        }
+        Update: {
+          assessment_status?: Database["public"]["Enums"]["assessment_status"]
+          cohort_assessment_id?: string
+          created_at?: string | null
+          end_date?: string | null
+          id?: string
+          name?: string | null
+          participant_assessment_id?: string
+          participant_id?: string
+          progress?: number | null
+          source?: string | null
+          start_date?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assessments_360_cohort_assessment_id_fkey"
+            columns: ["cohort_assessment_id"]
+            isOneToOne: false
+            referencedRelation: "cohort_assessments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assessments_360_participant_assessment_id_fkey"
+            columns: ["participant_assessment_id"]
+            isOneToOne: false
+            referencedRelation: "participant_assessments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assessments_360_participant_id_fkey"
+            columns: ["participant_id"]
+            isOneToOne: false
+            referencedRelation: "cohort_participants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      assessments_pulse: {
+        Row: {
+          assessment_status: Database["public"]["Enums"]["assessment_status"]
+          cohort_assessment_id: string
+          created_at: string | null
+          end_date: string | null
+          id: string
+          name: string | null
+          participant_assessment_id: string
+          participant_id: string
+          progress: number | null
+          source: string | null
+          start_date: string | null
+        }
+        Insert: {
+          assessment_status?: Database["public"]["Enums"]["assessment_status"]
+          cohort_assessment_id: string
+          created_at?: string | null
+          end_date?: string | null
+          id?: string
+          name?: string | null
+          participant_assessment_id: string
+          participant_id: string
+          progress?: number | null
+          source?: string | null
+          start_date?: string | null
+        }
+        Update: {
+          assessment_status?: Database["public"]["Enums"]["assessment_status"]
+          cohort_assessment_id?: string
+          created_at?: string | null
+          end_date?: string | null
+          id?: string
+          name?: string | null
+          participant_assessment_id?: string
+          participant_id?: string
+          progress?: number | null
+          source?: string | null
+          start_date?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assessments_pulse_cohort_assessment_id_fkey"
+            columns: ["cohort_assessment_id"]
+            isOneToOne: false
+            referencedRelation: "cohort_assessments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assessments_pulse_participant_assessment_id_fkey"
+            columns: ["participant_assessment_id"]
+            isOneToOne: false
+            referencedRelation: "participant_assessments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assessments_pulse_participant_id_fkey"
+            columns: ["participant_id"]
+            isOneToOne: false
+            referencedRelation: "cohort_participants"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       client_users: {
         Row: {
@@ -48,8 +167,9 @@ export type Database = {
           email: string
           id: string
           name: string | null
+          password_hash: string | null
           role: Database["public"]["Enums"]["client_user_role"]
-          status: Database["public"]["Enums"]["user_status"]
+          status: string
           surname: string | null
         }
         Insert: {
@@ -58,8 +178,9 @@ export type Database = {
           email: string
           id?: string
           name?: string | null
+          password_hash?: string | null
           role?: Database["public"]["Enums"]["client_user_role"]
-          status?: Database["public"]["Enums"]["user_status"]
+          status?: string
           surname?: string | null
         }
         Update: {
@@ -68,8 +189,9 @@ export type Database = {
           email?: string
           id?: string
           name?: string | null
+          password_hash?: string | null
           role?: Database["public"]["Enums"]["client_user_role"]
-          status?: Database["public"]["Enums"]["user_status"]
+          status?: string
           surname?: string | null
         }
         Relationships: [
@@ -86,29 +208,35 @@ export type Database = {
         Row: {
           created_at: string | null
           created_by: string | null
-          domain: string | null
           id: string
+          logo_url: string | null
           name: string
           primary_contact_email: string | null
           status: Database["public"]["Enums"]["client_status"]
+          subdomain: string | null
+          theme: Json | null
         }
         Insert: {
           created_at?: string | null
           created_by?: string | null
-          domain?: string | null
           id?: string
+          logo_url?: string | null
           name: string
           primary_contact_email?: string | null
           status?: Database["public"]["Enums"]["client_status"]
+          subdomain?: string | null
+          theme?: Json | null
         }
         Update: {
           created_at?: string | null
           created_by?: string | null
-          domain?: string | null
           id?: string
+          logo_url?: string | null
           name?: string
           primary_contact_email?: string | null
           status?: Database["public"]["Enums"]["client_status"]
+          subdomain?: string | null
+          theme?: Json | null
         }
         Relationships: [
           {
@@ -122,6 +250,7 @@ export type Database = {
       }
       cohort_assessments: {
         Row: {
+          assessment_status: string | null
           assessment_type_id: string
           cohort_id: string
           created_at: string | null
@@ -129,9 +258,9 @@ export type Database = {
           id: string
           name: string | null
           start_date: string | null
-          status: string | null
         }
         Insert: {
+          assessment_status?: string | null
           assessment_type_id: string
           cohort_id: string
           created_at?: string | null
@@ -139,9 +268,9 @@ export type Database = {
           id?: string
           name?: string | null
           start_date?: string | null
-          status?: string | null
         }
         Update: {
+          assessment_status?: string | null
           assessment_type_id?: string
           cohort_id?: string
           created_at?: string | null
@@ -149,18 +278,17 @@ export type Database = {
           id?: string
           name?: string | null
           start_date?: string | null
-          status?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "cohort_assessments_assessment_type_id_fkey"
+            foreignKeyName: "cohort_assessments_assessment_type_id_fkey1"
             columns: ["assessment_type_id"]
             isOneToOne: false
             referencedRelation: "assessment_types"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "cohort_assessments_cohort_id_fkey"
+            foreignKeyName: "cohort_assessments_cohort_id_fkey1"
             columns: ["cohort_id"]
             isOneToOne: false
             referencedRelation: "cohorts"
@@ -195,18 +323,11 @@ export type Database = {
             referencedRelation: "client_users"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "cohort_participants_cohort_id_fkey"
-            columns: ["cohort_id"]
-            isOneToOne: false
-            referencedRelation: "cohorts"
-            referencedColumns: ["id"]
-          },
         ]
       }
       cohorts: {
         Row: {
-          client_id: string
+          client_id: string | null
           created_at: string | null
           created_by: string | null
           end_date: string | null
@@ -214,10 +335,10 @@ export type Database = {
           name: string
           plan_id: string
           start_date: string | null
-          status: Database["public"]["Enums"]["cohort_status"]
+          status: string | null
         }
         Insert: {
-          client_id: string
+          client_id?: string | null
           created_at?: string | null
           created_by?: string | null
           end_date?: string | null
@@ -225,10 +346,10 @@ export type Database = {
           name: string
           plan_id: string
           start_date?: string | null
-          status?: Database["public"]["Enums"]["cohort_status"]
+          status?: string | null
         }
         Update: {
-          client_id?: string
+          client_id?: string | null
           created_at?: string | null
           created_by?: string | null
           end_date?: string | null
@@ -236,7 +357,7 @@ export type Database = {
           name?: string
           plan_id?: string
           start_date?: string | null
-          status?: Database["public"]["Enums"]["cohort_status"]
+          status?: string | null
         }
         Relationships: [
           {
@@ -258,6 +379,51 @@ export type Database = {
             columns: ["plan_id"]
             isOneToOne: false
             referencedRelation: "plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      external_reviewers: {
+        Row: {
+          client_id: string
+          created_at: string | null
+          email: string
+          id: string
+          invited_by: string | null
+          name: string | null
+          status: string | null
+        }
+        Insert: {
+          client_id: string
+          created_at?: string | null
+          email: string
+          id?: string
+          invited_by?: string | null
+          name?: string | null
+          status?: string | null
+        }
+        Update: {
+          client_id?: string
+          created_at?: string | null
+          email?: string
+          id?: string
+          invited_by?: string | null
+          name?: string | null
+          status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "external_reviewers_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "external_reviewers_invited_by_fkey"
+            columns: ["invited_by"]
+            isOneToOne: false
+            referencedRelation: "client_users"
             referencedColumns: ["id"]
           },
         ]
@@ -331,13 +497,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "participant_assessments_cohort_assessment_id_fkey"
-            columns: ["cohort_assessment_id"]
-            isOneToOne: false
-            referencedRelation: "cohort_assessments"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "participant_assessments_participant_id_fkey"
             columns: ["participant_id"]
             isOneToOne: false
@@ -348,24 +507,24 @@ export type Database = {
       }
       plan_assessments: {
         Row: {
-          assessment_id: string
+          assessment_type_id: string
           id: string
           plan_id: string
         }
         Insert: {
-          assessment_id: string
+          assessment_type_id: string
           id?: string
           plan_id: string
         }
         Update: {
-          assessment_id?: string
+          assessment_type_id?: string
           id?: string
           plan_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "plan_assessments_assessment_id_fkey"
-            columns: ["assessment_id"]
+            foreignKeyName: "plan_assessments_assessment_type_id_fkey"
+            columns: ["assessment_type_id"]
             isOneToOne: false
             referencedRelation: "assessment_types"
             referencedColumns: ["id"]
@@ -384,21 +543,18 @@ export type Database = {
           created_at: string | null
           description: string | null
           id: string
-          is_active: boolean | null
           name: string
         }
         Insert: {
           created_at?: string | null
           description?: string | null
           id?: string
-          is_active?: boolean | null
           name: string
         }
         Update: {
           created_at?: string | null
           description?: string | null
           id?: string
-          is_active?: boolean | null
           name?: string
         }
         Relationships: []
@@ -406,32 +562,45 @@ export type Database = {
       reviewer_nominations: {
         Row: {
           created_at: string | null
+          external_reviewer_id: string | null
           id: string
+          is_external: boolean | null
           nominated_by_id: string
           participant_assessment_id: string
+          request_status: Database["public"]["Enums"]["nomination_status"]
           review_submitted_at: string | null
           reviewer_id: string
-          status: string | null
         }
         Insert: {
           created_at?: string | null
+          external_reviewer_id?: string | null
           id?: string
+          is_external?: boolean | null
           nominated_by_id: string
           participant_assessment_id: string
+          request_status?: Database["public"]["Enums"]["nomination_status"]
           review_submitted_at?: string | null
           reviewer_id: string
-          status?: string | null
         }
         Update: {
           created_at?: string | null
+          external_reviewer_id?: string | null
           id?: string
+          is_external?: boolean | null
           nominated_by_id?: string
           participant_assessment_id?: string
+          request_status?: Database["public"]["Enums"]["nomination_status"]
           review_submitted_at?: string | null
           reviewer_id?: string
-          status?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "reviewer_nominations_external_reviewer_id_fkey"
+            columns: ["external_reviewer_id"]
+            isOneToOne: false
+            referencedRelation: "external_reviewers"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "reviewer_nominations_nominated_by_id_fkey"
             columns: ["nominated_by_id"]
@@ -463,9 +632,18 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
+      assessment_status: "Not started" | "In Progress" | "Completed"
       client_status: "active" | "inactive"
       client_user_role: "participant" | "manager" | "observer"
       cohort_status: "draft" | "active" | "completed"
+      nomination_status:
+        | "pending"
+        | "accepted"
+        | "rejected"
+        | "cancelled"
+        | "expired"
+        | "completed"
+        | "inactive"
       participant_status: "invited" | "active" | "completed"
       user_role: "admin" | "user"
       user_status: "active" | "inactive"
@@ -596,9 +774,19 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      assessment_status: ["Not started", "In Progress", "Completed"],
       client_status: ["active", "inactive"],
       client_user_role: ["participant", "manager", "observer"],
       cohort_status: ["draft", "active", "completed"],
+      nomination_status: [
+        "pending",
+        "accepted",
+        "rejected",
+        "cancelled",
+        "expired",
+        "completed",
+        "inactive",
+      ],
       participant_status: ["invited", "active", "completed"],
       user_role: ["admin", "user"],
       user_status: ["active", "inactive"],

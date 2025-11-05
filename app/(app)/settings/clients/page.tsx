@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Plus } from "lucide-react";
+import { Plus, MoreVertical, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -13,6 +13,12 @@ import {
   DialogDescription,
   DialogClose,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 import { supabase } from "@/lib/supabaseClient";
 
 interface Client {
@@ -41,6 +47,9 @@ export default function ClientsPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [checkingSubdomain, setCheckingSubdomain] = useState(false);
   const [subdomainAvailable, setSubdomainAvailable] = useState<boolean | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [deletingClientId, setDeletingClientId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     fetchClients();
@@ -187,6 +196,128 @@ export default function ClientsPage() {
     }
   }
 
+  function handleEdit(client: Client) {
+    router.push(`/settings/clients/${client.id}`);
+  }
+
+  function handleDeleteClick(clientId: string) {
+    setDeletingClientId(clientId);
+    setIsDeleteDialogOpen(true);
+  }
+
+  async function handleDeleteConfirm() {
+    if (!deletingClientId) return;
+
+    try {
+      setDeleting(true);
+      
+      // Delete all related data first (cascade delete)
+      // Delete cohorts and their related data
+      const { data: cohorts } = await supabase
+        .from("cohorts")
+        .select("id")
+        .eq("client_id", deletingClientId);
+
+      if (cohorts && cohorts.length > 0) {
+        const cohortIds = cohorts.map((c) => c.id);
+        
+        // Get all cohort assessments for these cohorts
+        const { data: cohortAssessments } = await supabase
+          .from("cohort_assessments")
+          .select("id")
+          .in("cohort_id", cohortIds);
+
+        if (cohortAssessments && cohortAssessments.length > 0) {
+          const cohortAssessmentIds = cohortAssessments.map((ca) => ca.id);
+          
+          // Get participant assessments for these cohort assessments
+          const { data: participantAssessments } = await supabase
+            .from("participant_assessments")
+            .select("id")
+            .in("cohort_assessment_id", cohortAssessmentIds);
+
+          if (participantAssessments && participantAssessments.length > 0) {
+            const participantAssessmentIds = participantAssessments.map((pa) => pa.id);
+            
+            // Delete nominations
+            await supabase
+              .from("reviewer_nominations")
+              .delete()
+              .in("participant_assessment_id", participantAssessmentIds);
+          }
+
+          // Delete participant assessments
+          await supabase
+            .from("participant_assessments")
+            .delete()
+            .in("cohort_assessment_id", cohortAssessmentIds);
+        }
+
+        // Delete cohort assessments
+        await supabase
+          .from("cohort_assessments")
+          .delete()
+          .in("cohort_id", cohortIds);
+
+        // Delete cohort participants
+        await supabase
+          .from("cohort_participants")
+          .delete()
+          .in("cohort_id", cohortIds);
+
+        // Delete cohorts
+        await supabase
+          .from("cohorts")
+          .delete()
+          .eq("client_id", deletingClientId);
+      }
+
+      // Delete client users and their related data
+      const { data: clientUsers } = await supabase
+        .from("client_users")
+        .select("id")
+        .eq("client_id", deletingClientId);
+
+      if (clientUsers && clientUsers.length > 0) {
+        const clientUserIds = clientUsers.map((cu) => cu.id);
+        
+        // Delete external reviewers invited by these users
+        await supabase
+          .from("external_reviewers")
+          .delete()
+          .in("invited_by_id", clientUserIds);
+
+        // Delete client users
+        await supabase
+          .from("client_users")
+          .delete()
+          .eq("client_id", deletingClientId);
+      }
+
+      // Finally, delete the client
+      const { error: deleteError } = await supabase
+        .from("clients")
+        .delete()
+        .eq("id", deletingClientId);
+
+      if (deleteError) {
+        console.error("Error deleting client:", deleteError);
+        setSubmitError(deleteError.message);
+        return;
+      }
+
+      // Close dialog and refresh list
+      setIsDeleteDialogOpen(false);
+      setDeletingClientId(null);
+      await fetchClients();
+    } catch (err) {
+      console.error("Error deleting client:", err);
+      setSubmitError(err instanceof Error ? err.message : "An error occurred while deleting the client");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Header with Add Client Button */}
@@ -220,21 +351,37 @@ export default function ClientsPage() {
                 <th className="px-6 py-3 text-left text-sm font-medium">Primary Contact Email</th>
                 <th className="px-6 py-3 text-left text-sm font-medium">Status</th>
                 <th className="px-6 py-3 text-left text-sm font-medium">Created</th>
+                <th className="px-6 py-3 text-left text-sm font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
               {clients.map((client) => (
                 <tr
                   key={client.id}
-                  className="border-b hover:bg-muted/50 transition-colors cursor-pointer"
-                  onClick={() => router.push(`/settings/clients/${client.id}`)}
+                  className="border-b hover:bg-muted/50 transition-colors"
                 >
-                  <td className="px-6 py-4 text-sm font-medium">{client.name || "-"}</td>
-                  <td className="px-6 py-4 text-sm text-muted-foreground">
+                  <td 
+                    className="px-6 py-4 text-sm font-medium cursor-pointer"
+                    onClick={() => router.push(`/settings/clients/${client.id}`)}
+                  >
+                    {client.name || "-"}
+                  </td>
+                  <td 
+                    className="px-6 py-4 text-sm text-muted-foreground cursor-pointer"
+                    onClick={() => router.push(`/settings/clients/${client.id}`)}
+                  >
                     {client.subdomain || "-"}
                   </td>
-                  <td className="px-6 py-4 text-sm">{client.primary_contact_email || "-"}</td>
-                  <td className="px-6 py-4 text-sm">
+                  <td 
+                    className="px-6 py-4 text-sm cursor-pointer"
+                    onClick={() => router.push(`/settings/clients/${client.id}`)}
+                  >
+                    {client.primary_contact_email || "-"}
+                  </td>
+                  <td 
+                    className="px-6 py-4 text-sm cursor-pointer"
+                    onClick={() => router.push(`/settings/clients/${client.id}`)}
+                  >
                     {client.status ? (
                       <span
                         className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
@@ -251,10 +398,49 @@ export default function ClientsPage() {
                       "-"
                     )}
                   </td>
-                  <td className="px-6 py-4 text-sm text-muted-foreground">
+                  <td 
+                    className="px-6 py-4 text-sm text-muted-foreground cursor-pointer"
+                    onClick={() => router.push(`/settings/clients/${client.id}`)}
+                  >
                     {client.created_at
                       ? new Date(client.created_at).toLocaleDateString()
                       : "-"}
+                  </td>
+                  <td className="px-6 py-4 text-sm" onClick={(e) => e.stopPropagation()}>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                          }}
+                          onMouseDown={(e) => e.stopPropagation()}
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                        <DropdownMenuItem onClick={(e) => {
+                          e.stopPropagation();
+                          handleEdit(client);
+                        }}>
+                          <Pencil className="mr-2 h-4 w-4" />
+                          Edit Client
+                        </DropdownMenuItem>
+                        <DropdownMenuItem 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteClick(client.id);
+                          }}
+                          className="text-destructive focus:text-destructive"
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Delete Client
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </td>
                 </tr>
               ))}
@@ -349,6 +535,39 @@ export default function ClientsPage() {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Client</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this client? This action cannot be undone and will delete all associated data including cohorts, participants, and assessments.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setIsDeleteDialogOpen(false);
+                setDeletingClientId(null);
+              }}
+              disabled={deleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteConfirm}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? "Deleting..." : "Delete Client"}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
