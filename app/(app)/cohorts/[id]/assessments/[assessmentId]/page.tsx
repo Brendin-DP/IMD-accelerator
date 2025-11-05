@@ -532,12 +532,12 @@ export default function AssessmentDetailPage() {
   const getStatusColor = (status: string | null) => {
     if (!status) return "bg-gray-100 text-gray-800";
     const statusLower = status.toLowerCase();
-    if (statusLower === "active" || statusLower === "in_progress") {
+    if (statusLower === "not started" || statusLower === "not_started") {
+      return "bg-gray-100 text-gray-800";
+    } else if (statusLower === "in progress" || statusLower === "in_progress" || statusLower === "active") {
       return "bg-blue-100 text-blue-800";
     } else if (statusLower === "completed" || statusLower === "done" || statusLower === "submitted") {
       return "bg-green-100 text-green-800";
-    } else if (statusLower === "draft" || statusLower === "pending") {
-      return "bg-yellow-100 text-yellow-800";
     }
     return "bg-gray-100 text-gray-800";
   };
