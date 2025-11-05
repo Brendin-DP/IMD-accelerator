@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Fragment } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -266,7 +266,7 @@ export default function AssessmentDetailPage() {
             participant_id: participant.id,
             cohort_assessment_id: assessmentId,
             score: null,
-            status: "not_started",
+            status: "Not started",
             submitted_at: null,
             allow_reviewer_nominations: null,
             created_at: null,
@@ -547,14 +547,70 @@ export default function AssessmentDetailPage() {
                   const nominationsCount = participantNominations.length;
                   const acceptedCount = participantNominations.filter((n) => n.request_status?.toLowerCase() === "accepted").length;
 
+                  const rowKey = pa.id || `pa-${pa.participant_id}`;
+                  
+                  const handleRowClick = async (e: React.MouseEvent) => {
+                    // Prevent navigation if clicking on the chevron (which expands/collapses)
+                    const target = e.target as HTMLElement;
+                    if (target.closest('svg') || target.closest('[role="button"]')) {
+                      return;
+                    }
+
+                    let participantAssessmentId = pa.id;
+                    
+                    // If participant_assessment doesn't exist, create it first
+                    if (!participantAssessmentId && pa.participant_id) {
+                      try {
+                        console.log("Creating participant assessment for participant_id:", pa.participant_id);
+                        const { data: newPA, error: createError } = await supabase
+                          .from("participant_assessments")
+                          .insert({
+                            participant_id: pa.participant_id,
+                            cohort_assessment_id: assessmentId,
+                            status: "Not started",
+                          })
+                          .select()
+                          .single();
+
+                        if (createError) {
+                          console.error("Error creating participant assessment:", createError);
+                          alert(`Error: ${createError.message}`);
+                          return;
+                        }
+
+                        participantAssessmentId = newPA.id;
+                        console.log("Created participant assessment with ID:", participantAssessmentId);
+                        // Update local state to reflect the new assessment
+                        setParticipantAssessments((prev) =>
+                          prev.map((p) =>
+                            p.participant_id === pa.participant_id
+                              ? { ...p, id: participantAssessmentId }
+                              : p
+                          )
+                        );
+                      } catch (err) {
+                        console.error("Error creating participant assessment:", err);
+                        alert(`Error: ${err instanceof Error ? err.message : "Failed to create participant assessment"}`);
+                        return;
+                      }
+                    }
+
+                    if (participantAssessmentId) {
+                      console.log("Navigating to participant detail page:", participantAssessmentId);
+                      router.push(`/cohorts/${cohortId}/assessments/${assessmentId}/participants/${participantAssessmentId}`);
+                    } else {
+                      console.warn("No participant assessment ID available for navigation");
+                    }
+                  };
+
                   return (
-                    <>
+                    <Fragment key={rowKey}>
                       <tr 
-                        key={pa.id || `pa-${pa.participant_id}`}
                         className="border-b hover:bg-muted/50 transition-colors cursor-pointer"
+                        onClick={handleRowClick}
                       >
                         <td 
-                          className="px-6 py-4 text-sm"
+                          className="px-6 py-4 text-sm cursor-pointer"
                           onClick={(e) => {
                             e.stopPropagation();
                             toggleRow(pa.id);
@@ -568,10 +624,16 @@ export default function AssessmentDetailPage() {
                             )
                           ) : null}
                         </td>
-                        <td className="px-6 py-4 text-sm font-medium">{clientUser?.name || "-"}</td>
-                        <td className="px-6 py-4 text-sm font-medium">{clientUser?.surname || "-"}</td>
-                        <td className="px-6 py-4 text-sm">{clientUser?.email || "-"}</td>
-                        <td className="px-6 py-4 text-sm">
+                        <td className="px-6 py-4 text-sm font-medium cursor-pointer">
+                          {clientUser?.name || "-"}
+                        </td>
+                        <td className="px-6 py-4 text-sm font-medium cursor-pointer">
+                          {clientUser?.surname || "-"}
+                        </td>
+                        <td className="px-6 py-4 text-sm cursor-pointer">
+                          {clientUser?.email || "-"}
+                        </td>
+                        <td className="px-6 py-4 text-sm cursor-pointer">
                           {pa.status ? (
                             <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(pa.status)}`}>
                               {pa.status}
@@ -580,13 +642,15 @@ export default function AssessmentDetailPage() {
                             "-"
                           )}
                         </td>
-                        <td className="px-6 py-4 text-sm">{pa.score !== null ? pa.score : "-"}</td>
-                        <td className="px-6 py-4 text-sm">
+                        <td className="px-6 py-4 text-sm cursor-pointer">
+                          {pa.score !== null ? pa.score : "-"}
+                        </td>
+                        <td className="px-6 py-4 text-sm cursor-pointer">
                           {pa.submitted_at
                             ? new Date(pa.submitted_at).toLocaleDateString()
                             : "-"}
                         </td>
-                        <td className="px-6 py-4 text-sm">
+                        <td className="px-6 py-4 text-sm cursor-pointer">
                           {nominationsCount > 0 ? (
                             <span className="text-sm font-medium">
                               {acceptedCount}/{nominationsCount}
@@ -662,7 +726,7 @@ export default function AssessmentDetailPage() {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   );
                 })}
               </tbody>

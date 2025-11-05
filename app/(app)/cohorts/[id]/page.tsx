@@ -771,8 +771,7 @@ export default function CohortDetailPage() {
                   return (
                     <tr 
                       key={participant.id} 
-                      className="border-b hover:bg-muted/50 transition-colors cursor-pointer"
-                      onClick={() => router.push(`/cohorts/${cohortId}/participants/${participant.id}`)}
+                      className="border-b hover:bg-muted/50 transition-colors"
                     >
                       <td className="px-6 py-4 text-sm font-medium">{user?.name || "-"}</td>
                       <td className="px-6 py-4 text-sm font-medium">{user?.surname || "-"}</td>

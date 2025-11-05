@@ -97,6 +97,7 @@ export default function TenantAssessmentDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"internal" | "external">("internal");
+  const [startingAssessment, setStartingAssessment] = useState(false);
   const { toasts, showToast, removeToast } = useToast();
 
   useEffect(() => {
@@ -648,14 +649,89 @@ export default function TenantAssessmentDetailPage() {
     }
   }
 
+  async function handleStartAssessment() {
+    if (!user?.id) {
+      showToast("User not found. Please log in again.", "error");
+      return;
+    }
+
+    setStartingAssessment(true);
+    try {
+      // First, find the cohort_participant for this user
+      const { data: participants, error: participantsError } = await supabase
+        .from("cohort_participants")
+        .select("id")
+        .eq("client_user_id", user.id);
+
+      if (participantsError || !participants || participants.length === 0) {
+        showToast("Error: Participant not found.", "error");
+        setStartingAssessment(false);
+        return;
+      }
+
+      const participantIds = participants.map((p: any) => p.id);
+
+      // Check if participant_assessment exists
+      let participantAssessmentId = participantAssessment?.id;
+
+      if (!participantAssessmentId) {
+        // Create participant_assessment if it doesn't exist
+        const { data: newPA, error: createError } = await supabase
+          .from("participant_assessments")
+          .insert({
+            participant_id: participantIds[0], // Use first participant ID
+            cohort_assessment_id: assessmentId,
+            status: "In Progress",
+          })
+          .select()
+          .single();
+
+        if (createError) {
+          console.error("Error creating participant assessment:", createError);
+          showToast(`Error: ${createError.message}`, "error");
+          setStartingAssessment(false);
+          return;
+        }
+
+        participantAssessmentId = newPA.id;
+        setParticipantAssessment(newPA as ParticipantAssessment);
+      } else {
+        // Update existing participant_assessment status
+        const { error: updateError } = await supabase
+          .from("participant_assessments")
+          .update({ status: "In Progress" })
+          .eq("id", participantAssessmentId);
+
+        if (updateError) {
+          console.error("Error updating participant assessment:", updateError);
+          showToast(`Error: ${updateError.message}`, "error");
+          setStartingAssessment(false);
+          return;
+        }
+
+        // Update local state
+        setParticipantAssessment((prev) => 
+          prev ? { ...prev, status: "In Progress" } : null
+        );
+      }
+
+      showToast("Assessment started successfully!", "success");
+    } catch (err) {
+      console.error("Error starting assessment:", err);
+      showToast("An unexpected error occurred. Please try again.", "error");
+    } finally {
+      setStartingAssessment(false);
+    }
+  }
+
   const getStatusColor = (status: string | null) => {
     if (!status) return "bg-gray-100 text-gray-800";
     const statusLower = status.toLowerCase();
     if (statusLower === "completed" || statusLower === "submitted") {
       return "bg-green-100 text-green-800";
-    } else if (statusLower === "pending" || statusLower === "in_progress") {
-      return "bg-yellow-100 text-yellow-800";
-    } else if (statusLower === "not_started") {
+    } else if (statusLower === "in progress" || statusLower === "in_progress" || statusLower === "pending") {
+      return "bg-blue-100 text-blue-800";
+    } else if (statusLower === "not started" || statusLower === "not_started") {
       return "bg-gray-100 text-gray-800";
     }
     return "bg-gray-100 text-gray-800";
@@ -754,8 +830,8 @@ export default function TenantAssessmentDetailPage() {
                   {participantAssessment.status}
                 </span>
               ) : (
-                <span className={`inline-block px-3 py-1 text-sm font-medium rounded-full mt-1 ${getStatusColor("not_started")}`}>
-                  not_started
+                <span className={`inline-block px-3 py-1 text-sm font-medium rounded-full mt-1 ${getStatusColor("Not started")}`}>
+                  Not started
                 </span>
               )}
             </div>
@@ -782,6 +858,18 @@ export default function TenantAssessmentDetailPage() {
               </div>
             )}
           </div>
+          {/* Start Assessment Button */}
+          {(!participantAssessment || participantAssessment.status === "Not started" || !participantAssessment.status) && (
+            <div className="mt-6 pt-6 border-t">
+              <Button
+                onClick={handleStartAssessment}
+                disabled={!user?.id || startingAssessment}
+                className="w-full sm:w-auto"
+              >
+                {startingAssessment ? "Starting..." : "Start Assessment"}
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 
