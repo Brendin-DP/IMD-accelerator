@@ -533,6 +533,7 @@ export default function TenantAssessmentDetailPage() {
       }
 
       // Process external reviewers
+      const externalErrors: string[] = [];
       for (const email of externalReviewers) {
         try {
           // Check if this external reviewer was already nominated
@@ -545,6 +546,7 @@ export default function TenantAssessmentDetailPage() {
 
           if (externalCheckError) {
             console.error("Error checking external reviewer:", externalCheckError);
+            externalErrors.push(`${email}: ${externalCheckError.message}`);
             continue;
           }
 
@@ -555,12 +557,25 @@ export default function TenantAssessmentDetailPage() {
 
           // Invite external reviewer (creates or retrieves external_reviewer record)
           // invited_by should be the client_user.id (user.id), not participant_id
-          const external = await inviteExternalReviewer({
-            email,
-            subdomain,
-            clientId,
-            participantId: user.id, // Use user.id (client_users.id) instead of participant_id
-          });
+          let external;
+          try {
+            external = await inviteExternalReviewer({
+              email,
+              subdomain,
+              clientId,
+              participantId: user.id, // Use user.id (client_users.id) instead of participant_id
+            });
+          } catch (inviteError: any) {
+            console.error(`Error inviting external reviewer ${email}:`, inviteError);
+            externalErrors.push(`${email}: ${inviteError.message || "Failed to invite reviewer"}`);
+            continue;
+          }
+
+          if (!external || !external.id) {
+            console.error(`Failed to get external reviewer ID for ${email}`);
+            externalErrors.push(`${email}: Failed to create reviewer record`);
+            continue;
+          }
 
           // For external reviewers, we need to handle reviewer_id constraint
           // Since reviewer_id has NOT NULL constraint, we'll use a workaround
@@ -575,12 +590,23 @@ export default function TenantAssessmentDetailPage() {
           });
         } catch (err: any) {
           console.error(`Error processing external reviewer ${email}:`, err);
-          showToast(`Error processing ${email}: ${err.message || "Please try again"}`, "error");
+          externalErrors.push(`${email}: ${err.message || "Unknown error"}`);
         }
       }
 
+      // Show errors for external reviewers if any
+      if (externalErrors.length > 0) {
+        console.error("External reviewer errors:", externalErrors);
+        // Don't stop the process, just show info message
+        showToast(`Some external reviewers could not be added: ${externalErrors.join(", ")}`, "info");
+      }
+
       if (nominationPayload.length === 0) {
-        showToast("All selected reviewers have already been nominated or have pending/accepted nominations.", "info");
+        if (externalErrors.length > 0) {
+          showToast("No nominations could be created. Please check the errors above.", "error");
+        } else {
+          showToast("All selected reviewers have already been nominated or have pending/accepted nominations.", "info");
+        }
         setSubmittingNominations(false);
         return;
       }
@@ -592,7 +618,9 @@ export default function TenantAssessmentDetailPage() {
 
       if (insertError) {
         console.error("Error creating nominations:", insertError);
-        showToast("Error creating nominations. Please try again.", "error");
+        console.error("Nomination payload:", JSON.stringify(nominationPayload, null, 2));
+        showToast(`Error creating nominations: ${insertError.message || "Please try again"}`, "error");
+        setSubmittingNominations(false);
         return;
       }
 

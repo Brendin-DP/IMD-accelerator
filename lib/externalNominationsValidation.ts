@@ -21,20 +21,37 @@ export async function inviteExternalReviewer({
     throw new Error(`Only company emails (${allowedDomain}) are allowed`);
   }
 
-  // Create or reuse the external reviewer record
-  const { data, error } = await supabase
+  // Check if external reviewer already exists for this client and email
+  const { data: existing, error: checkError } = await supabase
     .from("external_reviewers")
-    .upsert(
-      {
-        client_id: clientId,
-        email,
-        invited_by: participantId,
-      },
-      { onConflict: "client_id,email" }
-    )
+    .select("*")
+    .eq("client_id", clientId)
+    .eq("email", email)
+    .maybeSingle();
+
+  if (checkError) {
+    throw checkError;
+  }
+
+  // If exists, return the existing record
+  if (existing) {
+    return existing;
+  }
+
+  // If not exists, create a new external reviewer record
+  const { data: newRecord, error: insertError } = await supabase
+    .from("external_reviewers")
+    .insert({
+      client_id: clientId,
+      email,
+      invited_by: participantId,
+    })
     .select()
     .single();
 
-  if (error) throw error;
-  return data;
+  if (insertError) {
+    throw insertError;
+  }
+
+  return newRecord;
 }
