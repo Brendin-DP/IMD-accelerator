@@ -195,12 +195,15 @@ export default function TenantDashboardPage() {
   async function fetchMyReviews(userId: string) {
     try {
       // Fetch nominations where this user is the reviewer and request_status is "accepted"
+      // Exclude self-nominated external reviewers (where is_external=true and nominated_by_id=userId)
       const { data: nominations, error: nominationsError } = await supabase
         .from("reviewer_nominations")
         .select(`
           id,
           request_status,
           created_at,
+          is_external,
+          nominated_by_id,
           participant_assessment:participant_assessments(
             id,
             participant:cohort_participants(
@@ -223,7 +226,7 @@ export default function TenantDashboardPage() {
         
         const { data: nominationsOnly, error: nominationsOnlyError } = await supabase
           .from("reviewer_nominations")
-          .select("id, request_status, created_at, participant_assessment_id")
+          .select("id, request_status, created_at, participant_assessment_id, is_external, nominated_by_id")
           .eq("reviewer_id", userId)
           .eq("request_status", "accepted")
           .order("created_at", { ascending: false });
@@ -280,37 +283,46 @@ export default function TenantDashboardPage() {
             .select("id, name")
             .in("id", cohortIds);
 
-          // Merge data
-          const merged = nominationsOnly.map((nomination: any) => {
-            const participantAssessment = participantAssessments?.find((pa: any) => pa.id === nomination.participant_assessment_id);
-            const cohortParticipant = cohortParticipants?.find((cp: any) => cp.id === participantAssessment?.participant_id);
-            const clientUser = clientUsers?.find((cu: any) => cu.id === cohortParticipant?.client_user_id);
-            const cohortAssessment = cohortAssessments?.find((ca: any) => ca.id === participantAssessment?.cohort_assessment_id);
-            const assessmentType = assessmentTypes?.find((at: any) => at.id === cohortAssessment?.assessment_type_id);
-            const cohort = cohorts?.find((c: any) => c.id === cohortAssessment?.cohort_id);
+          // Merge data and filter out self-nominated external reviewers
+          const merged = nominationsOnly
+            .filter((nomination: any) => {
+              // Exclude self-nominated external reviewers
+              return !(nomination.is_external === true && nomination.nominated_by_id === userId);
+            })
+            .map((nomination: any) => {
+              const participantAssessment = participantAssessments?.find((pa: any) => pa.id === nomination.participant_assessment_id);
+              const cohortParticipant = cohortParticipants?.find((cp: any) => cp.id === participantAssessment?.participant_id);
+              const clientUser = clientUsers?.find((cu: any) => cu.id === cohortParticipant?.client_user_id);
+              const cohortAssessment = cohortAssessments?.find((ca: any) => ca.id === participantAssessment?.cohort_assessment_id);
+              const assessmentType = assessmentTypes?.find((at: any) => at.id === cohortAssessment?.assessment_type_id);
+              const cohort = cohorts?.find((c: any) => c.id === cohortAssessment?.cohort_id);
 
-            return {
-              ...nomination,
-              participant_assessment: {
-                id: participantAssessment?.id,
-                participant: {
-                  client_user: clientUser,
+              return {
+                ...nomination,
+                participant_assessment: {
+                  id: participantAssessment?.id,
+                  participant: {
+                    client_user: clientUser,
+                  },
+                  cohort_assessment: {
+                    name: cohortAssessment?.name,
+                    assessment_type: assessmentType,
+                    cohort: cohort,
+                  },
                 },
-                cohort_assessment: {
-                  name: cohortAssessment?.name,
-                  assessment_type: assessmentType,
-                  cohort: cohort,
-                },
-              },
-            };
-          });
+              };
+            });
 
           setMyReviews(merged || []);
         } else {
           setMyReviews([]);
         }
       } else if (nominations) {
-        setMyReviews(nominations || []);
+        // Filter out self-nominated external reviewers
+        const filtered = nominations.filter((nomination: any) => {
+          return !(nomination.is_external === true && nomination.nominated_by_id === userId);
+        });
+        setMyReviews(filtered || []);
       } else {
         setMyReviews([]);
       }
@@ -323,6 +335,7 @@ export default function TenantDashboardPage() {
   async function fetchMyActions(userId: string) {
     try {
       // Fetch nominations where this user is the reviewer and request_status is "pending"
+      // Exclude self-nominated external reviewers (where is_external=true and nominated_by_id=userId)
       const { data: nominations, error: nominationsError } = await supabase
         .from("reviewer_nominations")
         .select(`
@@ -330,6 +343,7 @@ export default function TenantDashboardPage() {
           request_status,
           created_at,
           nominated_by_id,
+          is_external,
           participant_assessment:participant_assessments(
             id,
             participant:cohort_participants(
@@ -352,7 +366,7 @@ export default function TenantDashboardPage() {
         
         const { data: nominationsOnly, error: nominationsOnlyError } = await supabase
           .from("reviewer_nominations")
-          .select("id, request_status, created_at, nominated_by_id, participant_assessment_id")
+          .select("id, request_status, created_at, nominated_by_id, participant_assessment_id, is_external")
           .eq("reviewer_id", userId)
           .eq("request_status", "pending")
           .order("created_at", { ascending: false });
@@ -415,40 +429,50 @@ export default function TenantDashboardPage() {
             .select("id, name")
             .in("id", cohortIds);
 
-          // Merge data
-          const merged = nominationsOnly.map((nomination: any) => {
-            const participantAssessment = participantAssessments?.find((pa: any) => pa.id === nomination.participant_assessment_id);
-            const cohortParticipant = cohortParticipants?.find((cp: any) => cp.id === participantAssessment?.participant_id);
-            const clientUser = clientUsers?.find((cu: any) => cu.id === cohortParticipant?.client_user_id);
-            const nominatedBy = clientUsers?.find((cu: any) => cu.id === nomination.nominated_by_id);
-            const cohortAssessment = cohortAssessments?.find((ca: any) => ca.id === participantAssessment?.cohort_assessment_id);
-            const assessmentType = assessmentTypes?.find((at: any) => at.id === cohortAssessment?.assessment_type_id);
-            const cohort = cohorts?.find((c: any) => c.id === cohortAssessment?.cohort_id);
+          // Merge data and filter out self-nominated external reviewers
+          const merged = nominationsOnly
+            .filter((nomination: any) => {
+              // Exclude self-nominated external reviewers
+              return !(nomination.is_external === true && nomination.nominated_by_id === userId);
+            })
+            .map((nomination: any) => {
+              const participantAssessment = participantAssessments?.find((pa: any) => pa.id === nomination.participant_assessment_id);
+              const cohortParticipant = cohortParticipants?.find((cp: any) => cp.id === participantAssessment?.participant_id);
+              const clientUser = clientUsers?.find((cu: any) => cu.id === cohortParticipant?.client_user_id);
+              const nominatedBy = clientUsers?.find((cu: any) => cu.id === nomination.nominated_by_id);
+              const cohortAssessment = cohortAssessments?.find((ca: any) => ca.id === participantAssessment?.cohort_assessment_id);
+              const assessmentType = assessmentTypes?.find((at: any) => at.id === cohortAssessment?.assessment_type_id);
+              const cohort = cohorts?.find((c: any) => c.id === cohortAssessment?.cohort_id);
 
-            return {
-              ...nomination,
-              nominated_by: nominatedBy,
-              participant_assessment: {
-                id: participantAssessment?.id,
-                participant: {
-                  client_user: clientUser,
+              return {
+                ...nomination,
+                nominated_by: nominatedBy,
+                participant_assessment: {
+                  id: participantAssessment?.id,
+                  participant: {
+                    client_user: clientUser,
+                  },
+                  cohort_assessment: {
+                    name: cohortAssessment?.name,
+                    assessment_type: assessmentType,
+                    cohort: cohort,
+                  },
                 },
-                cohort_assessment: {
-                  name: cohortAssessment?.name,
-                  assessment_type: assessmentType,
-                  cohort: cohort,
-                },
-              },
-            };
-          });
+              };
+            });
 
           setMyActions(merged || []);
         } else {
           setMyActions([]);
         }
       } else if (nominations) {
+        // Filter out self-nominated external reviewers first
+        const filteredNominations = nominations.filter((nomination: any) => {
+          return !(nomination.is_external === true && nomination.nominated_by_id === userId);
+        });
+
         // If we got data with relationships, we still need to fetch nominated_by separately
-        const nominatedByIds = [...new Set(nominations.map((n: any) => n.nominated_by_id).filter(Boolean) || [])];
+        const nominatedByIds = [...new Set(filteredNominations.map((n: any) => n.nominated_by_id).filter(Boolean) || [])];
         
         if (nominatedByIds.length > 0) {
           const { data: clientUsers } = await supabase
@@ -456,14 +480,14 @@ export default function TenantDashboardPage() {
             .select("id, name, surname, email")
             .in("id", nominatedByIds);
 
-          const merged = nominations.map((nomination: any) => ({
+          const merged = filteredNominations.map((nomination: any) => ({
             ...nomination,
             nominated_by: clientUsers?.find((cu: any) => cu.id === nomination.nominated_by_id) || null,
           }));
 
           setMyActions(merged || []);
         } else {
-          setMyActions(nominations || []);
+          setMyActions(filteredNominations || []);
         }
       } else {
         setMyActions([]);
