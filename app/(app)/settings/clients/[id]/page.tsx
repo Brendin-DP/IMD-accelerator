@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Plus, ArrowLeft, ChevronDown, UserPlus, Upload, Download, FileUp } from "lucide-react";
+import { Plus, ArrowLeft, ChevronDown, UserPlus, Upload, Download, FileUp, MoreVertical, Edit, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -73,6 +73,15 @@ export default function ClientDetailPage() {
   const [editError, setEditError] = useState<string | null>(null);
   const [checkingSubdomain, setCheckingSubdomain] = useState(false);
   const [subdomainAvailable, setSubdomainAvailable] = useState<boolean | null>(null);
+  const [userSearch, setUserSearch] = useState("");
+  const [editingUser, setEditingUser] = useState<ClientUser | null>(null);
+  const [isEditUserDialogOpen, setIsEditUserDialogOpen] = useState(false);
+  const [editUserFormData, setEditUserFormData] = useState({
+    name: "",
+    surname: "",
+    email: "",
+  });
+  const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
 
   useEffect(() => {
     if (clientId) {
@@ -335,6 +344,71 @@ export default function ClientDetailPage() {
     document.body.removeChild(link);
   }
 
+  async function handleEditUserSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingUser) return;
+
+    try {
+      setSubmitting(true);
+      setSubmitError(null);
+
+      const { error: updateError } = await supabase
+        .from("client_users")
+        .update({
+          name: editUserFormData.name.trim(),
+          surname: editUserFormData.surname.trim(),
+          email: editUserFormData.email.trim().toLowerCase(),
+        })
+        .eq("id", editingUser.id);
+
+      if (updateError) {
+        console.error("Error updating user:", updateError);
+        setSubmitError(`Failed to update user: ${updateError.message}`);
+        return;
+      }
+
+      // Refresh users list
+      await fetchClientUsers();
+      setIsEditUserDialogOpen(false);
+      setEditingUser(null);
+      setEditUserFormData({ name: "", surname: "", email: "" });
+    } catch (err) {
+      console.error("Unexpected error:", err);
+      setSubmitError(err instanceof Error ? err.message : "An unexpected error occurred");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleDeleteUser(userId: string) {
+    if (!confirm("Are you sure you want to delete this user? This action cannot be undone.")) {
+      return;
+    }
+
+    try {
+      setDeletingUserId(userId);
+
+      const { error: deleteError } = await supabase
+        .from("client_users")
+        .delete()
+        .eq("id", userId);
+
+      if (deleteError) {
+        console.error("Error deleting user:", deleteError);
+        alert(`Failed to delete user: ${deleteError.message}`);
+        return;
+      }
+
+      // Refresh users list
+      await fetchClientUsers();
+    } catch (err) {
+      console.error("Unexpected error:", err);
+      alert(err instanceof Error ? err.message : "An unexpected error occurred");
+    } finally {
+      setDeletingUserId(null);
+    }
+  }
+
   async function handleImport() {
     if (!selectedFile) {
       setImportError("Please select a CSV file");
@@ -450,35 +524,10 @@ export default function ClientDetailPage() {
         Back to Clients
       </Button>
 
-      {/* Header with Add User Button */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">{client.name}</h1>
-          <p className="text-muted-foreground mt-2">Client details and user management</p>
-        </div>
-        <div className="flex items-center">
-          <Button onClick={() => setIsDialogOpen(true)} className="rounded-r-none border-r-0">
-            <Plus className="mr-2 h-4 w-4" />
-            Add User
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="default" className="rounded-l-none px-2 border-l border-primary/20">
-                <ChevronDown className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => setIsDialogOpen(true)}>
-                <UserPlus className="mr-2 h-4 w-4" />
-                Invite a User
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setIsImportDialogOpen(true)}>
-                <Upload className="mr-2 h-4 w-4" />
-                Import Users
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+      {/* Header */}
+      <div>
+        <h1 className="text-3xl font-bold">{client.name}</h1>
+        <p className="text-muted-foreground mt-2">Client details and user management</p>
       </div>
 
       {/* Client Details Card */}
@@ -561,36 +610,118 @@ export default function ClientDetailPage() {
 
       {/* Client Users Table */}
       <div>
-        <h2 className="text-2xl font-bold mb-4">Client Users</h2>
-        <div className="rounded-md border">
-          {users.length === 0 ? (
-            <div className="p-8 text-center text-muted-foreground">
-              No users found. Click "Add User" to add users to this client.
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-2xl font-bold">Client Users</h2>
+          <div className="flex items-center gap-2">
+            <Input
+              type="text"
+              placeholder="Search users..."
+              value={userSearch}
+              onChange={(e) => setUserSearch(e.target.value)}
+              className="w-64"
+            />
+            <div className="flex items-center">
+              <Button onClick={() => setIsDialogOpen(true)} className="rounded-r-none border-r-0">
+                <Plus className="mr-2 h-4 w-4" />
+                Add User
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="default" className="rounded-l-none px-2 border-l border-primary/20">
+                    <ChevronDown className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => setIsDialogOpen(true)}>
+                    <UserPlus className="mr-2 h-4 w-4" />
+                    Invite a User
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setIsImportDialogOpen(true)}>
+                    <Upload className="mr-2 h-4 w-4" />
+                    Import Users
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
-          ) : (
-            <table className="w-full">
-              <thead>
-                <tr className="border-b bg-muted/50">
-                  <th className="px-6 py-3 text-left text-sm font-medium">Name</th>
-                  <th className="px-6 py-3 text-left text-sm font-medium">Surname</th>
-                  <th className="px-6 py-3 text-left text-sm font-medium">Email</th>
-                  <th className="px-6 py-3 text-left text-sm font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((user) => (
-                  <tr key={user.id} className="border-b hover:bg-muted/50 transition-colors">
-                    <td className="px-6 py-4 text-sm font-medium">{user.name || "-"}</td>
-                    <td className="px-6 py-4 text-sm font-medium">{user.surname || "-"}</td>
-                    <td className="px-6 py-4 text-sm">{user.email || "-"}</td>
-                    <td className="px-6 py-4 text-sm">
-                      {/* Actions will go here */}
-                    </td>
+          </div>
+        </div>
+        <div className="rounded-md border">
+          {(() => {
+            // Filter users based on search
+            const filteredUsers = users.filter((user) => {
+              if (!userSearch.trim()) return true;
+              const searchLower = userSearch.toLowerCase();
+              const name = (user.name || "").toLowerCase();
+              const surname = (user.surname || "").toLowerCase();
+              const email = (user.email || "").toLowerCase();
+              return name.includes(searchLower) || surname.includes(searchLower) || email.includes(searchLower);
+            });
+
+            if (filteredUsers.length === 0) {
+              return (
+                <div className="p-8 text-center text-muted-foreground">
+                  {userSearch.trim() 
+                    ? "No users match your search." 
+                    : "No users found. Click \"Add User\" to add users to this client."}
+                </div>
+              );
+            }
+
+            return (
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="px-6 py-3 text-left text-sm font-medium">Name</th>
+                    <th className="px-6 py-3 text-left text-sm font-medium">Surname</th>
+                    <th className="px-6 py-3 text-left text-sm font-medium">Email</th>
+                    <th className="px-6 py-3 text-left text-sm font-medium">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+                </thead>
+                <tbody>
+                  {filteredUsers.map((user) => (
+                    <tr key={user.id} className="border-b hover:bg-muted/50 transition-colors">
+                      <td className="px-6 py-4 text-sm font-medium">{user.name || "-"}</td>
+                      <td className="px-6 py-4 text-sm font-medium">{user.surname || "-"}</td>
+                      <td className="px-6 py-4 text-sm">{user.email || "-"}</td>
+                      <td className="px-6 py-4 text-sm" onClick={(e) => e.stopPropagation()}>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setEditingUser(user);
+                                setEditUserFormData({
+                                  name: user.name || "",
+                                  surname: user.surname || "",
+                                  email: user.email || "",
+                                });
+                                setIsEditUserDialogOpen(true);
+                              }}
+                            >
+                              <Edit className="mr-2 h-4 w-4" />
+                              Edit User
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleDeleteUser(user.id)}
+                              className="text-destructive"
+                              disabled={deletingUserId === user.id}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              {deletingUserId === user.id ? "Deleting..." : "Delete User"}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            );
+          })()}
         </div>
       </div>
 
@@ -762,6 +893,84 @@ export default function ClientDetailPage() {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit User Dialog */}
+      <Dialog open={isEditUserDialogOpen} onOpenChange={setIsEditUserDialogOpen}>
+        <DialogContent>
+          <DialogClose onClick={() => setIsEditUserDialogOpen(false)} />
+          <DialogHeader>
+            <DialogTitle>Edit User</DialogTitle>
+            <DialogDescription>
+              Update user information below.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleEditUserSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <label htmlFor="edit_user_name" className="text-sm font-medium">
+                Name <span className="text-destructive">*</span>
+              </label>
+              <Input
+                id="edit_user_name"
+                name="name"
+                value={editUserFormData.name}
+                onChange={(e) => setEditUserFormData((prev) => ({ ...prev, name: e.target.value }))}
+                required
+                placeholder="First name"
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="edit_user_surname" className="text-sm font-medium">
+                Surname <span className="text-destructive">*</span>
+              </label>
+              <Input
+                id="edit_user_surname"
+                name="surname"
+                value={editUserFormData.surname}
+                onChange={(e) => setEditUserFormData((prev) => ({ ...prev, surname: e.target.value }))}
+                required
+                placeholder="Last name"
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="edit_user_email" className="text-sm font-medium">
+                Email <span className="text-destructive">*</span>
+              </label>
+              <Input
+                id="edit_user_email"
+                name="email"
+                type="email"
+                value={editUserFormData.email}
+                onChange={(e) => setEditUserFormData((prev) => ({ ...prev, email: e.target.value }))}
+                required
+                placeholder="user@example.com"
+              />
+            </div>
+
+            {submitError && (
+              <p className="text-sm text-destructive">{submitError}</p>
+            )}
+
+            <div className="flex justify-end gap-2 pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setIsEditUserDialogOpen(false);
+                  setEditingUser(null);
+                  setEditUserFormData({ name: "", surname: "", email: "" });
+                  setSubmitError(null);
+                }}
+                disabled={submitting}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={submitting}>
+                {submitting ? "Updating..." : "Update User"}
+              </Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
 

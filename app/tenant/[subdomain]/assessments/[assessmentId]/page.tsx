@@ -231,13 +231,30 @@ export default function TenantAssessmentDetailPage() {
 
       setParticipantAssessment(participantAssessmentData as ParticipantAssessment);
       
-      // If we have a participant assessment, fetch nominations
+      // Fetch nominations if we have a participant assessment
       if (participantAssessmentData) {
         fetchNominations(participantAssessmentData.id, userId);
+      } else {
+        // Even if participant assessment doesn't exist, try to fetch nominations
+        // by finding any participant_assessment for this assessment and user
+        // This handles cases where nominations exist but participant_assessment wasn't found
+        const { data: allPAs } = await supabase
+          .from("participant_assessments")
+          .select("id")
+          .eq("cohort_assessment_id", assessmentId)
+          .in("participant_id", participantIds)
+          .maybeSingle();
+        
+        if (allPAs?.id) {
+          fetchNominations(allPAs.id, userId);
+        } else {
+          setNominations([]);
+        }
       }
     } catch (err) {
       console.error("Error fetching participant assessment:", err);
       setParticipantAssessment(null);
+      setNominations([]);
     }
   }
 
@@ -870,22 +887,26 @@ export default function TenantAssessmentDetailPage() {
                 <p className="text-base mt-1">{assessment.assessment_type.description}</p>
               </div>
             )}
-            {assessment.start_date && (
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Start Date</p>
-                <p className="text-base mt-1">
-                  {new Date(assessment.start_date).toLocaleDateString()}
-                </p>
-              </div>
-            )}
-            {assessment.end_date && (
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">End Date</p>
-                <p className="text-base mt-1">
-                  {new Date(assessment.end_date).toLocaleDateString()}
-                </p>
-              </div>
-            )}
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">Start Date</p>
+              <p className="text-base mt-1">
+                {assessment.start_date ? (
+                  new Date(assessment.start_date).toLocaleDateString()
+                ) : (
+                  <span className="text-muted-foreground">Not set</span>
+                )}
+              </p>
+            </div>
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">End Date</p>
+              <p className="text-base mt-1">
+                {assessment.end_date ? (
+                  new Date(assessment.end_date).toLocaleDateString()
+                ) : (
+                  <span className="text-muted-foreground">Not set</span>
+                )}
+              </p>
+            </div>
           </div>
           {/* Start Assessment Button */}
           {(!participantAssessment || participantAssessment.status === "Not started" || !participantAssessment.status) && (

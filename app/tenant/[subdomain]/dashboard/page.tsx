@@ -2,6 +2,7 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
+import { FileText, Bell, CheckCircle2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ToastContainer, useToast } from "@/components/ui/toast";
@@ -653,163 +654,200 @@ export default function TenantDashboardPage() {
       {/* Three Panels Section */}
       <div className="grid gap-6 md:grid-cols-3">
         {/* My Assessments */}
-        <Card>
-          <CardHeader>
-            <CardTitle>My Assessments</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {myAssessments.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No assessments found</p>
-            ) : (
-              <div className="space-y-3">
-                {myAssessments.map((assessment) => {
-                  const assessmentName = assessment.cohort_assessment?.name || 
-                    assessment.cohort_assessment?.assessment_type?.name || 
-                    "Assessment";
-                  const cohortName = assessment.cohort_assessment?.cohort?.name || "Cohort";
-                  
-                  return (
-                    <div
-                      key={assessment.id}
-                      className="p-3 border rounded-lg hover:bg-accent transition-colors cursor-pointer"
-                      onClick={() => {
-                        // Navigate to assessment detail
-                        const assessmentId = assessment.cohort_assessment?.id;
-                        if (assessmentId) {
-                          router.push(`/tenant/${subdomain}/assessments/${assessmentId}`);
-                        }
-                      }}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <p className="text-sm font-medium">{assessmentName}</p>
-                          <p className="text-xs text-muted-foreground">{cohortName}</p>
-                        </div>
-                        {assessment.status && (
-                          <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(assessment.status)}`}>
-                            {assessment.status}
-                          </span>
-                        )}
-                      </div>
-                      {assessment.score !== null && (
-                        <p className="text-xs text-muted-foreground mt-1">Score: {assessment.score}</p>
-                      )}
-                    </div>
-                  );
-                })}
+        <div className="overflow-hidden rounded-lg bg-white shadow border border-gray-200">
+          <div className="p-6">
+            <div className="flex flex-col">
+              <div className="flex items-center justify-center mb-4">
+                <FileText className="h-8 w-8 text-blue-600" aria-hidden="true" />
               </div>
-            )}
-          </CardContent>
-        </Card>
+              <dl>
+                <dt className="text-sm font-medium text-gray-900 text-center">My Assessments</dt>
+                <dd className="mt-3">
+                  <div className="border-t border-gray-200 pt-4">
+                    {myAssessments.length === 0 ? (
+                      <p className="text-sm text-gray-500 text-center">No assessments found</p>
+                    ) : (
+                      <div className="space-y-0">
+                        {myAssessments.map((assessment, index) => {
+                          const assessmentName = assessment.cohort_assessment?.name || 
+                            assessment.cohort_assessment?.assessment_type?.name || 
+                            "Assessment";
+                          const cohortName = assessment.cohort_assessment?.cohort?.name || "Cohort";
+                          
+                          return (
+                            <div
+                              key={assessment.id}
+                              className={`cursor-pointer hover:bg-gray-50 py-3 transition-colors ${index !== myAssessments.length - 1 ? 'border-b border-gray-200' : ''}`}
+                              onClick={() => {
+                                const assessmentId = assessment.cohort_assessment?.id;
+                                if (assessmentId) {
+                                  router.push(`/tenant/${subdomain}/assessments/${assessmentId}`);
+                                }
+                              }}
+                            >
+                              <dl className="flex flex-wrap gap-x-4 gap-y-2">
+                                <div className="flex-1 min-w-0">
+                                  <dt className="text-sm font-medium text-gray-900">{assessmentName}</dt>
+                                  <dd className="text-sm text-gray-500">{cohortName}</dd>
+                                </div>
+                                {assessment.status && (
+                                  <div className="flex-shrink-0">
+                                    <dt className="sr-only">Status</dt>
+                                    <dd>
+                                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(assessment.status)}`}>
+                                        {assessment.status}
+                                      </span>
+                                    </dd>
+                                  </div>
+                                )}
+                                {assessment.score !== null && (
+                                  <div className="w-full">
+                                    <dt className="sr-only">Score</dt>
+                                    <dd className="text-sm text-gray-500">Score: {assessment.score}</dd>
+                                  </div>
+                                )}
+                              </dl>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </dd>
+              </dl>
+            </div>
+          </div>
+        </div>
 
         {/* My Actions */}
-        <Card>
-          <CardHeader>
-            <CardTitle>My Actions</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {myActions.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No actions required</p>
-            ) : (
-              <div className="space-y-3">
-                {myActions.map((action) => {
-                  const nominatedBy = action.nominated_by;
-                  const nominatedByName = nominatedBy
-                    ? `${nominatedBy.name || ""} ${nominatedBy.surname || ""}`.trim() || nominatedBy.email
-                    : "Someone";
-                  const assessmentName = action.participant_assessment?.cohort_assessment?.name ||
-                    action.participant_assessment?.cohort_assessment?.assessment_type?.name ||
-                    "Assessment";
-                  
-                  return (
-                    <div
-                      key={action.id}
-                      className="p-3 border rounded-lg hover:bg-accent transition-colors"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1">
-                          <p className="text-sm font-medium">
-                            Review request from {nominatedByName}
-                          </p>
-                          <p className="text-xs text-muted-foreground mt-1">{assessmentName}</p>
-                          {action.created_at && (
-                            <p className="text-xs text-muted-foreground mt-1">
-                              Requested: {new Date(action.created_at).toLocaleDateString()}
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={(e) => handleRejectNomination(action.id, e)}
-                            disabled={processingAction === action.id}
-                            className="text-red-600 border-red-200 hover:bg-red-50"
-                          >
-                            {processingAction === action.id ? "..." : "Reject"}
-                          </Button>
-                          <Button
-                            size="sm"
-                            onClick={(e) => handleAcceptNomination(action.id, e)}
-                            disabled={processingAction === action.id}
-                          >
-                            {processingAction === action.id ? "..." : "Accept"}
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+        <div className="overflow-hidden rounded-lg bg-white shadow border border-gray-200">
+          <div className="p-6">
+            <div className="flex flex-col">
+              <div className="flex items-center justify-center mb-4">
+                <Bell className="h-8 w-8 text-orange-600" aria-hidden="true" />
               </div>
-            )}
-          </CardContent>
-        </Card>
+              <dl>
+                <dt className="text-sm font-medium text-gray-900 text-center">My Actions</dt>
+                <dd className="mt-3">
+                  <div className="border-t border-gray-200 pt-4">
+                    {myActions.length === 0 ? (
+                      <p className="text-sm text-gray-500 text-center">No actions required</p>
+                    ) : (
+                      <div className="space-y-0">
+                        {myActions.map((action, index) => {
+                          const nominatedBy = action.nominated_by;
+                          const nominatedByName = nominatedBy
+                            ? `${nominatedBy.name || ""} ${nominatedBy.surname || ""}`.trim() || nominatedBy.email
+                            : "Someone";
+                          const assessmentName = action.participant_assessment?.cohort_assessment?.name ||
+                            action.participant_assessment?.cohort_assessment?.assessment_type?.name ||
+                            "Assessment";
+                          
+                          return (
+                            <div
+                              key={action.id}
+                              className={`py-3 ${index !== myActions.length - 1 ? 'border-b border-gray-200' : ''}`}
+                            >
+                              <dl className="flex flex-wrap gap-x-4 gap-y-2">
+                                <div className="flex-1 min-w-0">
+                                  <dt className="text-sm font-medium text-gray-900">
+                                    Review request from {nominatedByName}
+                                  </dt>
+                                  <dd className="text-sm text-gray-500">{assessmentName}</dd>
+                                  {action.created_at && (
+                                    <dd className="text-sm text-gray-500 mt-1">
+                                      Requested: {new Date(action.created_at).toLocaleDateString()}
+                                    </dd>
+                                  )}
+                                </div>
+                                <div className="w-full flex gap-2 mt-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={(e) => handleRejectNomination(action.id, e)}
+                                    disabled={processingAction === action.id}
+                                    className="text-red-600 border-red-200 hover:bg-red-50"
+                                  >
+                                    {processingAction === action.id ? "..." : "Reject"}
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    onClick={(e) => handleAcceptNomination(action.id, e)}
+                                    disabled={processingAction === action.id}
+                                  >
+                                    {processingAction === action.id ? "..." : "Accept"}
+                                  </Button>
+                                </div>
+                              </dl>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </dd>
+              </dl>
+            </div>
+          </div>
+        </div>
 
         {/* My Reviews */}
-        <Card>
-          <CardHeader>
-            <CardTitle>My Reviews</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {myReviews.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No reviews pending</p>
-            ) : (
-              <div className="space-y-3">
-                {myReviews.map((review) => {
-                  const participant = review.participant_assessment?.participant?.client_user;
-                  const participantName = participant
-                    ? `${participant.name || ""} ${participant.surname || ""}`.trim() || participant.email
-                    : "Participant";
-                  const assessmentName = review.participant_assessment?.cohort_assessment?.name ||
-                    review.participant_assessment?.cohort_assessment?.assessment_type?.name ||
-                    "Assessment";
-                  
-                  return (
-                    <div
-                      key={review.id}
-                      className="p-3 border rounded-lg hover:bg-accent transition-colors cursor-pointer"
-                      onClick={() => {
-                        // Navigate to review page if needed
-                        const participantAssessmentId = review.participant_assessment?.id;
-                        if (participantAssessmentId) {
-                          // You can navigate to a review page here
-                        }
-                      }}
-                    >
-                      <p className="text-sm font-medium">{participantName}</p>
-                      <p className="text-xs text-muted-foreground">{assessmentName}</p>
-                      {review.created_at && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Assigned: {new Date(review.created_at).toLocaleDateString()}
-                        </p>
-                      )}
-                    </div>
-                  );
-                })}
+        <div className="overflow-hidden rounded-lg bg-white shadow border border-gray-200">
+          <div className="p-6">
+            <div className="flex flex-col">
+              <div className="flex items-center justify-center mb-4">
+                <CheckCircle2 className="h-8 w-8 text-green-600" aria-hidden="true" />
               </div>
-            )}
-          </CardContent>
-        </Card>
+              <dl>
+                <dt className="text-sm font-medium text-gray-900 text-center">My Reviews</dt>
+                <dd className="mt-3">
+                  <div className="border-t border-gray-200 pt-4">
+                    {myReviews.length === 0 ? (
+                      <p className="text-sm text-gray-500 text-center">No reviews pending</p>
+                    ) : (
+                      <div className="space-y-0">
+                        {myReviews.map((review, index) => {
+                          const participant = review.participant_assessment?.participant?.client_user;
+                          const participantName = participant
+                            ? `${participant.name || ""} ${participant.surname || ""}`.trim() || participant.email
+                            : "Participant";
+                          const assessmentName = review.participant_assessment?.cohort_assessment?.name ||
+                            review.participant_assessment?.cohort_assessment?.assessment_type?.name ||
+                            "Assessment";
+                          
+                          return (
+                            <div
+                              key={review.id}
+                              className={`cursor-pointer hover:bg-gray-50 py-3 transition-colors ${index !== myReviews.length - 1 ? 'border-b border-gray-200' : ''}`}
+                              onClick={() => {
+                                const participantAssessmentId = review.participant_assessment?.id;
+                                if (participantAssessmentId) {
+                                  // You can navigate to a review page here
+                                }
+                              }}
+                            >
+                              <dl className="flex flex-wrap gap-x-4 gap-y-2">
+                                <div className="flex-1 min-w-0">
+                                  <dt className="text-sm font-medium text-gray-900">{participantName}</dt>
+                                  <dd className="text-sm text-gray-500">{assessmentName}</dd>
+                                  {review.created_at && (
+                                    <dd className="text-sm text-gray-500 mt-1">
+                                      Assigned: {new Date(review.created_at).toLocaleDateString()}
+                                    </dd>
+                                  )}
+                                </div>
+                              </dl>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </dd>
+              </dl>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Toast Container */}
