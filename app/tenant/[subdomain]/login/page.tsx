@@ -1,8 +1,9 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { Button, Input, Card } from "@/components/ui";
 
 export default function TenantLogin() {
   const params = useParams();
@@ -12,6 +13,23 @@ export default function TenantLogin() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [clientName, setClientName] = useState<string>("");
+
+  // Fetch client name on mount
+  useEffect(() => {
+    if (subdomain) {
+      supabase
+        .from("clients")
+        .select("name")
+        .eq("subdomain", subdomain)
+        .single()
+        .then(({ data, error }) => {
+          if (!error && data) {
+            setClientName(data.name);
+          }
+        });
+    }
+  }, [subdomain]);
 
   // Debug: Log when component mounts
   console.log("🎯 TenantLogin component mounted", { subdomain, params });
@@ -147,49 +165,76 @@ export default function TenantLogin() {
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-50">
-      <form
-        onSubmit={handleLogin}
-        className="bg-white p-6 rounded-lg shadow-md w-full max-w-md space-y-4"
-      >
-        <div className="text-center space-y-2">
-          <h1 className="text-2xl font-bold text-gray-900">
-            IMD Accelerator
-          </h1>
-          <h2 className="text-lg font-medium text-gray-600">
-            Login
-          </h2>
-          {subdomain && (
-            <p className="text-sm text-gray-500">
-              Access your portal
-            </p>
-          )}
+    <div className="min-h-screen flex">
+      {/* Left side - Image/Branding */}
+      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-primary to-primary/80 items-center justify-center p-12">
+        <div className="text-white space-y-6 max-w-md">
+          <h1 className="text-5xl font-bold">IMD Accelerator</h1>
+          <p className="text-xl text-white/90">
+            Access your assessment portal. Complete assessments, nominate reviewers, and track your progress.
+          </p>
+          <div className="flex items-center gap-2 pt-4">
+            <div className="w-12 h-1 bg-white/30 rounded"></div>
+            <div className="w-24 h-1 bg-white rounded"></div>
+          </div>
         </div>
-        <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="w-full border p-2 rounded"
-          required
-        />
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="w-full border p-2 rounded"
-          required
-        />
-        {error && <p className="text-red-600 text-sm">{error}</p>}
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {loading ? "Logging in..." : "Login"}
-        </button>
-      </form>
+      </div>
+
+      {/* Right side - Login Form */}
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-gray-50">
+        <Card className="p-8 w-full max-w-md space-y-6">
+          <div className="space-y-2">
+            <h2 className="text-3xl font-bold text-gray-900">Welcome Back</h2>
+            <p className="text-gray-600">
+              {clientName ? `Sign in to your ${clientName} account` : "Sign in to your account"}
+            </p>
+          </div>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div className="space-y-2">
+              <label htmlFor="email" className="text-sm font-medium text-gray-700">
+                Email
+              </label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="Enter your email"
+                value={email}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="password" className="text-sm font-medium text-gray-700">
+                Password
+              </label>
+              <Input
+                id="password"
+                type="password"
+                placeholder="Enter your password"
+                value={password}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
+                required
+              />
+            </div>
+            {error && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+                <p className="text-sm text-red-600">{error}</p>
+              </div>
+            )}
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? "Logging in..." : "Sign In"}
+            </Button>
+            <div className="text-center">
+              <button
+                type="button"
+                className="text-sm text-primary hover:underline"
+              >
+                Login with SSO
+              </button>
+            </div>
+          </form>
+        </Card>
+      </div>
     </div>
   );
 }
