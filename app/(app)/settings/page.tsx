@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Users, Building2, ArrowRight, FileText } from "lucide-react";
+import { Users, Building2, ArrowRight, FileText, Plug2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function SettingsPage() {
@@ -81,6 +81,31 @@ export default function SettingsPage() {
             <CardContent className="pt-0">
               <p className="text-sm text-muted-foreground">
                 Create and manage subscription plans and pricing tiers
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
+
+        {/* Integrations Tile */}
+        <Link href="/settings/integrations" className="block">
+          <Card className="h-full transition-all hover:shadow-md cursor-pointer hover:border-primary">
+            <CardHeader className="pb-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
+                    <Plug2 className="h-6 w-6 text-primary" />
+                  </div>
+                  <div>
+                    <CardTitle className="mb-1">Integrations</CardTitle>
+                    <CardDescription>Manage third-party integrations</CardDescription>
+                  </div>
+                </div>
+                <ArrowRight className="h-5 w-5 text-muted-foreground flex-shrink-0 ml-2" />
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <p className="text-sm text-muted-foreground">
+                Configure SSO, API connections, and other third-party services
               </p>
             </CardContent>
           </Card>
