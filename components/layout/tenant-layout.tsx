@@ -121,41 +121,84 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
       const sessionStart = sessionStorage.getItem(`session_start_${userId}`);
       if (!sessionStart) {
         // Initialize session start if it doesn't exist (should only happen on first load after login)
-        sessionStorage.setItem(`session_start_${userId}`, new Date().toISOString());
+        const now = new Date().toISOString();
+        sessionStorage.setItem(`session_start_${userId}`, now);
       }
       const sessionStartTime = sessionStorage.getItem(`session_start_${userId}`) || new Date(0).toISOString();
-      const lastChecked = sessionStorage.getItem(`notifications_last_checked_${userId}`) || sessionStartTime;
-      console.log("🔔 lastChecked:", lastChecked, "sessionStartTime:", sessionStartTime);
+      // Count shows notifications created after lastChecked
+      // On login, lastChecked doesn't exist, so we use sessionStart to show notifications created after login
+      // When notifications page loads, lastChecked is set to now, so count resets to 0
+      const lastChecked = sessionStorage.getItem(`notifications_last_checked_${userId}`);
+      const countFromTime = lastChecked || sessionStartTime;
+      console.log("🔔 lastChecked:", lastChecked, "sessionStartTime:", sessionStartTime, "countFromTime:", countFromTime);
 
-      // Count new review requests (where user is reviewer, request_status = pending, created after last check)
-      // This way the count resets when they visit the notifications page, but messages persist
-      // Exclude self-nominated external reviewers
-      console.log("🔔 Counting review requests for userId:", userId, "lastChecked:", lastChecked);
-      const { data: reviewRequests } = await supabase
+      // Count new review requests (where user is reviewer, request_status = pending, created after countFromTime)
+      // On login: countFromTime = sessionStart (shows notifications created after login)
+      // After visiting notifications page: countFromTime = lastChecked = now (count resets to 0)
+      // Need to check both internal (reviewer_id) and external (external_reviewer email) reviewers
+      console.log("🔔 Counting review requests for userId:", userId, "countFromTime:", countFromTime);
+      
+      // Get user's email for external reviewer matching
+      const { data: currentUser } = await supabase
+        .from("client_users")
+        .select("email")
+        .eq("id", userId)
+        .single();
+      
+      const userEmail = currentUser?.email?.toLowerCase();
+      
+      // Count internal review requests
+      const { data: internalRequests } = await supabase
         .from("reviewer_nominations")
         .select("id, is_external, nominated_by_id, reviewer_id, created_at")
         .eq("reviewer_id", userId)
+        .eq("is_external", false)
         .eq("request_status", "pending")
-        .gt("created_at", lastChecked);
+        .gt("created_at", countFromTime);
+      
+      // Count external review requests
+      let externalRequests: any[] = [];
+      if (userEmail) {
+        const { data: externalReviewers } = await supabase
+          .from("external_reviewers")
+          .select("id")
+          .eq("email", userEmail)
+          .limit(1);
+        
+        if (externalReviewers && externalReviewers.length > 0) {
+          const { data: externalRequestsData } = await supabase
+            .from("reviewer_nominations")
+            .select("id, is_external, nominated_by_id, reviewer_id, created_at")
+            .eq("external_reviewer_id", externalReviewers[0].id)
+            .eq("is_external", true)
+            .eq("request_status", "pending")
+            .gt("created_at", countFromTime);
+          
+          externalRequests = externalRequestsData || [];
+        }
+      }
+      
+      // Combine and filter out self-nominated external reviewers
+      const allReviewRequests = [...(internalRequests || []), ...externalRequests];
+      const validReviewRequests = allReviewRequests.filter((req: any) => {
+        return !(req.is_external === true && req.nominated_by_id === userId);
+      });
       
       console.log("🔔 Review requests count query result:", { 
-        count: reviewRequests?.length || 0, 
-        requests: reviewRequests 
+        internal: internalRequests?.length || 0,
+        external: externalRequests?.length || 0,
+        total: validReviewRequests.length,
+        requests: allReviewRequests 
       });
 
-      // Filter out self-nominated external reviewers
-      const validReviewRequests = reviewRequests?.filter((req: any) => {
-        return !(req.is_external === true && req.nominated_by_id === userId);
-      }) || [];
-
       // For status changes, we need to check nominations user created that are accepted/rejected
-      // Show status changes created after last check (so count resets when visiting notifications page)
+      // Show status changes created after countFromTime (so count resets when visiting notifications page)
       const { data: statusChanges } = await supabase
         .from("reviewer_nominations")
         .select("id, created_at")
         .eq("nominated_by_id", userId)
         .in("request_status", ["accepted", "rejected"])
-        .gt("created_at", lastChecked);
+        .gt("created_at", countFromTime);
 
       const statusChangesCount = statusChanges?.length || 0;
 

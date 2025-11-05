@@ -44,8 +44,21 @@ export default function TenantNotificationsPage() {
         const userData = JSON.parse(storedUser);
         setUser(userData);
         if (userData.id) {
+          // Update lastChecked timestamp when notifications page loads
+          // This removes the count but keeps the notifications visible
+          const userId = userData.id;
+          const sessionStart = sessionStorage.getItem(`session_start_${userId}`);
+          if (!sessionStart) {
+            // Initialize if somehow missing
+            sessionStorage.setItem(`session_start_${userId}`, new Date().toISOString());
+          }
+          // Set lastChecked to now - this will reset the badge count
+          sessionStorage.setItem(`notifications_last_checked_${userId}`, new Date().toISOString());
+          
+          // Trigger notification count refresh to update the badge
+          window.dispatchEvent(new CustomEvent('notification-update'));
+          
           fetchNotifications(userData.id);
-          // Don't trigger update - notifications should persist until new session
         }
       } catch (error) {
         console.error("Error parsing user data:", error);
@@ -70,9 +83,21 @@ export default function TenantNotificationsPage() {
       console.log("🔔 sessionStartTime:", sessionStartTime);
 
       // Fetch new review requests (where user is reviewer, request_status = pending, created after session start)
-      // Exclude self-nominated external reviewers
+      // Need to check both internal (reviewer_id) and external (external_reviewer email) reviewers
       console.log("🔔 Fetching review requests for userId:", userId, "sessionStartTime:", sessionStartTime);
-      const { data: reviewRequests, error: reviewError } = await supabase
+      
+      // First, get user's email for external reviewer matching
+      const { data: currentUser } = await supabase
+        .from("client_users")
+        .select("email")
+        .eq("id", userId)
+        .single();
+      
+      const userEmail = currentUser?.email?.toLowerCase();
+      console.log("🔔 User email for external matching:", userEmail);
+      
+      // Fetch internal review requests (where reviewer_id matches userId)
+      const { data: internalRequests, error: internalError } = await supabase
         .from("reviewer_nominations")
         .select(`
           id,
@@ -80,15 +105,58 @@ export default function TenantNotificationsPage() {
           is_external,
           nominated_by_id,
           reviewer_id,
+          external_reviewer_id,
           nominated_by:client_users!reviewer_nominations_nominated_by_id_fkey(id, name, surname, email),
           participant_assessment:participant_assessments(
             cohort_assessment:cohort_assessments(name)
           )
         `)
         .eq("reviewer_id", userId)
+        .eq("is_external", false)
         .eq("request_status", "pending")
         .gt("created_at", sessionStartTime)
         .order("created_at", { ascending: false });
+      
+      // Fetch external review requests (where external_reviewer email matches user email)
+      let externalRequests: any[] = [];
+      if (userEmail) {
+        const { data: externalReviewers } = await supabase
+          .from("external_reviewers")
+          .select("id, email")
+          .eq("email", userEmail)
+          .limit(1);
+        
+        if (externalReviewers && externalReviewers.length > 0) {
+          const externalReviewerId = externalReviewers[0].id;
+          const { data: externalRequestsData, error: externalError } = await supabase
+            .from("reviewer_nominations")
+            .select(`
+              id,
+              created_at,
+              is_external,
+              nominated_by_id,
+              reviewer_id,
+              external_reviewer_id,
+              nominated_by:client_users!reviewer_nominations_nominated_by_id_fkey(id, name, surname, email),
+              participant_assessment:participant_assessments(
+                cohort_assessment:cohort_assessments(name)
+              )
+            `)
+            .eq("external_reviewer_id", externalReviewerId)
+            .eq("is_external", true)
+            .eq("request_status", "pending")
+            .gt("created_at", sessionStartTime)
+            .order("created_at", { ascending: false });
+          
+          if (!externalError && externalRequestsData) {
+            externalRequests = externalRequestsData;
+          }
+        }
+      }
+      
+      // Combine internal and external requests
+      const reviewRequests = [...(internalRequests || []), ...externalRequests];
+      const reviewError = internalError;
       
       console.log("🔔 Review requests query result:", { 
         count: reviewRequests?.length || 0, 
@@ -101,15 +169,42 @@ export default function TenantNotificationsPage() {
       if (reviewError && (reviewError.message?.includes("relationship") || reviewError.message?.includes("cache"))) {
         console.warn("Relationship query failed for review requests, fetching separately");
         
-        const { data: requestsOnly, error: requestsOnlyError } = await supabase
+        // Fetch internal requests separately
+        const { data: internalOnly, error: internalOnlyError } = await supabase
           .from("reviewer_nominations")
-          .select("id, created_at, nominated_by_id, participant_assessment_id, is_external")
+          .select("id, created_at, nominated_by_id, participant_assessment_id, is_external, external_reviewer_id")
           .eq("reviewer_id", userId)
+          .eq("is_external", false)
           .eq("request_status", "pending")
           .gt("created_at", sessionStartTime)
           .order("created_at", { ascending: false });
 
-        if (!requestsOnlyError && requestsOnly) {
+        // Fetch external requests separately
+        let externalOnly: any[] = [];
+        if (userEmail) {
+          const { data: externalReviewers } = await supabase
+            .from("external_reviewers")
+            .select("id")
+            .eq("email", userEmail)
+            .limit(1);
+          
+          if (externalReviewers && externalReviewers.length > 0) {
+            const { data: externalOnlyData } = await supabase
+              .from("reviewer_nominations")
+              .select("id, created_at, nominated_by_id, participant_assessment_id, is_external, external_reviewer_id")
+              .eq("external_reviewer_id", externalReviewers[0].id)
+              .eq("is_external", true)
+              .eq("request_status", "pending")
+              .gt("created_at", sessionStartTime)
+              .order("created_at", { ascending: false });
+            
+            externalOnly = externalOnlyData || [];
+          }
+        }
+
+        const requestsOnly = [...(internalOnly || []), ...externalOnly];
+
+        if (!internalOnlyError && requestsOnly.length > 0) {
           // Fetch related data separately
           const nominatedByIds = [...new Set(requestsOnly.map((r: any) => r.nominated_by_id))];
           const participantAssessmentIds = [...new Set(requestsOnly.map((r: any) => r.participant_assessment_id))];
@@ -273,13 +368,9 @@ export default function TenantNotificationsPage() {
 
       console.log("Fetched notifications:", allNotifications.length, allNotifications);
       setNotifications(allNotifications);
-
-      // Update last checked timestamp to reset the notification badge count
-      // But keep the notification messages visible until new login session
-      sessionStorage.setItem(`notifications_last_checked_${userId}`, new Date().toISOString());
       
-      // Trigger notification count refresh to update the badge
-      window.dispatchEvent(new CustomEvent('notification-update'));
+      // Note: lastChecked is already set in useEffect when page loads
+      // This ensures count resets when page is visited, but messages remain visible
     } catch (err) {
       console.error("Error fetching notifications:", err);
       setNotifications([]);

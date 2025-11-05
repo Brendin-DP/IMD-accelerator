@@ -1101,14 +1101,28 @@ export default function CohortsPage() {
                   Start Date
                 </label>
                 <div className="relative">
-                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                  <Calendar 
+                    className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground cursor-pointer z-10" 
+                    onClick={(e) => {
+                      const input = e.currentTarget.nextElementSibling as HTMLInputElement;
+                      if (input) {
+                        input.showPicker?.();
+                        input.focus();
+                      }
+                    }}
+                  />
                   <Input
                     id="start_date"
                     name="start_date"
                     type="date"
                     value={formData.start_date}
                     onChange={handleInputChange}
-                    className="pl-10"
+                    onClick={(e) => {
+                      const input = e.currentTarget as HTMLInputElement;
+                      input.showPicker?.();
+                    }}
+                    className="pl-10 [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none cursor-pointer"
+                    style={{ WebkitAppearance: 'none' }}
                   />
                 </div>
               </div>
@@ -1117,14 +1131,28 @@ export default function CohortsPage() {
                   End Date
                 </label>
                 <div className="relative">
-                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                  <Calendar 
+                    className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground cursor-pointer z-10" 
+                    onClick={(e) => {
+                      const input = e.currentTarget.nextElementSibling as HTMLInputElement;
+                      if (input) {
+                        input.showPicker?.();
+                        input.focus();
+                      }
+                    }}
+                  />
                   <Input
                     id="end_date"
                     name="end_date"
                     type="date"
                     value={formData.end_date}
                     onChange={handleInputChange}
-                    className="pl-10"
+                    onClick={(e) => {
+                      const input = e.currentTarget as HTMLInputElement;
+                      input.showPicker?.();
+                    }}
+                    className="pl-10 [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none cursor-pointer"
+                    style={{ WebkitAppearance: 'none' }}
                   />
                 </div>
               </div>

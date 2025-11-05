@@ -154,8 +154,10 @@ export default function TenantLogin() {
       // Reset session storage for notifications on new login
       // This starts a fresh session and clears old notification tracking
       const userId = user.id;
-      sessionStorage.setItem(`session_start_${userId}`, new Date().toISOString());
-      sessionStorage.setItem(`seen_notifications_${userId}`, JSON.stringify([]));
+      const loginTime = new Date().toISOString();
+      sessionStorage.setItem(`session_start_${userId}`, loginTime);
+      // Don't set notifications_last_checked on login - let it default to session_start
+      // This ensures count shows notifications created after login
       sessionStorage.removeItem(`notifications_last_checked_${userId}`);
       
       // Redirect to tenant dashboard with subdomain
