@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -14,6 +14,7 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import { supabase } from "@/lib/supabaseClient";
+import * as XLSX from "xlsx";
 
 interface Client {
   id: string;
@@ -400,6 +401,243 @@ export default function CohortsPage() {
     });
   }
 
+  async function handleDownloadData() {
+    try {
+      // Fetch all cohorts without relationships first
+      const { data: allCohorts, error: cohortsError } = await supabase
+        .from("cohorts")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (cohortsError) {
+        console.error("Error fetching cohorts:", cohortsError);
+        alert("Failed to fetch cohorts data");
+        return;
+      }
+
+      if (!allCohorts || allCohorts.length === 0) {
+        alert("No cohorts found to export");
+        return;
+      }
+
+      // Fetch clients and plans separately
+      const clientIds = [...new Set(allCohorts.map((c: any) => c.client_id).filter(Boolean))];
+      const planIds = [...new Set(allCohorts.map((c: any) => c.plan_id).filter(Boolean))];
+
+      const [clientsResult, plansResult] = await Promise.all([
+        clientIds.length > 0 
+          ? supabase.from("clients").select("id, name").in("id", clientIds)
+          : { data: [], error: null },
+        planIds.length > 0
+          ? supabase.from("plans").select("id, name").in("id", planIds)
+          : { data: [], error: null }
+      ]);
+
+      const clientsMap = new Map((clientsResult.data || []).map((c: any) => [c.id, c.name]));
+      const plansMap = new Map((plansResult.data || []).map((p: any) => [p.id, p.name]));
+
+      // Prepare cohorts data
+      const cohortsData = allCohorts.map((cohort: any) => ({
+        "Cohort ID": cohort.id,
+        "Cohort Name": cohort.name || "",
+        "Client": clientsMap.get(cohort.client_id) || "",
+        "Plan": plansMap.get(cohort.plan_id) || "",
+        "Start Date": cohort.start_date ? new Date(cohort.start_date).toLocaleDateString() : "",
+        "End Date": cohort.end_date ? new Date(cohort.end_date).toLocaleDateString() : "",
+        "Created At": cohort.created_at ? new Date(cohort.created_at).toLocaleDateString() : "",
+      }));
+
+      // Fetch all participants for all cohorts
+      const cohortIds = allCohorts.map((c: any) => c.id);
+      const { data: allParticipants, error: participantsError } = await supabase
+        .from("cohort_participants")
+        .select("*")
+        .in("cohort_id", cohortIds);
+
+      if (participantsError) {
+        console.error("Error fetching participants:", participantsError);
+      }
+
+      // Fetch client users separately
+      const clientUserIds = [...new Set((allParticipants || []).map((p: any) => p.client_user_id).filter(Boolean))];
+      let clientUsers: any[] = [];
+      if (clientUserIds.length > 0) {
+        const { data, error: usersError } = await supabase
+          .from("client_users")
+          .select("id, name, surname, email")
+          .in("id", clientUserIds);
+        if (!usersError && data) {
+          clientUsers = data;
+        }
+      }
+
+      const usersMap = new Map(clientUsers.map((u: any) => [
+        u.id,
+        { name: u.name || "", surname: u.surname || "", email: u.email || "" }
+      ]));
+
+      // Create cohorts map for participants
+      const cohortsMap = new Map(allCohorts.map((c: any) => [c.id, { name: c.name || "", clientId: c.client_id }]));
+
+      // Prepare participants data
+      const participantsData = (allParticipants || []).map((participant: any) => {
+        const cohort = cohortsMap.get(participant.cohort_id);
+        const user = usersMap.get(participant.client_user_id);
+        return {
+          "Participant ID": participant.id,
+          "Cohort Name": cohort?.name || "",
+          "Client": clientsMap.get(cohort?.clientId || "") || "",
+          "Participant Name": `${user?.name || ""} ${user?.surname || ""}`.trim() || "",
+          "Participant Email": user?.email || "",
+          "Added At": participant.created_at ? new Date(participant.created_at).toLocaleDateString() : "",
+        };
+      });
+
+      // Fetch all cohort assessments
+      const { data: cohortAssessments, error: cohortAssessmentsError } = await supabase
+        .from("cohort_assessments")
+        .select("*")
+        .in("cohort_id", cohortIds);
+
+      if (cohortAssessmentsError) {
+        console.error("Error fetching cohort assessments:", cohortAssessmentsError);
+      }
+
+      const cohortAssessmentIds = (cohortAssessments || []).map((ca: any) => ca.id);
+      const cohortAssessmentsMap = new Map((cohortAssessments || []).map((ca: any) => [ca.id, ca.cohort_id]));
+
+      // Fetch all participant assessments
+      let participantAssessments: any[] = [];
+      if (cohortAssessmentIds.length > 0) {
+        const { data, error: assessmentsError } = await supabase
+          .from("participant_assessments")
+          .select("*")
+          .in("cohort_assessment_id", cohortAssessmentIds);
+        if (assessmentsError) {
+          console.error("Error fetching participant assessments:", assessmentsError);
+        } else if (data) {
+          participantAssessments = data;
+        }
+      }
+
+      // Fetch all nominations
+      const participantAssessmentIds = participantAssessments.map((pa: any) => pa.id);
+      let nominationsData: any[] = [];
+
+      if (participantAssessmentIds.length > 0) {
+        const { data: nominations, error: nominationsError } = await supabase
+          .from("reviewer_nominations")
+          .select("*")
+          .in("participant_assessment_id", participantAssessmentIds);
+
+        if (nominationsError) {
+          console.error("Error fetching nominations:", nominationsError);
+        } else {
+          // Create maps for lookups
+          const participantAssessmentsMap = new Map(participantAssessments.map((pa: any) => [
+            pa.id,
+            { clientUserId: pa.client_user_id, cohortAssessmentId: pa.cohort_assessment_id }
+          ]));
+
+          // Fetch external reviewers
+          const externalReviewerIds = [...new Set((nominations || [])
+            .filter((n: any) => n.is_external && n.external_reviewer_id)
+            .map((n: any) => n.external_reviewer_id))];
+          
+          let externalReviewers: any[] = [];
+          if (externalReviewerIds.length > 0) {
+            const { data, error: extReviewersError } = await supabase
+              .from("external_reviewers")
+              .select("id, email")
+              .in("id", externalReviewerIds);
+            if (!extReviewersError && data) {
+              externalReviewers = data;
+            }
+          }
+
+          const externalReviewersMap = new Map(externalReviewers.map((er: any) => [er.id, er.email]));
+
+          // Fetch internal reviewers
+          const reviewerIds = [...new Set((nominations || [])
+            .filter((n: any) => !n.is_external && n.reviewer_id)
+            .map((n: any) => n.reviewer_id))];
+
+          let reviewers: any[] = [];
+          if (reviewerIds.length > 0) {
+            const { data, error: reviewersError } = await supabase
+              .from("client_users")
+              .select("id, name, surname, email")
+              .in("id", reviewerIds);
+            if (!reviewersError && data) {
+              reviewers = data;
+            }
+          }
+
+          const reviewersMap = new Map(reviewers.map((r: any) => [
+            r.id,
+            { name: r.name || "", surname: r.surname || "", email: r.email || "" }
+          ]));
+
+          nominationsData = (nominations || []).map((nomination: any) => {
+            const pa = participantAssessmentsMap.get(nomination.participant_assessment_id);
+            const cohortAssessmentId = pa?.cohortAssessmentId;
+            const cohortId = cohortAssessmentsMap.get(cohortAssessmentId || "");
+            const cohort = cohortsMap.get(cohortId || "");
+            const participant = usersMap.get(pa?.clientUserId || "");
+
+            let reviewerName = "";
+            let reviewerEmail = "";
+
+            if (nomination.is_external) {
+              reviewerEmail = externalReviewersMap.get(nomination.external_reviewer_id) || "";
+            } else {
+              const reviewer = reviewersMap.get(nomination.reviewer_id);
+              reviewerName = `${reviewer?.name || ""} ${reviewer?.surname || ""}`.trim();
+              reviewerEmail = reviewer?.email || "";
+            }
+
+            return {
+              "Nomination ID": nomination.id,
+              "Cohort Name": cohort?.name || "",
+              "Client": clientsMap.get(cohort?.clientId || "") || "",
+              "Participant Name": `${participant?.name || ""} ${participant?.surname || ""}`.trim() || "",
+              "Participant Email": participant?.email || "",
+              "Reviewer Type": nomination.is_external ? "External" : "Internal",
+              "Reviewer Name": reviewerName,
+              "Reviewer Email": reviewerEmail,
+              "Status": nomination.status || "",
+              "Created At": nomination.created_at ? new Date(nomination.created_at).toLocaleDateString() : "",
+            };
+          });
+        }
+      }
+
+      // Create workbook with multiple sheets
+      const workbook = XLSX.utils.book_new();
+
+      // Add Cohorts sheet
+      const cohortsSheet = XLSX.utils.json_to_sheet(cohortsData);
+      XLSX.utils.book_append_sheet(workbook, cohortsSheet, "Cohorts");
+
+      // Add Participants sheet
+      const participantsSheet = XLSX.utils.json_to_sheet(participantsData);
+      XLSX.utils.book_append_sheet(workbook, participantsSheet, "Participants");
+
+      // Add Nominations sheet
+      const nominationsSheet = XLSX.utils.json_to_sheet(nominationsData);
+      XLSX.utils.book_append_sheet(workbook, nominationsSheet, "Nominations");
+
+      // Generate filename with current date
+      const fileName = `cohorts_export_${new Date().toISOString().split('T')[0]}.xlsx`;
+
+      // Write and download
+      XLSX.writeFile(workbook, fileName);
+    } catch (err) {
+      console.error("Error exporting data:", err);
+      alert("Failed to export data. Please try again.");
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
@@ -554,10 +792,16 @@ export default function CohortsPage() {
           <h1 className="text-3xl font-bold">Cohorts</h1>
           <p className="text-muted-foreground mt-2">Manage cohorts and participants</p>
         </div>
-        <Button onClick={() => setIsDialogOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Create Cohort
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" onClick={handleDownloadData}>
+            <Download className="mr-2 h-4 w-4" />
+            Download Data
+          </Button>
+          <Button onClick={() => setIsDialogOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Create Cohort
+          </Button>
+        </div>
       </div>
 
       {/* Cohorts Table */}
