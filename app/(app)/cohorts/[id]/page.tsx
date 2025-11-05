@@ -353,6 +353,47 @@ export default function CohortDetailPage() {
     }
   }
 
+  function calculateStatus(assessment: CohortAssessment, cohort: Cohort): string {
+    if (!assessment.start_date || !cohort.start_date) {
+      return assessment.assessment_status || "Not started";
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const assessmentStartDate = new Date(assessment.start_date);
+    assessmentStartDate.setHours(0, 0, 0, 0);
+    
+    const cohortStartDate = new Date(cohort.start_date);
+    cohortStartDate.setHours(0, 0, 0, 0);
+
+    // If assessment start date >= cohort start date, status should be "In Progress"
+    if (assessmentStartDate >= cohortStartDate) {
+      // Check if current date > assessment end date, then "Completed"
+      if (assessment.end_date) {
+        const assessmentEndDate = new Date(assessment.end_date);
+        assessmentEndDate.setHours(0, 0, 0, 0);
+        if (today > assessmentEndDate) {
+          return "Completed";
+        }
+      }
+      return "In Progress";
+    }
+
+    return assessment.assessment_status || "Not started";
+  }
+
+  function getStatusColor(status: string): string {
+    const statusLower = status.toLowerCase();
+    if (statusLower === "completed") {
+      return "bg-green-100 text-green-800";
+    } else if (statusLower === "in progress" || statusLower === "in_progress") {
+      return "bg-blue-100 text-blue-800";
+    } else {
+      return "bg-gray-100 text-gray-800";
+    }
+  }
+
   async function fetchAvailableUsers() {
     if (!cohort) return;
 
@@ -631,6 +672,7 @@ export default function CohortDetailPage() {
             {assessments.map((assessment) => {
               const assessmentType = assessment.assessment_type as any;
               const assessmentName = assessment.name || assessmentType?.name || "Assessment";
+              const status = cohort ? calculateStatus(assessment, cohort) : (assessment.assessment_status || "Not started");
             
 
               return (
@@ -649,6 +691,11 @@ export default function CohortDetailPage() {
                     <div className="flex items-start justify-between">
                       <CardTitle className="text-lg pr-8">{assessmentName}</CardTitle>
                       <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                        {status && (
+                          <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(status)}`}>
+                            {status}
+                          </span>
+                        )}
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button
@@ -672,11 +719,6 @@ export default function CohortDetailPage() {
                         </DropdownMenu>
                       </div>
                     </div>
-                    {assessmentType?.description && (
-                      <p className="text-sm text-muted-foreground mt-2">
-                        {assessmentType.description}
-                      </p>
-                    )}
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-2 text-sm">
@@ -727,11 +769,15 @@ export default function CohortDetailPage() {
                 {participants.map((participant) => {
                   const user = participant.client_user as any;
                   return (
-                    <tr key={participant.id} className="border-b hover:bg-muted/50 transition-colors">
+                    <tr 
+                      key={participant.id} 
+                      className="border-b hover:bg-muted/50 transition-colors cursor-pointer"
+                      onClick={() => router.push(`/cohorts/${cohortId}/participants/${participant.id}`)}
+                    >
                       <td className="px-6 py-4 text-sm font-medium">{user?.name || "-"}</td>
                       <td className="px-6 py-4 text-sm font-medium">{user?.surname || "-"}</td>
                       <td className="px-6 py-4 text-sm">{user?.email || "-"}</td>
-                      <td className="px-6 py-4 text-sm">
+                      <td className="px-6 py-4 text-sm" onClick={(e) => e.stopPropagation()}>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="sm" className="h-8 w-8 p-0">

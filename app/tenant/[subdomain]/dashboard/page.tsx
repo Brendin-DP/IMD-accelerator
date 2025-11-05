@@ -116,7 +116,7 @@ export default function TenantDashboardPage() {
       // First, find all cohort_participants for this user
       const { data: participants, error: participantsError } = await supabase
         .from("cohort_participants")
-        .select("id")
+        .select("id, cohort_id")
         .eq("client_user_id", userId);
 
       if (participantsError || !participants) {
@@ -126,98 +126,66 @@ export default function TenantDashboardPage() {
       }
 
       const participantIds = participants.map((p: any) => p.id);
+      const cohortIds = [...new Set(participants.map((p: any) => p.cohort_id).filter(Boolean))];
 
-      if (participantIds.length === 0) {
+      if (participantIds.length === 0 || cohortIds.length === 0) {
         setMyAssessments([]);
         return;
       }
 
-      // Fetch participant_assessments for these participants
-      const { data: assessments, error: assessmentsError } = await supabase
-        .from("participant_assessments")
+      // Fetch all cohort_assessments for cohorts this user is in
+      const { data: cohortAssessments, error: cohortAssessmentsError } = await supabase
+        .from("cohort_assessments")
         .select(`
           id,
-          status,
-          score,
-          submitted_at,
-          cohort_assessment:cohort_assessments(
-            id,
-            name,
-            assessment_type:assessment_types(name),
-            cohort:cohorts(id, name)
-          )
+          name,
+          start_date,
+          end_date,
+          assessment_status,
+          assessment_type:assessment_types(id, name, description),
+          cohort:cohorts(id, name)
         `)
-        .in("participant_id", participantIds)
+        .in("cohort_id", cohortIds)
         .order("created_at", { ascending: false });
 
-      // Handle relationship cache issues
-      if (assessmentsError && (assessmentsError.message?.includes("relationship") || assessmentsError.message?.includes("cache"))) {
-        console.warn("Relationship query failed, fetching separately");
-        
-        const { data: assessmentsOnly, error: assessmentsOnlyError } = await supabase
-          .from("participant_assessments")
-          .select("id, status, score, submitted_at, cohort_assessment_id")
-          .in("participant_id", participantIds)
-          .order("created_at", { ascending: false });
-
-        if (assessmentsOnlyError) {
-          setMyAssessments([]);
-          return;
-        }
-
-        if (assessmentsOnly && assessmentsOnly.length > 0) {
-          const cohortAssessmentIds = [...new Set(assessmentsOnly.map((a: any) => a.cohort_assessment_id))];
-          
-          // Fetch cohort assessments
-          const { data: cohortAssessments, error: caError } = await supabase
-            .from("cohort_assessments")
-            .select("id, name, assessment_type_id, cohort_id")
-            .in("id", cohortAssessmentIds);
-
-          if (caError) {
-            setMyAssessments([]);
-            return;
-          }
-
-          // Fetch assessment types
-          const assessmentTypeIds = [...new Set(cohortAssessments?.map((ca: any) => ca.assessment_type_id).filter(Boolean) || [])];
-          const { data: assessmentTypes, error: atError } = await supabase
-            .from("assessment_types")
-            .select("id, name")
-            .in("id", assessmentTypeIds);
-
-          // Fetch cohorts
-          const cohortIds = [...new Set(cohortAssessments?.map((ca: any) => ca.cohort_id).filter(Boolean) || [])];
-          const { data: cohorts, error: cohortsError } = await supabase
-            .from("cohorts")
-            .select("id, name")
-            .in("id", cohortIds);
-
-          // Merge data
-          const merged = assessmentsOnly.map((assessment: any) => {
-            const cohortAssessment = cohortAssessments?.find((ca: any) => ca.id === assessment.cohort_assessment_id);
-            const assessmentType = assessmentTypes?.find((at: any) => at.id === cohortAssessment?.assessment_type_id);
-            const cohort = cohorts?.find((c: any) => c.id === cohortAssessment?.cohort_id);
-
-            return {
-              ...assessment,
-              cohort_assessment: {
-                ...cohortAssessment,
-                assessment_type: assessmentType,
-                cohort: cohort,
-              },
-            };
-          });
-
-          setMyAssessments(merged || []);
-        } else {
-          setMyAssessments([]);
-        }
-      } else if (assessments) {
-        setMyAssessments(assessments || []);
-      } else {
+      if (cohortAssessmentsError) {
+        console.error("Error fetching cohort assessments:", cohortAssessmentsError);
         setMyAssessments([]);
+        return;
       }
+
+      // Fetch existing participant_assessments to get status and score
+      const { data: participantAssessments, error: paError } = await supabase
+        .from("participant_assessments")
+        .select("id, cohort_assessment_id, status, score, submitted_at")
+        .in("participant_id", participantIds);
+
+      // Create a map of cohort_assessment_id -> participant_assessment
+      const paMap = new Map();
+      if (participantAssessments) {
+        participantAssessments.forEach((pa: any) => {
+          paMap.set(pa.cohort_assessment_id, pa);
+        });
+      }
+
+      // Combine cohort_assessments with participant_assessment data
+      const assessments = (cohortAssessments || []).map((ca: any) => {
+        const pa = paMap.get(ca.id);
+        return {
+          id: pa?.id || ca.id, // Use participant_assessment id if exists, otherwise cohort_assessment id
+          status: pa?.status || null,
+          score: pa?.score || null,
+          submitted_at: pa?.submitted_at || null,
+          cohort_assessment: {
+            id: ca.id,
+            name: ca.name || ca.assessment_type?.name || "Assessment",
+            assessment_type: ca.assessment_type,
+            cohort: ca.cohort,
+          },
+        };
+      });
+
+      setMyAssessments(assessments);
     } catch (err) {
       console.error("Error fetching my assessments:", err);
       setMyAssessments([]);
