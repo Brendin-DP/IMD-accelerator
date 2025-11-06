@@ -54,6 +54,7 @@ interface ReviewerNomination {
   nominated_by_id: string;
   request_status: string | null;
   review_submitted_at: string | null;
+  review_status: string | null;
   created_at: string | null;
   reviewer?: {
     id: string;
@@ -64,6 +65,7 @@ interface ReviewerNomination {
   external_reviewer?: {
     id: string;
     email: string;
+    review_status: string | null;
   } | null;
 }
 
@@ -100,6 +102,7 @@ export default function TenantAssessmentDetailPage() {
   const [startingAssessment, setStartingAssessment] = useState(false);
   const [completingAssessment, setCompletingAssessment] = useState(false);
   const [resettingAssessment, setResettingAssessment] = useState(false);
+  const [nominationSearch, setNominationSearch] = useState("");
   const { toasts, showToast, removeToast } = useToast();
 
   useEffect(() => {
@@ -306,14 +309,14 @@ export default function TenantAssessmentDetailPage() {
         }
       }
 
-      // Fetch external reviewer details
+      // Fetch external reviewer details, including review_status
       const externalReviewerIds = [...new Set(externalNominations.map((n: any) => n.external_reviewer_id).filter(Boolean))];
       let externalReviewers: any[] = [];
       
       if (externalReviewerIds.length > 0) {
         const { data: externals, error: externalsError } = await supabase
           .from("external_reviewers")
-          .select("id, email")
+          .select("id, email, review_status")
           .in("id", externalReviewerIds);
 
         if (!externalsError && externals) {
@@ -324,18 +327,21 @@ export default function TenantAssessmentDetailPage() {
       // Merge the data
       const mergedNominations = nominationsData.map((nomination: any) => {
         if (nomination.is_external && nomination.external_reviewer_id) {
-          // External reviewer
+          // External reviewer - get review_status from external_reviewers table
+          const externalReviewer = externalReviewers.find((e: any) => e.id === nomination.external_reviewer_id);
           return {
             ...nomination,
             reviewer: null,
-            external_reviewer: externalReviewers.find((e: any) => e.id === nomination.external_reviewer_id) || null,
+            external_reviewer: externalReviewer || null,
+            review_status: externalReviewer?.review_status || nomination.review_status || null,
           };
         } else {
-          // Internal reviewer
+          // Internal reviewer - get review_status from reviewer_nominations table
           return {
             ...nomination,
             reviewer: clientUsers.find((u: any) => u.id === nomination.reviewer_id) || null,
             external_reviewer: null,
+            review_status: nomination.review_status || null,
           };
         }
       });
@@ -894,6 +900,21 @@ export default function TenantAssessmentDetailPage() {
     }
   }
 
+  const getReviewStatusColor = (status: string | null) => {
+    if (!status) return "bg-gray-100 text-gray-800";
+    const statusLower = status.toLowerCase();
+    if (statusLower === "completed" || statusLower === "done" || statusLower === "submitted") {
+      return "bg-green-100 text-green-800";
+    } else if (statusLower === "in_progress" || statusLower === "in progress") {
+      return "bg-blue-100 text-blue-800";
+    } else if (statusLower === "draft" || statusLower === "pending" || statusLower === "not started") {
+      return "bg-yellow-100 text-yellow-800";
+    } else if (statusLower === "cancelled" || statusLower === "rejected") {
+      return "bg-red-100 text-red-800";
+    }
+    return "bg-gray-100 text-gray-800";
+  };
+
   const getStatusColor = (status: string | null) => {
     if (!status) return "bg-gray-100 text-gray-800";
     const statusLower = status.toLowerCase();
@@ -1137,15 +1158,24 @@ export default function TenantAssessmentDetailPage() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle>Nominate for Review</CardTitle>
-              <Button
-                onClick={handleOpenNominationModal}
-                disabled={
-                  (!participantAssessment?.id && !assessment) || 
-                  nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length >= 10
-                }
-              >
-                Request Nomination
-              </Button>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="text"
+                  placeholder="Search nominations..."
+                  value={nominationSearch}
+                  onChange={(e) => setNominationSearch(e.target.value)}
+                  className="w-64"
+                />
+                <Button
+                  onClick={handleOpenNominationModal}
+                  disabled={
+                    (!participantAssessment?.id && !assessment) || 
+                    nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length >= 10
+                  }
+                >
+                  Request Nomination
+                </Button>
+              </div>
             </div>
             {nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length >= 10 && (
               <p className="text-sm text-muted-foreground mt-2">
@@ -1179,9 +1209,28 @@ export default function TenantAssessmentDetailPage() {
             </div>
             {activeTab === "internal" ? (
               (() => {
-                const internalNominations = nominations.filter((n) => !n.is_external);
+                let internalNominations = nominations.filter((n) => !n.is_external);
+                
+                // Filter by search term
+                if (nominationSearch.trim()) {
+                  const searchLower = nominationSearch.toLowerCase();
+                  internalNominations = internalNominations.filter((nomination) => {
+                    const reviewer = nomination.reviewer;
+                    const reviewerName = reviewer ? `${reviewer.name || ""} ${reviewer.surname || ""}`.trim().toLowerCase() || reviewer.email.toLowerCase() : "";
+                    const email = reviewer?.email?.toLowerCase() || "";
+                    const status = (nomination.request_status || "").toLowerCase();
+                    const reviewStatus = (nomination.review_status || "").toLowerCase();
+                    return reviewerName.includes(searchLower) || 
+                           email.includes(searchLower) || 
+                           status.includes(searchLower) ||
+                           reviewStatus.includes(searchLower);
+                  });
+                }
+                
                 return internalNominations.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No internal nominations requested yet.</p>
+                  <p className="text-sm text-muted-foreground">
+                    {nominationSearch.trim() ? "No nominations match your search." : "No internal nominations requested yet."}
+                  </p>
                 ) : (
                   <div className="rounded-md border">
                     <table className="w-full">
@@ -1192,6 +1241,7 @@ export default function TenantAssessmentDetailPage() {
                           <th className="px-6 py-3 text-left text-sm font-medium">Email</th>
                           <th className="px-6 py-3 text-left text-sm font-medium">Status</th>
                           <th className="px-6 py-3 text-left text-sm font-medium">Requested</th>
+                          <th className="px-6 py-3 text-left text-sm font-medium">Review Progress</th>
                           <th className="px-6 py-3 text-left text-sm font-medium w-12"></th>
                         </tr>
                       </thead>
@@ -1224,6 +1274,15 @@ export default function TenantAssessmentDetailPage() {
                                   : "-"}
                               </td>
                               <td className="px-6 py-4 text-sm">
+                                {nomination.review_status ? (
+                                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${getReviewStatusColor(nomination.review_status)}`}>
+                                    {nomination.review_status}
+                                  </span>
+                                ) : (
+                                  "-"
+                                )}
+                              </td>
+                              <td className="px-6 py-4 text-sm">
                                 <div onClick={(e) => e.stopPropagation()}>
                                   <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
@@ -1254,9 +1313,26 @@ export default function TenantAssessmentDetailPage() {
               })()
             ) : (
               (() => {
-                const externalNominations = nominations.filter((n) => n.is_external);
+                let externalNominations = nominations.filter((n) => n.is_external);
+                
+                // Filter by search term
+                if (nominationSearch.trim()) {
+                  const searchLower = nominationSearch.toLowerCase();
+                  externalNominations = externalNominations.filter((nomination) => {
+                    const externalReviewer = nomination.external_reviewer;
+                    const email = externalReviewer?.email?.toLowerCase() || "";
+                    const status = (nomination.request_status || "").toLowerCase();
+                    const reviewStatus = (nomination.review_status || "").toLowerCase();
+                    return email.includes(searchLower) || 
+                           status.includes(searchLower) ||
+                           reviewStatus.includes(searchLower);
+                  });
+                }
+                
                 return externalNominations.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No external nominations requested yet.</p>
+                  <p className="text-sm text-muted-foreground">
+                    {nominationSearch.trim() ? "No nominations match your search." : "No external nominations requested yet."}
+                  </p>
                 ) : (
                   <div className="rounded-md border">
                     <table className="w-full">
@@ -1265,6 +1341,7 @@ export default function TenantAssessmentDetailPage() {
                           <th className="px-6 py-3 text-left text-sm font-medium">Email</th>
                           <th className="px-6 py-3 text-left text-sm font-medium">Status</th>
                           <th className="px-6 py-3 text-left text-sm font-medium">Requested</th>
+                          <th className="px-6 py-3 text-left text-sm font-medium">Review Progress</th>
                           <th className="px-6 py-3 text-left text-sm font-medium w-12"></th>
                         </tr>
                       </thead>
@@ -1291,6 +1368,15 @@ export default function TenantAssessmentDetailPage() {
                                 {nomination.created_at
                                   ? new Date(nomination.created_at).toLocaleDateString()
                                   : "-"}
+                              </td>
+                              <td className="px-6 py-4 text-sm">
+                                {nomination.review_status ? (
+                                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${getReviewStatusColor(nomination.review_status)}`}>
+                                    {nomination.review_status}
+                                  </span>
+                                ) : (
+                                  "-"
+                                )}
                               </td>
                               <td className="px-6 py-4 text-sm">
                                 <div onClick={(e) => e.stopPropagation()}>
