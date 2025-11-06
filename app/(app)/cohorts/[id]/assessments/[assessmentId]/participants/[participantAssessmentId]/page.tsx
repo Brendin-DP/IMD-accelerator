@@ -615,22 +615,22 @@ export default function ParticipantAssessmentDetailPage() {
                     </th>
                     <th 
                       className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
-                      onClick={() => handleSort("review_status")}
+                      onClick={() => handleSort("created_at")}
                     >
                       <div className="flex items-center gap-2">
-                        Review Progress
-                        {sortConfig.key === "review_status" && (
+                        Requested
+                        {sortConfig.key === "created_at" && (
                           sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
                         )}
                       </div>
                     </th>
                     <th 
                       className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
-                      onClick={() => handleSort("created_at")}
+                      onClick={() => handleSort("review_status")}
                     >
                       <div className="flex items-center gap-2">
-                        Created
-                        {sortConfig.key === "created_at" && (
+                        Review Progress
+                        {sortConfig.key === "review_status" && (
                           sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
                         )}
                       </div>
@@ -669,6 +669,11 @@ export default function ParticipantAssessmentDetailPage() {
                         </td>
                         <td className="px-6 py-4 text-sm">{nominatedByName}</td>
                         <td className="px-6 py-4 text-sm">
+                          {nomination.created_at
+                            ? new Date(nomination.created_at).toLocaleDateString()
+                            : "-"}
+                        </td>
+                        <td className="px-6 py-4 text-sm">
                           {nomination.review_status ? (
                             <span className={`px-2 py-1 text-xs font-medium rounded-full ${getReviewStatusColor(nomination.review_status)}`}>
                               {nomination.review_status}
@@ -676,11 +681,6 @@ export default function ParticipantAssessmentDetailPage() {
                           ) : (
                             "-"
                           )}
-                        </td>
-                        <td className="px-6 py-4 text-sm">
-                          {nomination.created_at
-                            ? new Date(nomination.created_at).toLocaleDateString()
-                            : "-"}
                         </td>
                       </tr>
                     );

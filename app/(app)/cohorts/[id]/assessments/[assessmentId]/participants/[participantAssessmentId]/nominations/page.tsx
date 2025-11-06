@@ -613,7 +613,7 @@ export default function ParticipantNominationsPage() {
                           onClick={() => handleSortInternal("created_at")}
                         >
                           <div className="flex items-center gap-2">
-                            Created
+                            Requested
                             {sortConfigInternal.key === "created_at" && (
                               sortConfigInternal.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
                             )}
@@ -757,7 +757,7 @@ export default function ParticipantNominationsPage() {
                           onClick={() => handleSortExternal("created_at")}
                         >
                           <div className="flex items-center gap-2">
-                            Created
+                            Requested
                             {sortConfigExternal.key === "created_at" && (
                               sortConfigExternal.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
                             )}
