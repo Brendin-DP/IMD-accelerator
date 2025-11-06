@@ -57,18 +57,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-background">
       {/* Sidebar */}
-      <aside className="fixed left-0 top-0 h-screen w-64 border-r bg-card">
+      <aside className="fixed left-0 top-0 h-screen w-64 border-r bg-primary">
         <div className="flex h-full flex-col">
           {/* Logo/Header */}
-          <div className="flex h-16 items-center border-b px-6">
-            <h1 className="text-xl font-semibold">IMD Accelerator</h1>
+          <div className="flex h-16 items-center border-b border-primary-foreground/20 px-6">
+            <h1 className="text-xl font-semibold text-primary-foreground">IMD Accelerator</h1>
           </div>
 
           {/* Navigation */}
           <nav className="flex-1 space-y-1 p-4">
             {navigation.map((item) => {
               const Icon = item.icon;
-              const isActive = pathname === item.href;
+              const isActive = pathname === item.href || pathname?.startsWith(item.href + "/");
               return (
                 <Link
                   key={item.name}
@@ -77,8 +77,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors
                     ${
                       isActive
-                        ? "bg-primary text-primary-foreground"
-                        : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                        ? "bg-primary-foreground/20 text-primary-foreground"
+                        : "text-primary-foreground/80 hover:bg-primary-foreground/10 hover:text-primary-foreground"
                     }
                   `}
                 >
@@ -90,14 +90,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </nav>
 
           {/* Profile Section */}
-          <div className="border-t p-4">
+          <div className="border-t border-primary-foreground/20 p-4">
             <DropdownMenu>
-              <DropdownMenuTrigger className="w-full flex items-center gap-3 rounded-lg px-3 py-2 text-left hover:bg-accent transition-colors focus:outline-none border-0 bg-transparent shadow-none appearance-none cursor-pointer">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground flex-shrink-0">
+              <DropdownMenuTrigger className="w-full flex items-center gap-3 rounded-lg px-3 py-2 text-left hover:bg-primary-foreground/10 transition-colors focus:outline-none border-0 bg-transparent shadow-none appearance-none cursor-pointer">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-foreground/20 text-primary-foreground flex-shrink-0">
                   <User className="h-5 w-5" />
                 </div>
                 <div className="flex flex-col flex-1 min-w-0">
-                  <span className="text-sm font-medium truncate">
+                  <span className="text-sm font-medium truncate text-primary-foreground">
                     {user?.name && user?.surname 
                       ? `${user.name} ${user.surname}`
                       : user?.name 
@@ -106,9 +106,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                           ? user.surname 
                           : user?.email || "Profile"}
                   </span>
-                  <span className="text-xs text-muted-foreground">View Profile</span>
+                  <span className="text-xs text-primary-foreground/70">View Profile</span>
                 </div>
-                <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground ml-auto" />
+                <ChevronDown className="h-4 w-4 flex-shrink-0 text-primary-foreground/70 ml-auto" />
               </DropdownMenuTrigger>
               <DropdownMenuContent className="right-0 bottom-full mb-2">
                 <DropdownMenuItem onClick={() => router.push("/profile")}>
