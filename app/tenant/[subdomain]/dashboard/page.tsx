@@ -818,10 +818,7 @@ export default function TenantDashboardPage() {
                               key={review.id}
                               className={`cursor-pointer hover:bg-gray-50 py-3 transition-colors ${index !== myReviews.length - 1 ? 'border-b border-gray-200' : ''}`}
                               onClick={() => {
-                                const participantAssessmentId = review.participant_assessment?.id;
-                                if (participantAssessmentId) {
-                                  // You can navigate to a review page here
-                                }
+                                router.push(`/tenant/${subdomain}/reviews/${review.id}`);
                               }}
                             >
                               <dl className="flex flex-wrap gap-x-4 gap-y-2">
