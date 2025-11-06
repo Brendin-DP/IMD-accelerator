@@ -19,6 +19,7 @@ interface ReviewerNomination {
   nominated_by_id: string | null;
   request_status: string | null;
   review_submitted_at: string | null;
+  review_status: string | null;
   created_at: string | null;
   reviewer?: {
     id: string;
@@ -29,6 +30,7 @@ interface ReviewerNomination {
   external_reviewer?: {
     id: string;
     email: string;
+    review_status: string | null;
   } | null;
   nominated_by?: {
     id: string;
@@ -120,6 +122,7 @@ export default function ParticipantAssessmentDetailPage() {
       ? `${nomination.nominated_by.name || ""} ${nomination.nominated_by.surname || ""}`.trim() || nomination.nominated_by.email || ""
       : "",
     isExternalText: nomination.is_external ? "External" : "Internal",
+    reviewStatus: nomination.review_status || "",
   }));
 
   const { sortedData: sortedNominations, sortConfig, handleSort } = useTableSort(nominationsForSorting);
@@ -306,7 +309,7 @@ export default function ParticipantAssessmentDetailPage() {
         return;
       }
 
-      // Fetch all nominations for this participant assessment
+      // Fetch all nominations for this participant assessment, including review_status
       const { data: nominationsData, error: nominationsError } = await supabase
         .from("reviewer_nominations")
         .select("*")
@@ -346,13 +349,13 @@ export default function ParticipantAssessmentDetailPage() {
         }
       }
 
-      // Fetch external reviewers
+      // Fetch external reviewers, including review_status
       const externalReviewerIds = [...new Set(externalNominations.map((n: any) => n.external_reviewer_id).filter(Boolean))];
       let externalReviewers: any[] = [];
       if (externalReviewerIds.length > 0) {
         const { data: externalReviewersData, error: externalError } = await supabase
           .from("external_reviewers")
-          .select("id, email")
+          .select("id, email, review_status")
           .in("id", externalReviewerIds);
 
         if (!externalError && externalReviewersData) {
@@ -363,19 +366,22 @@ export default function ParticipantAssessmentDetailPage() {
       // Merge the data
       const mergedNominations = nominationsData.map((nomination: any) => {
         if (nomination.is_external && nomination.external_reviewer_id) {
-          // External reviewer
+          // External reviewer - get review_status from external_reviewers table
+          const externalReviewer = externalReviewers.find((e: any) => e.id === nomination.external_reviewer_id);
           return {
             ...nomination,
             reviewer: null,
-            external_reviewer: externalReviewers.find((e: any) => e.id === nomination.external_reviewer_id) || null,
+            external_reviewer: externalReviewer || null,
+            review_status: externalReviewer?.review_status || nomination.review_status || null,
             nominated_by: clientUsers.find((u: any) => u.id === nomination.nominated_by_id) || null,
           };
         } else {
-          // Internal reviewer
+          // Internal reviewer - get review_status from reviewer_nominations table
           return {
             ...nomination,
             reviewer: clientUsers.find((u: any) => u.id === nomination.reviewer_id) || null,
             external_reviewer: null,
+            review_status: nomination.review_status || null,
             nominated_by: clientUsers.find((u: any) => u.id === nomination.nominated_by_id) || null,
           };
         }
@@ -412,6 +418,21 @@ export default function ParticipantAssessmentDetailPage() {
       return "bg-green-100 text-green-800";
     } else if (statusLower === "draft" || statusLower === "pending") {
       return "bg-yellow-100 text-yellow-800";
+    }
+    return "bg-gray-100 text-gray-800";
+  }
+
+  function getReviewStatusColor(status: string | null): string {
+    if (!status) return "bg-gray-100 text-gray-800";
+    const statusLower = status.toLowerCase();
+    if (statusLower === "completed" || statusLower === "done" || statusLower === "submitted") {
+      return "bg-green-100 text-green-800";
+    } else if (statusLower === "in_progress" || statusLower === "in progress") {
+      return "bg-blue-100 text-blue-800";
+    } else if (statusLower === "draft" || statusLower === "pending" || statusLower === "not started") {
+      return "bg-yellow-100 text-yellow-800";
+    } else if (statusLower === "cancelled" || statusLower === "rejected") {
+      return "bg-red-100 text-red-800";
     }
     return "bg-gray-100 text-gray-800";
   }
@@ -594,11 +615,11 @@ export default function ParticipantAssessmentDetailPage() {
                     </th>
                     <th 
                       className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
-                      onClick={() => handleSort("review_submitted_at")}
+                      onClick={() => handleSort("review_status")}
                     >
                       <div className="flex items-center gap-2">
-                        Review Submitted
-                        {sortConfig.key === "review_submitted_at" && (
+                        Review Progress
+                        {sortConfig.key === "review_status" && (
                           sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
                         )}
                       </div>
@@ -648,9 +669,13 @@ export default function ParticipantAssessmentDetailPage() {
                         </td>
                         <td className="px-6 py-4 text-sm">{nominatedByName}</td>
                         <td className="px-6 py-4 text-sm">
-                          {nomination.review_submitted_at
-                            ? new Date(nomination.review_submitted_at).toLocaleDateString()
-                            : "-"}
+                          {nomination.review_status ? (
+                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${getReviewStatusColor(nomination.review_status)}`}>
+                              {nomination.review_status}
+                            </span>
+                          ) : (
+                            "-"
+                          )}
                         </td>
                         <td className="px-6 py-4 text-sm">
                           {nomination.created_at
