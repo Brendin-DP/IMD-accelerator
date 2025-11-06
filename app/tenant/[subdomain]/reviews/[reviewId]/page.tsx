@@ -492,34 +492,43 @@ export default function ReviewDetailPage() {
           </div>
           
           {/* Action Buttons */}
-          <div className="mt-6 pt-6 border-t flex gap-2">
-            {(!review.review_status || review.review_status.toLowerCase() === "not started" || review.review_status.toLowerCase() === "not_started") && (
-              <Button
-                onClick={() => updateReviewStatus("In progress")}
-                disabled={updatingStatus}
-              >
-                {updatingStatus ? "Updating..." : "Start Review"}
-              </Button>
-            )}
-            {review.review_status && review.review_status.toLowerCase() === "in progress" && (
-              <Button
-                onClick={() => updateReviewStatus("Completed")}
-                disabled={updatingStatus}
-              >
-                {updatingStatus ? "Updating..." : "Complete Review"}
-              </Button>
-            )}
-            {review.review_status && review.review_status.toLowerCase() === "completed" && (
-              <>
+          <div className="mt-6 pt-6 border-t flex justify-between items-center gap-4">
+            <div className="flex gap-2">
+              {(!review.review_status || review.review_status.toLowerCase() === "not started" || review.review_status.toLowerCase() === "not_started") && (
                 <Button
-                  variant="secondary"
-                  onClick={() => updateReviewStatus("Not started")}
+                  onClick={() => updateReviewStatus("In progress")}
                   disabled={updatingStatus}
                 >
-                  {updatingStatus ? "Updating..." : "Reset Review"}
+                  {updatingStatus ? "Updating..." : "Start Review"}
                 </Button>
-              </>
-            )}
+              )}
+              {review.review_status && review.review_status.toLowerCase() === "in progress" && (
+                <Button
+                  onClick={() => updateReviewStatus("Completed")}
+                  disabled={updatingStatus}
+                >
+                  {updatingStatus ? "Updating..." : "Complete Review"}
+                </Button>
+              )}
+              {review.review_status && review.review_status.toLowerCase() === "completed" && (
+                <>
+                  <Button
+                    variant="secondary"
+                    onClick={() => updateReviewStatus("Not started")}
+                    disabled={updatingStatus}
+                  >
+                    {updatingStatus ? "Updating..." : "Reset Review"}
+                  </Button>
+                </>
+              )}
+            </div>
+            <Button
+              onClick={() => router.push(`/tenant/${subdomain}/reviews/${reviewId}/questionnaire`)}
+              variant="secondary"
+              className="w-full sm:w-auto"
+            >
+              Simulate
+            </Button>
           </div>
         </CardContent>
       </Card>
