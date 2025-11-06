@@ -2,10 +2,11 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { FileText, Bell, CheckCircle2 } from "lucide-react";
+import { FileText, Bell, CheckCircle2, UserPlus, TrendingUp } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ToastContainer, useToast } from "@/components/ui/toast";
+import { PieChart } from "@/components/ui/pie-chart";
 import { supabase } from "@/lib/supabaseClient";
 
 interface MyAssessment {
@@ -92,6 +93,8 @@ export default function TenantDashboardPage() {
   const [myReviews, setMyReviews] = useState<MyReview[]>([]);
   const [myActions, setMyActions] = useState<MyAction[]>([]);
   const [processingAction, setProcessingAction] = useState<string | null>(null);
+  const [nominationStats, setNominationStats] = useState({ requested: 0, accepted: 0 });
+  const [reviewProgressStats, setReviewProgressStats] = useState({ notStarted: 0, inProgress: 0, completed: 0 });
   const { toasts, showToast, removeToast } = useToast();
 
   useEffect(() => {
@@ -104,6 +107,7 @@ export default function TenantDashboardPage() {
           fetchMyAssessments(userData.id);
           fetchMyReviews(userData.id);
           fetchMyActions(userData.id);
+          fetchDashboardStats(userData.id);
         }
       } catch (error) {
         console.error("Error parsing user data:", error);
@@ -499,6 +503,94 @@ export default function TenantDashboardPage() {
     }
   }
 
+  async function fetchDashboardStats(userId: string) {
+    try {
+      // 1. Fetch nomination stats (where user is the nominator)
+      const { data: myNominations } = await supabase
+        .from("reviewer_nominations")
+        .select("id, request_status")
+        .eq("nominated_by_id", userId);
+
+      if (myNominations) {
+        const requested = myNominations.length; // Total nominations requested
+        const accepted = myNominations.filter((n: any) => n.request_status === "accepted").length;
+        setNominationStats({ requested, accepted });
+      }
+
+      // 2. Fetch review progress stats (where user is the participant being reviewed)
+      // First get all participant_assessments for this user
+      const { data: userParticipants } = await supabase
+        .from("cohort_participants")
+        .select("id")
+        .eq("client_user_id", userId);
+
+      if (userParticipants && userParticipants.length > 0) {
+        const participantIds = userParticipants.map((p: any) => p.id);
+        
+        const { data: participantAssessments } = await supabase
+          .from("participant_assessments")
+          .select("id")
+          .in("participant_id", participantIds);
+
+        if (participantAssessments && participantAssessments.length > 0) {
+          const participantAssessmentIds = participantAssessments.map((pa: any) => pa.id);
+
+          // Fetch all nominations for these participant assessments
+          const { data: reviewNominations } = await supabase
+            .from("reviewer_nominations")
+            .select("id, review_status, is_external, external_reviewer_id, request_status")
+            .in("participant_assessment_id", participantAssessmentIds)
+            .eq("request_status", "accepted");
+
+          // Fetch external reviewers with review_status
+          const externalReviewerIds = reviewNominations
+            ?.filter((n: any) => n.is_external && n.external_reviewer_id)
+            .map((n: any) => n.external_reviewer_id) || [];
+          
+          let externalReviewersMap = new Map();
+          if (externalReviewerIds.length > 0) {
+            const { data: externalReviewers } = await supabase
+              .from("external_reviewers")
+              .select("id, review_status")
+              .in("id", externalReviewerIds);
+            
+            externalReviewers?.forEach((er: any) => {
+              externalReviewersMap.set(er.id, er.review_status);
+            });
+          }
+
+          // Count review progress
+          let notStarted = 0;
+          let inProgress = 0;
+          let completed = 0;
+
+          reviewNominations?.forEach((nomination: any) => {
+            let reviewStatus = nomination.review_status;
+            
+            // For external reviewers, get status from external_reviewers table
+            if (nomination.is_external && nomination.external_reviewer_id) {
+              reviewStatus = externalReviewersMap.get(nomination.external_reviewer_id) || reviewStatus;
+            }
+
+            if (!reviewStatus || reviewStatus.toLowerCase() === "not started" || reviewStatus.toLowerCase() === "not_started") {
+              notStarted++;
+            } else if (reviewStatus.toLowerCase() === "in progress" || reviewStatus.toLowerCase() === "in_progress") {
+              inProgress++;
+            } else if (reviewStatus.toLowerCase() === "completed") {
+              completed++;
+            } else {
+              notStarted++; // Default to not started
+            }
+          });
+
+          setReviewProgressStats({ notStarted, inProgress, completed });
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching dashboard stats:", err);
+    }
+  }
+
   const getStatusColor = (status: string | null) => {
     if (!status) return "bg-gray-100 text-gray-800";
     const statusLower = status.toLowerCase();
@@ -534,6 +626,7 @@ export default function TenantDashboardPage() {
       // Refresh both My Actions and My Reviews lists
       await fetchMyActions(user.id);
       await fetchMyReviews(user.id);
+      await fetchDashboardStats(user.id);
 
       // Trigger notification count update (will create notification for the nominator)
       window.dispatchEvent(new CustomEvent('notification-update'));
@@ -568,6 +661,7 @@ export default function TenantDashboardPage() {
 
       // Refresh My Actions list
       await fetchMyActions(user.id);
+      await fetchDashboardStats(user.id);
 
       // Trigger notification count update (will create notification for the nominator)
       window.dispatchEvent(new CustomEvent('notification-update'));
@@ -598,8 +692,8 @@ export default function TenantDashboardPage() {
         </p>
       </div>
 
-      {/* Dashboard Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      {/* Dashboard Stats Cards - Hidden */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 hidden">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Active Cohorts</CardTitle>
@@ -641,15 +735,90 @@ export default function TenantDashboardPage() {
         </Card>
       </div>
 
-      {/* Recent Activity */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent Activity</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">No recent activity</p>
-        </CardContent>
-      </Card>
+      {/* Stats Panels Section */}
+      <div className="grid gap-6 md:grid-cols-2">
+        {/* Nominations Stat with Pie Chart */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-center mb-4">
+              <UserPlus className="h-8 w-8 text-orange-600" aria-hidden="true" />
+            </div>
+            <CardTitle className="text-center">Nominations</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col items-center gap-4">
+              <PieChart
+                data={[
+                  { label: "Pending/Rejected", value: nominationStats.requested - nominationStats.accepted, color: "#fbbf24" },
+                  { label: "Accepted", value: nominationStats.accepted, color: "#10b981" },
+                ]}
+                size={120}
+              />
+              <div className="flex flex-col gap-2 text-sm w-full">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-yellow-400"></div>
+                    <span className="text-muted-foreground">Requested</span>
+                  </div>
+                  <span className="font-medium">{nominationStats.requested}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                    <span className="text-muted-foreground">Accepted</span>
+                  </div>
+                  <span className="font-medium">{nominationStats.accepted}</span>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Review Progress Stat with Pie Chart */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-center mb-4">
+              <TrendingUp className="h-8 w-8 text-green-600" aria-hidden="true" />
+            </div>
+            <CardTitle className="text-center">Review Progress</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col items-center gap-4">
+              <PieChart
+                data={[
+                  { label: "Not Started", value: reviewProgressStats.notStarted, color: "#9ca3af" },
+                  { label: "In Progress", value: reviewProgressStats.inProgress, color: "#3b82f6" },
+                  { label: "Completed", value: reviewProgressStats.completed, color: "#10b981" },
+                ]}
+                size={120}
+              />
+              <div className="flex flex-col gap-2 text-sm w-full">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-gray-400"></div>
+                    <span className="text-muted-foreground">Not Started</span>
+                  </div>
+                  <span className="font-medium">{reviewProgressStats.notStarted}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+                    <span className="text-muted-foreground">In Progress</span>
+                  </div>
+                  <span className="font-medium">{reviewProgressStats.inProgress}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                    <span className="text-muted-foreground">Completed</span>
+                  </div>
+                  <span className="font-medium">{reviewProgressStats.completed}</span>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Three Panels Section */}
       <div className="grid gap-6 md:grid-cols-3">
