@@ -482,13 +482,14 @@ export default function AssessmentDetailPage() {
           : b.reviewer
           ? `${b.reviewer.name || ""} ${b.reviewer.surname || ""}`.trim() || b.reviewer.email || ""
           : "";
-      } else if (sortKey === "nominatedByName") {
-        aValue = a.nominated_by
-          ? `${a.nominated_by.name || ""} ${a.nominated_by.surname || ""}`.trim() || a.nominated_by.email || ""
-          : "";
-        bValue = b.nominated_by
-          ? `${b.nominated_by.name || ""} ${b.nominated_by.surname || ""}`.trim() || b.nominated_by.email || ""
-          : "";
+      } else if (sortKey === "review_status") {
+        // Get review status (from external_reviewers for external, from reviewer_nominations for internal)
+        aValue = a.is_external
+          ? (a.external_reviewer?.review_status || a.review_status || "Not started")
+          : (a.review_status || "Not started");
+        bValue = b.is_external
+          ? (b.external_reviewer?.review_status || b.review_status || "Not started")
+          : (b.review_status || "Not started");
       } else if (sortKey === "isExternalText") {
         aValue = a.is_external ? "External" : "Internal";
         bValue = b.is_external ? "External" : "Internal";
@@ -518,6 +519,19 @@ export default function AssessmentDetailPage() {
       return "bg-yellow-100 text-yellow-800";
     } else if (statusLower === "completed") {
       return "bg-blue-100 text-blue-800";
+    }
+    return "bg-gray-100 text-gray-800";
+  }
+
+  function getReviewStatusColor(status: string | null): string {
+    if (!status) return "bg-gray-100 text-gray-800";
+    const statusLower = status.toLowerCase();
+    if (statusLower === "completed") {
+      return "bg-green-100 text-green-800";
+    } else if (statusLower === "in progress" || statusLower === "in_progress") {
+      return "bg-blue-100 text-blue-800";
+    } else if (statusLower === "not started" || statusLower === "not_started") {
+      return "bg-gray-100 text-gray-800";
     }
     return "bg-gray-100 text-gray-800";
   }
@@ -899,33 +913,22 @@ export default function AssessmentDetailPage() {
                                     </th>
                                     <th 
                                       className="px-4 py-2 text-left text-xs font-medium cursor-pointer hover:bg-muted/70 select-none"
-                                      onClick={() => handleNominationSort("nominatedByName")}
-                                    >
-                                      <div className="flex items-center gap-1">
-                                        Nominated By
-                                        {sortState.key === "nominatedByName" && (
-                                          sortState.direction === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
-                                        )}
-                                      </div>
-                                    </th>
-                                    <th 
-                                      className="px-4 py-2 text-left text-xs font-medium cursor-pointer hover:bg-muted/70 select-none"
-                                      onClick={() => handleNominationSort("review_submitted_at")}
-                                    >
-                                      <div className="flex items-center gap-1">
-                                        Submitted
-                                        {sortState.key === "review_submitted_at" && (
-                                          sortState.direction === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
-                                        )}
-                                      </div>
-                                    </th>
-                                    <th 
-                                      className="px-4 py-2 text-left text-xs font-medium cursor-pointer hover:bg-muted/70 select-none"
                                       onClick={() => handleNominationSort("created_at")}
                                     >
                                       <div className="flex items-center gap-1">
-                                        Created
+                                        Requested
                                         {sortState.key === "created_at" && (
+                                          sortState.direction === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                                        )}
+                                      </div>
+                                    </th>
+                                    <th 
+                                      className="px-4 py-2 text-left text-xs font-medium cursor-pointer hover:bg-muted/70 select-none"
+                                      onClick={() => handleNominationSort("review_status")}
+                                    >
+                                      <div className="flex items-center gap-1">
+                                        Review Progress
+                                        {sortState.key === "review_status" && (
                                           sortState.direction === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
                                         )}
                                       </div>
@@ -939,9 +942,11 @@ export default function AssessmentDetailPage() {
                                       : nomination.reviewer
                                       ? `${nomination.reviewer.name || ""} ${nomination.reviewer.surname || ""}`.trim() || nomination.reviewer.email
                                       : "-";
-                                    const nominatedByName = nomination.nominated_by
-                                      ? `${nomination.nominated_by.name || ""} ${nomination.nominated_by.surname || ""}`.trim() || nomination.nominated_by.email
-                                      : "-";
+                                    
+                                    // Get review status (from external_reviewers for external, from reviewer_nominations for internal)
+                                    const reviewStatus = nomination.is_external
+                                      ? (nomination.external_reviewer?.review_status || nomination.review_status)
+                                      : nomination.review_status;
 
                                     return (
                                       <tr key={nomination.id} className="border-b">
@@ -962,16 +967,21 @@ export default function AssessmentDetailPage() {
                                             "-"
                                           )}
                                         </td>
-                                        <td className="px-4 py-2 text-xs">{nominatedByName}</td>
-                                        <td className="px-4 py-2 text-xs">
-                                          {nomination.review_submitted_at
-                                            ? new Date(nomination.review_submitted_at).toLocaleDateString()
-                                            : "-"}
-                                        </td>
                                         <td className="px-4 py-2 text-xs">
                                           {nomination.created_at
                                             ? new Date(nomination.created_at).toLocaleDateString()
                                             : "-"}
+                                        </td>
+                                        <td className="px-4 py-2 text-xs">
+                                          {reviewStatus ? (
+                                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${getReviewStatusColor(reviewStatus)}`}>
+                                              {reviewStatus}
+                                            </span>
+                                          ) : (
+                                            <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800">
+                                              Not started
+                                            </span>
+                                          )}
                                         </td>
                                       </tr>
                                     );
