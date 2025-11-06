@@ -2,11 +2,12 @@
 
 import { useState, useEffect, Fragment } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, ChevronDown, ChevronRight, ArrowUp, ArrowDown, Search, Calendar, Users } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronRight, ArrowUp, ArrowDown, Search, Calendar, Users, MoreVertical, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { Input } from "@/components/ui/input";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { supabase } from "@/lib/supabaseClient";
 import { useTableSort } from "@/hooks/useTableSort";
 
@@ -536,6 +537,112 @@ export default function AssessmentDetailPage() {
     return "bg-gray-100 text-gray-800";
   }
 
+  async function handleSendReminders() {
+    try {
+      // Get all participant assessment IDs for this assessment
+      const participantAssessmentIds = participantAssessments
+        .map((pa) => pa.id)
+        .filter((id): id is string => id !== null);
+
+      if (participantAssessmentIds.length === 0) {
+        window.alert("No participants found for this assessment.");
+        return;
+      }
+
+      // Fetch all pending nominations (not accepted) for this assessment
+      // Get all nominations first, then filter in JavaScript for better control
+      const { data: allNominations, error: nominationsError } = await supabase
+        .from("reviewer_nominations")
+        .select("id, reviewer_id, external_reviewer_id, is_external, request_status")
+        .in("participant_assessment_id", participantAssessmentIds);
+
+      if (nominationsError) {
+        console.error("Error fetching nominations:", nominationsError);
+        window.alert("Error fetching nominations. Please try again.");
+        return;
+      }
+
+      // Filter for pending nominations (not accepted)
+      const pendingNominations = (allNominations || []).filter(
+        (n: any) => !n.request_status || n.request_status.toLowerCase() !== "accepted"
+      );
+
+      if (!pendingNominations || pendingNominations.length === 0) {
+        window.alert("No pending nominations found. All reviewers have accepted their requests.");
+        return;
+      }
+
+      // Separate internal and external reviewers
+      const internalReviewerIds = [
+        ...new Set(
+          pendingNominations
+            .filter((n: any) => !n.is_external && n.reviewer_id)
+            .map((n: any) => n.reviewer_id)
+        ),
+      ];
+      const externalReviewerIds = [
+        ...new Set(
+          pendingNominations
+            .filter((n: any) => n.is_external && n.external_reviewer_id)
+            .map((n: any) => n.external_reviewer_id)
+        ),
+      ];
+
+      // Fetch internal reviewers
+      let internalReviewers: any[] = [];
+      if (internalReviewerIds.length > 0) {
+        const { data: clientUsers, error: usersError } = await supabase
+          .from("client_users")
+          .select("id, name, surname, email")
+          .in("id", internalReviewerIds);
+
+        if (!usersError && clientUsers) {
+          internalReviewers = clientUsers;
+        }
+      }
+
+      // Fetch external reviewers
+      let externalReviewers: any[] = [];
+      if (externalReviewerIds.length > 0) {
+        const { data: externalReviewersData, error: externalError } = await supabase
+          .from("external_reviewers")
+          .select("id, email, name")
+          .in("id", externalReviewerIds);
+
+        if (!externalError && externalReviewersData) {
+          externalReviewers = externalReviewersData;
+        }
+      }
+
+      // Format user list
+      const userList: string[] = [];
+
+      // Add internal reviewers
+      internalReviewers.forEach((user) => {
+        const name = `${user.name || ""} ${user.surname || ""}`.trim() || user.email;
+        userList.push(name);
+      });
+
+      // Add external reviewers
+      externalReviewers.forEach((reviewer) => {
+        const name = reviewer.name || reviewer.email;
+        userList.push(name);
+      });
+
+      if (userList.length === 0) {
+        window.alert("No reviewers found for pending nominations.");
+        return;
+      }
+
+      // Display alert with user list
+      const userListString = userList.join(", ");
+      window.alert(`Reminder email successfully sent to ${userListString}`);
+    } catch (err) {
+      console.error("Error sending reminders:", err);
+      window.alert("An error occurred while sending reminders. Please try again.");
+    }
+  }
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -595,7 +702,22 @@ export default function AssessmentDetailPage() {
       <div className="border-b border-gray-200 pb-4">
         <div className="sm:flex sm:items-start sm:justify-between">
           <div className="flex-1">
-            <h1 className="text-3xl font-bold text-gray-900">{assessmentName}</h1>
+            <div className="flex items-center justify-between">
+              <h1 className="text-3xl font-bold text-gray-900">{assessmentName}</h1>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-8 w-8 p-0">
+                    <MoreVertical className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={handleSendReminders}>
+                    <Mail className="mr-2 h-4 w-4" />
+                    Send reminder email
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
             <p className="mt-2 text-sm text-muted-foreground">
               Assessment participants for {cohortName}
             </p>
