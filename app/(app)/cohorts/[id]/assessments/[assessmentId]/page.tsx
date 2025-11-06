@@ -2,10 +2,11 @@
 
 import { useState, useEffect, Fragment } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, ChevronDown, ChevronRight, ArrowUp, ArrowDown } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronRight, ArrowUp, ArrowDown, Search, Calendar, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
+import { Input } from "@/components/ui/input";
 import { supabase } from "@/lib/supabaseClient";
 import { useTableSort } from "@/hooks/useTableSort";
 
@@ -71,6 +72,7 @@ interface ReviewerNomination {
   is_external: boolean | null;
   nominated_by_id: string | null;
   request_status: string | null;
+  review_status: string | null;
   review_submitted_at: string | null;
   created_at: string | null;
   reviewer?: {
@@ -82,6 +84,7 @@ interface ReviewerNomination {
   external_reviewer?: {
     id: string;
     email: string;
+    review_status: string | null;
   } | null;
   nominated_by?: {
     id: string;
@@ -104,6 +107,7 @@ export default function AssessmentDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [nominationSortStates, setNominationSortStates] = useState<Map<string, { key: string | null; direction: "asc" | "desc" | null }>>(new Map());
+  const [searchQuery, setSearchQuery] = useState<string>("");
 
   // Prepare participant assessments for sorting
   const participantsForSorting = participantAssessments.map((pa) => ({
@@ -113,7 +117,17 @@ export default function AssessmentDetailPage() {
     email: ((pa.participant as any)?.client_user as any)?.email || "",
   }));
 
-  const { sortedData: sortedParticipantAssessments, sortConfig, handleSort } = useTableSort(participantsForSorting);
+  // Filter participants based on search query
+  const filteredParticipants = participantsForSorting.filter((pa) => {
+    if (!searchQuery.trim()) return true;
+    const query = searchQuery.toLowerCase();
+    const name = pa.name.toLowerCase();
+    const surname = pa.surname.toLowerCase();
+    const email = pa.email.toLowerCase();
+    return name.includes(query) || surname.includes(query) || email.includes(query);
+  });
+
+  const { sortedData: sortedParticipantAssessments, sortConfig, handleSort } = useTableSort(filteredParticipants);
 
   useEffect(() => {
     if (assessmentId && cohortId) {
@@ -353,7 +367,7 @@ export default function AssessmentDetailPage() {
       // Fetch all nominations for these participant assessments
       const { data: nominationsData, error: nominationsError } = await supabase
         .from("reviewer_nominations")
-        .select("*")
+        .select("*, review_status")
         .in("participant_assessment_id", participantAssessmentIds)
         .order("created_at", { ascending: false });
 
@@ -390,13 +404,13 @@ export default function AssessmentDetailPage() {
         }
       }
 
-      // Fetch external reviewers
+      // Fetch external reviewers with review_status
       const externalReviewerIds = [...new Set(externalNominations.map((n: any) => n.external_reviewer_id).filter(Boolean))];
       let externalReviewers: any[] = [];
       if (externalReviewerIds.length > 0) {
         const { data: externalReviewersData, error: externalError } = await supabase
           .from("external_reviewers")
-          .select("id, email")
+          .select("id, email, review_status")
           .in("id", externalReviewerIds);
 
         if (!externalError && externalReviewersData) {
@@ -407,15 +421,17 @@ export default function AssessmentDetailPage() {
       // Merge the data
       const mergedNominations = nominationsData.map((nomination: any) => {
         if (nomination.is_external && nomination.external_reviewer_id) {
-          // External reviewer
+          // External reviewer - get review_status from external_reviewers table
+          const extReviewer = externalReviewers.find((e: any) => e.id === nomination.external_reviewer_id);
           return {
             ...nomination,
+            review_status: extReviewer?.review_status || nomination.review_status || null,
             reviewer: null,
-            external_reviewer: externalReviewers.find((e: any) => e.id === nomination.external_reviewer_id) || null,
+            external_reviewer: extReviewer || null,
             nominated_by: clientUsers.find((u: any) => u.id === nomination.nominated_by_id) || null,
           };
         } else {
-          // Internal reviewer
+          // Internal reviewer - review_status should be in reviewer_nominations
           return {
             ...nomination,
             reviewer: clientUsers.find((u: any) => u.id === nomination.reviewer_id) || null,
@@ -561,79 +577,71 @@ export default function AssessmentDetailPage() {
         Back to Cohort
       </Button>
 
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold">{assessmentName}</h1>
-        <p className="text-muted-foreground mt-2">
-          Assessment participants for {cohortName}
-        </p>
-      </div>
-
-      {/* Assessment Details Card */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-start justify-between">
-            <CardTitle>Assessment Information</CardTitle>
-            {assessment.status && (
-              <span className={`px-3 py-1 text-sm font-medium rounded-full ${getStatusColor(assessment.status)}`}>
-                {assessment.status}
-              </span>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <label className="text-sm font-medium text-muted-foreground">Assessment Name</label>
-              <p className="text-sm font-medium mt-1">{assessmentName}</p>
-            </div>
-            {assessment.status && (
-              <div>
-                <label className="text-sm font-medium text-muted-foreground">Status</label>
-                <p className="text-sm font-medium mt-1">
+      {/* Header with Meta and Actions */}
+      <div className="border-b border-gray-200 pb-4">
+        <div className="sm:flex sm:items-start sm:justify-between">
+          <div className="flex-1">
+            <h1 className="text-3xl font-bold text-gray-900">{assessmentName}</h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Assessment participants for {cohortName}
+            </p>
+            <div className="mt-4 flex flex-wrap items-center gap-6 text-sm text-muted-foreground">
+              {/* Date Range */}
+              <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4" />
+                <span>
+                  {assessment.start_date && assessment.end_date ? (
+                    <>
+                      {new Date(assessment.start_date).toLocaleDateString()} - {new Date(assessment.end_date).toLocaleDateString()}
+                    </>
+                  ) : assessment.start_date ? (
+                    <>
+                      {new Date(assessment.start_date).toLocaleDateString()} - Not set
+                    </>
+                  ) : assessment.end_date ? (
+                    <>
+                      Not set - {new Date(assessment.end_date).toLocaleDateString()}
+                    </>
+                  ) : (
+                    "Not set"
+                  )}
+                </span>
+              </div>
+              
+              {/* Participants Count */}
+              <div className="flex items-center gap-2">
+                <Users className="h-4 w-4" />
+                <span>{participantAssessments.length} {participantAssessments.length === 1 ? 'participant' : 'participants'}</span>
+              </div>
+              
+              {/* Status */}
+              {assessment.status && (
+                <div>
                   <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(assessment.status)}`}>
                     {assessment.status}
                   </span>
-                </p>
-              </div>
-            )}
-            <div>
-              <label className="text-sm font-medium text-muted-foreground">Participants</label>
-              <p className="text-sm font-medium mt-1">{participantAssessments.length}</p>
+                </div>
+              )}
             </div>
-            {assessment.start_date ? (
-              <div>
-                <label className="text-sm font-medium text-muted-foreground">Start Date</label>
-                <p className="text-sm font-medium mt-1">
-                  {new Date(assessment.start_date).toLocaleDateString()}
-                </p>
-              </div>
-            ) : (
-              <div>
-                <label className="text-sm font-medium text-muted-foreground">Start Date</label>
-                <p className="text-sm font-medium mt-1 text-muted-foreground">Not set</p>
-              </div>
-            )}
-            {assessment.end_date ? (
-              <div>
-                <label className="text-sm font-medium text-muted-foreground">End Date</label>
-                <p className="text-sm font-medium mt-1">
-                  {new Date(assessment.end_date).toLocaleDateString()}
-                </p>
-              </div>
-            ) : (
-              <div>
-                <label className="text-sm font-medium text-muted-foreground">End Date</label>
-                <p className="text-sm font-medium mt-1 text-muted-foreground">Not set</p>
-              </div>
-            )}
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Participants List */}
       <div>
-        <h2 className="text-2xl font-bold mb-4">Participants</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-2xl font-bold">Participants</h2>
+          <div className="relative w-64">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="text"
+              placeholder="Search participants..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+        </div>
         <div className="rounded-md border">
           {participantAssessments.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground">
@@ -688,29 +696,8 @@ export default function AssessmentDetailPage() {
                       )}
                     </div>
                   </th>
-                  <th 
-                    className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
-                    onClick={() => handleSort("score")}
-                  >
-                    <div className="flex items-center gap-2">
-                      Score
-                      {sortConfig.key === "score" && (
-                        sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
-                      )}
-                    </div>
-                  </th>
-                  <th 
-                    className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
-                    onClick={() => handleSort("submitted_at")}
-                  >
-                    <div className="flex items-center gap-2">
-                      Submitted
-                      {sortConfig.key === "submitted_at" && (
-                        sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
-                      )}
-                    </div>
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-medium">Nominations</th>
+                  <th className="px-6 py-3 text-left text-sm font-medium">Nominations Accepted</th>
+                  <th className="px-6 py-3 text-left text-sm font-medium">Reviews Completed</th>
                 </tr>
               </thead>
               <tbody>
@@ -720,6 +707,15 @@ export default function AssessmentDetailPage() {
                   const isExpanded = pa.id ? expandedRows.has(pa.id) : false;
                   const nominationsCount = participantNominations.length;
                   const acceptedCount = participantNominations.filter((n) => n.request_status?.toLowerCase() === "accepted").length;
+                  
+                  // Count completed reviews (only for accepted nominations)
+                  const acceptedNominations = participantNominations.filter((n) => n.request_status?.toLowerCase() === "accepted");
+                  const completedCount = acceptedNominations.filter((n) => {
+                    const reviewStatus = n.is_external 
+                      ? (n.external_reviewer?.review_status || n.review_status)
+                      : n.review_status;
+                    return reviewStatus?.toLowerCase() === "completed";
+                  }).length;
                   
                   // Get sort state for this participant
                   const participantId = pa.id || `pa-${pa.participant_id}`;
@@ -842,14 +838,6 @@ export default function AssessmentDetailPage() {
                           )}
                         </td>
                         <td className="px-6 py-4 text-sm cursor-pointer">
-                          {pa.score !== null ? pa.score : "-"}
-                        </td>
-                        <td className="px-6 py-4 text-sm cursor-pointer">
-                          {pa.submitted_at
-                            ? new Date(pa.submitted_at).toLocaleDateString()
-                            : "-"}
-                        </td>
-                        <td className="px-6 py-4 text-sm cursor-pointer">
                           {nominationsCount > 0 ? (
                             <span className="text-sm font-medium">
                               {acceptedCount}/{nominationsCount}
@@ -858,10 +846,19 @@ export default function AssessmentDetailPage() {
                             "-"
                           )}
                         </td>
+                        <td className="px-6 py-4 text-sm cursor-pointer">
+                          {acceptedCount > 0 ? (
+                            <span className="text-sm font-medium">
+                              {completedCount}/{acceptedCount}
+                            </span>
+                          ) : (
+                            "-"
+                          )}
+                        </td>
                       </tr>
                       {isExpanded && pa.id && nominationsCount > 0 && (
                         <tr key={`nominations-${pa.id}`}>
-                          <td colSpan={8} className="px-6 py-4 bg-muted/30">
+                          <td colSpan={6} className="px-6 py-4 bg-muted/30">
                             <div className="mt-2">
                               <h4 className="text-sm font-semibold mb-3">Nominations</h4>
                               <table className="w-full border rounded-md">
