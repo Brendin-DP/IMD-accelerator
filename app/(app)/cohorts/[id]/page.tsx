@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Plus, ArrowLeft, MoreVertical, Pencil, Calendar, ArrowUp, ArrowDown } from "lucide-react";
+import { Plus, ArrowLeft, MoreVertical, Pencil, Calendar, ArrowUp, ArrowDown, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,6 +16,14 @@ import {
   DialogDescription,
   DialogClose,
 } from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+  SheetClose,
+} from "@/components/ui/sheet";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -78,6 +86,7 @@ export default function CohortDetailPage() {
   const [assessmentsLoading, setAssessmentsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isMoreInfoSheetOpen, setIsMoreInfoSheetOpen] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [availableUsers, setAvailableUsers] = useState<any[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
@@ -680,20 +689,29 @@ export default function CohortDetailPage() {
               <h1 className="text-3xl font-bold">{cohort.name}</h1>
               <p className="text-muted-foreground mt-2">Cohort details and participant management</p>
             </div>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setCohortFormData({
-                  name: cohort.name,
-                  start_date: cohort.start_date ? cohort.start_date.split('T')[0] : "",
-                  end_date: cohort.end_date ? cohort.end_date.split('T')[0] : "",
-                });
-                setIsEditCohortDialogOpen(true);
-              }}
-            >
-              <Pencil className="mr-2 h-4 w-4" />
-              Edit Cohort
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setIsMoreInfoSheetOpen(true)}
+              >
+                <Info className="mr-2 h-4 w-4" />
+                More Info
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setCohortFormData({
+                    name: cohort.name,
+                    start_date: cohort.start_date ? cohort.start_date.split('T')[0] : "",
+                    end_date: cohort.end_date ? cohort.end_date.split('T')[0] : "",
+                  });
+                  setIsEditCohortDialogOpen(true);
+                }}
+              >
+                <Pencil className="mr-2 h-4 w-4" />
+                Edit Cohort
+              </Button>
+            </div>
           </div>
 
       {/* Tabs */}
@@ -705,8 +723,8 @@ export default function CohortDetailPage() {
 
         {/* Details Tab */}
         <TabsContent value="details" className="space-y-6">
-      {/* Cohort Details Card */}
-      <Card>
+      {/* Cohort Details Card - Hidden */}
+      <Card className="hidden">
         <CardHeader>
           <CardTitle>Cohort Information</CardTitle>
         </CardHeader>
@@ -1238,6 +1256,64 @@ export default function CohortDetailPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* More Info Sheet */}
+      <Sheet open={isMoreInfoSheetOpen} onOpenChange={setIsMoreInfoSheetOpen}>
+        <SheetContent>
+          <SheetHeader>
+            <SheetTitle>Cohort Information</SheetTitle>
+            <SheetDescription>
+              Detailed information about this cohort
+            </SheetDescription>
+          </SheetHeader>
+          <SheetClose onClose={() => setIsMoreInfoSheetOpen(false)} />
+          
+          <div className="mt-6 space-y-6 overflow-y-auto flex-1">
+            <div className="grid gap-4 px-6">
+              <div>
+                <label className="text-sm font-medium text-muted-foreground">Cohort Name</label>
+                <p className="text-sm font-medium mt-1">{cohort.name || "-"}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-muted-foreground">Client</label>
+                <p className="text-sm font-medium mt-1">
+                  {(cohort.client as any)?.name || "-"}
+                </p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-muted-foreground">Plan</label>
+                <p className="text-sm font-medium mt-1">
+                  {(cohort.plan as any)?.name || "-"}
+                </p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-muted-foreground">Start Date</label>
+                <p className="text-sm font-medium mt-1">
+                  {cohort.start_date
+                    ? new Date(cohort.start_date).toLocaleDateString()
+                    : "-"}
+                </p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-muted-foreground">End Date</label>
+                <p className="text-sm font-medium mt-1">
+                  {cohort.end_date
+                    ? new Date(cohort.end_date).toLocaleDateString()
+                    : "-"}
+                </p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-muted-foreground">Created</label>
+                <p className="text-sm font-medium mt-1">
+                  {cohort.created_at
+                    ? new Date(cohort.created_at).toLocaleDateString()
+                    : "-"}
+                </p>
+              </div>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
