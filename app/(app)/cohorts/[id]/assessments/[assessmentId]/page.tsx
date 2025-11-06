@@ -666,6 +666,50 @@ export default function AssessmentDetailPage() {
   }
 
   const assessmentName = assessment.name || assessment.assessment_type?.name || "Assessment";
+  
+  // Calculate stats
+  const totalParticipants = participantAssessments.length;
+  const completedParticipants = participantAssessments.filter(
+    (pa) => pa.status?.toLowerCase() === "completed"
+  ).length;
+  const participantsCompletedPercent = totalParticipants > 0 
+    ? Math.round((completedParticipants / totalParticipants) * 100) 
+    : 0;
+
+  // Calculate reviews completed percentage
+  // For each participant, check if all their accepted reviewers have completed reviews
+  let participantsWithAllReviewsCompleted = 0;
+  let participantsWithAcceptedReviews = 0;
+
+  participantAssessments.forEach((pa) => {
+    if (!pa.id) return;
+    
+    const participantNominations = getNominationsForParticipant(pa.id);
+    const acceptedNominations = participantNominations.filter(
+      (n) => n.request_status?.toLowerCase() === "accepted"
+    );
+
+    if (acceptedNominations.length > 0) {
+      participantsWithAcceptedReviews++;
+      
+      // Check if all accepted reviewers have completed their reviews
+      const allCompleted = acceptedNominations.every((nomination) => {
+        const reviewStatus = nomination.is_external
+          ? (nomination.external_reviewer?.review_status || nomination.review_status)
+          : nomination.review_status;
+        return reviewStatus?.toLowerCase() === "completed";
+      });
+
+      if (allCompleted) {
+        participantsWithAllReviewsCompleted++;
+      }
+    }
+  });
+
+  const reviewsCompletedPercent = participantsWithAcceptedReviews > 0
+    ? Math.round((participantsWithAllReviewsCompleted / participantsWithAcceptedReviews) * 100)
+    : 0;
+
   const getStatusColor = (status: string | null) => {
     if (!status) return "bg-gray-100 text-gray-800";
     const statusLower = status.toLowerCase();
@@ -758,6 +802,41 @@ export default function AssessmentDetailPage() {
                   </span>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Stats Section */}
+      <div className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
+        <div className="grid grid-cols-2 divide-x divide-gray-200">
+          {/* Participants Completed % */}
+          <div className="px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Participants Completed</p>
+                <p className="mt-2 text-3xl font-semibold text-primary">
+                  {participantsCompletedPercent}%
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {completedParticipants} of {totalParticipants} participants
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Reviews Completed % */}
+          <div className="px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Reviews Completed</p>
+                <p className="mt-2 text-3xl font-semibold text-primary">
+                  {reviewsCompletedPercent}%
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {participantsWithAllReviewsCompleted} of {participantsWithAcceptedReviews} participants
+                </p>
+              </div>
             </div>
           </div>
         </div>
