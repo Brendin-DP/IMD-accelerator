@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Users, Settings, User, LogOut, ChevronDown } from "lucide-react";
+import { LayoutDashboard, Users, Settings, User, LogOut, ChevronDown, HelpCircle } from "lucide-react";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabaseClient";
@@ -88,6 +88,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               );
             })}
           </nav>
+
+          {/* Help Section */}
+          <div className="px-4 pb-2">
+            <Link
+              href="/help"
+              className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors text-primary-foreground/80 hover:bg-primary-foreground/10 hover:text-primary-foreground"
+            >
+              <HelpCircle className="h-5 w-5" />
+              <span className="flex-1">Help</span>
+            </Link>
+          </div>
 
           {/* Profile Section */}
           <div className="border-t border-primary-foreground/20 p-4">
