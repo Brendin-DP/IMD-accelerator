@@ -1,0 +1,51 @@
+{
+    "assessment_questions_360": [
+      { "id": 1, "category": "Leadership", "text": "How effectively do you communicate vision and goals to your team?" },
+      { "id": 2, "category": "Leadership", "text": "How well do you handle conflicts or difficult conversations?" },
+      { "id": 3, "category": "Leadership", "text": "Do you provide regular feedback and recognition to team members?" },
+      { "id": 4, "category": "Leadership", "text": "How well do you inspire trust and confidence among peers?" },
+      { "id": 5, "category": "Leadership", "text": "How effectively do you delegate tasks while maintaining accountability?" },
+  
+      { "id": 6, "category": "Collaboration", "text": "How open are you to different perspectives in team discussions?" },
+      { "id": 7, "category": "Collaboration", "text": "How often do you actively contribute to building team morale?" },
+      { "id": 8, "category": "Collaboration", "text": "How do you handle disagreements within a group?" },
+      { "id": 9, "category": "Collaboration", "text": "How effectively do you collaborate across departments?" },
+      { "id": 10, "category": "Collaboration", "text": "How well do you share credit for team achievements?" },
+  
+      { "id": 11, "category": "Strategic Thinking", "text": "How effectively do you align your daily work with long-term objectives?" },
+      { "id": 12, "category": "Strategic Thinking", "text": "How often do you identify new opportunities for improvement?" },
+      { "id": 13, "category": "Strategic Thinking", "text": "How well do you anticipate potential risks and challenges?" },
+      { "id": 14, "category": "Strategic Thinking", "text": "Do you make data-driven decisions in your work?" },
+      { "id": 15, "category": "Strategic Thinking", "text": "How effectively do you translate strategy into actionable plans?" },
+  
+      { "id": 16, "category": "Execution", "text": "How well do you manage time and competing priorities?" },
+      { "id": 17, "category": "Execution", "text": "How consistently do you meet deadlines?" },
+      { "id": 18, "category": "Execution", "text": "How well do you adapt when project requirements change?" },
+      { "id": 19, "category": "Execution", "text": "How effectively do you allocate resources to achieve results?" },
+      { "id": 20, "category": "Execution", "text": "How do you ensure follow-through on commitments?" },
+  
+      { "id": 21, "category": "Growth Mindset", "text": "How open are you to receiving constructive feedback?" },
+      { "id": 22, "category": "Growth Mindset", "text": "How actively do you seek opportunities for learning and development?" },
+      { "id": 23, "category": "Growth Mindset", "text": "How resilient are you when faced with setbacks?" },
+      { "id": 24, "category": "Growth Mindset", "text": "Do you take initiative to challenge existing ways of working?" },
+      { "id": 25, "category": "Growth Mindset", "text": "How often do you reflect on your own performance?" },
+  
+      { "id": 26, "category": "Decision Making", "text": "How confident are you in making decisions with incomplete information?" },
+      { "id": 27, "category": "Decision Making", "text": "How effectively do you evaluate alternatives before making a choice?" },
+      { "id": 28, "category": "Decision Making", "text": "How do you balance speed and accuracy in decision-making?" },
+      { "id": 29, "category": "Decision Making", "text": "How open are you to revisiting past decisions when new data emerges?" },
+      { "id": 30, "category": "Decision Making", "text": "How do you ensure your decisions align with organizational goals?" },
+  
+      { "id": 31, "category": "Innovation", "text": "How comfortable are you with experimenting and taking calculated risks?" },
+      { "id": 32, "category": "Innovation", "text": "How often do you bring new ideas to the table?" },
+      { "id": 33, "category": "Innovation", "text": "How do you encourage others to think creatively?" },
+      { "id": 34, "category": "Innovation", "text": "How effectively do you evaluate and scale innovative ideas?" },
+      { "id": 35, "category": "Innovation", "text": "How well do you integrate feedback into innovation processes?" },
+  
+      { "id": 36, "category": "Communication", "text": "How clear and concise are you when presenting complex ideas?" },
+      { "id": 37, "category": "Communication", "text": "How well do you adapt your communication style to different audiences?" },
+      { "id": 38, "category": "Communication", "text": "How effectively do you listen and respond during discussions?" },
+      { "id": 39, "category": "Communication", "text": "How transparent are you when communicating challenges or risks?" },
+      { "id": 40, "category": "Communication", "text": "How consistently do you share key updates with stakeholders?" }
+    ]
+  }

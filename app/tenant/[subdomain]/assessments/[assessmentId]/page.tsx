@@ -1054,27 +1054,27 @@ export default function TenantAssessmentDetailPage() {
             </div>
           </div>
           {/* Assessment Action Buttons */}
-          <div className="mt-6 pt-6 border-t">
-            {(!participantAssessment || participantAssessment.status === "Not started" || !participantAssessment.status) && (
-              <Button
-                onClick={handleStartAssessment}
-                disabled={!user?.id || startingAssessment}
-                className="w-full sm:w-auto"
-              >
-                {startingAssessment ? "Starting..." : "Start Assessment"}
-              </Button>
-            )}
-            {participantAssessment?.status === "In Progress" && (
-              <Button
-                onClick={handleCompleteAssessment}
-                disabled={!user?.id || completingAssessment}
-                className="w-full sm:w-auto"
-              >
-                {completingAssessment ? "Completing..." : "Complete Assessment"}
-              </Button>
-            )}
-            {participantAssessment?.status === "Completed" && (
-              <div className="flex gap-2">
+          <div className="mt-6 pt-6 border-t flex justify-between items-center gap-4">
+            <div className="flex gap-2">
+              {(!participantAssessment || participantAssessment.status === "Not started" || !participantAssessment.status) && (
+                <Button
+                  onClick={handleStartAssessment}
+                  disabled={!user?.id || startingAssessment}
+                  className="w-full sm:w-auto"
+                >
+                  {startingAssessment ? "Starting..." : "Start Assessment"}
+                </Button>
+              )}
+              {participantAssessment?.status === "In Progress" && (
+                <Button
+                  onClick={handleCompleteAssessment}
+                  disabled={!user?.id || completingAssessment}
+                  className="w-full sm:w-auto"
+                >
+                  {completingAssessment ? "Completing..." : "Complete Assessment"}
+                </Button>
+              )}
+              {participantAssessment?.status === "Completed" && (
                 <Button
                   onClick={handleResetAssessment}
                   disabled={!user?.id || resettingAssessment}
@@ -1083,8 +1083,15 @@ export default function TenantAssessmentDetailPage() {
                 >
                   {resettingAssessment ? "Resetting..." : "Not started yet"}
                 </Button>
-              </div>
-            )}
+              )}
+            </div>
+            <Button
+              onClick={() => router.push(`/tenant/${subdomain}/assessments/${assessmentId}/questionnaire`)}
+              variant="outline"
+              className="w-full sm:w-auto"
+            >
+              Simulate
+            </Button>
           </div>
         </CardContent>
       </Card>
