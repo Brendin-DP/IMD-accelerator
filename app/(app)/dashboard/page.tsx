@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Users, FileText, CheckCircle2, UserPlus, UserCheck, UserX, Play, CheckCircle } from "lucide-react";
+import { Users, FileText, CheckCircle2, UserPlus, UserCheck, UserX, Play, CheckCircle, Clock } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -61,7 +61,7 @@ function getStatusColor(status: string | null): string {
 
 interface ActivityItem {
   id: string;
-  type: "nomination_requested" | "nomination_accepted" | "nomination_rejected" | "assessment_started" | "assessment_completed";
+  type: "nomination_requested" | "nomination_accepted" | "nomination_rejected" | "assessment_started" | "assessment_completed" | "review_started" | "review_completed";
   user_name: string;
   user_email: string;
   details: string;
@@ -377,6 +377,215 @@ export default function DashboardPage() {
         });
       }
 
+      // Fetch recent review status changes (review started and completed)
+      // For internal reviewers, review_status may be in reviewer_nominations (if field exists)
+      // For external reviewers, review_status is in external_reviewers
+      let reviewStatusChanges: any[] = [];
+      
+      // First, fetch all accepted nominations (both internal and external)
+      const { data: allNominationsData, error: reviewStatusNominationsError } = await supabase
+        .from("reviewer_nominations")
+        .select(`
+          id,
+          review_status,
+          created_at,
+          is_external,
+          reviewer_id,
+          external_reviewer_id,
+          reviewer:client_users!reviewer_nominations_reviewer_id_fkey(id, name, surname, email),
+          participant_assessment:participant_assessments(
+            cohort_assessment:cohort_assessments(
+              name,
+              cohort:cohorts(name)
+            )
+          )
+        `)
+        .eq("request_status", "accepted")
+        .order("created_at", { ascending: false })
+        .limit(100);
+      
+      // Also fetch all external reviewers with review_status to join later
+      const { data: allExternalReviewers } = await supabase
+        .from("external_reviewers")
+        .select("id, review_status, email, name");
+      
+      // Create a map for quick lookup
+      const externalReviewerMap = new Map();
+      if (allExternalReviewers) {
+        allExternalReviewers.forEach((er: any) => {
+          externalReviewerMap.set(er.id, er);
+        });
+      }
+
+      // Handle relationship cache issues
+      if (reviewStatusNominationsError && (reviewStatusNominationsError.message?.includes("relationship") || reviewStatusNominationsError.message?.includes("cache"))) {
+        console.warn("Relationship query failed for review status changes, fetching separately");
+        
+        const { data: nominationsOnly } = await supabase
+          .from("reviewer_nominations")
+          .select("id, review_status, created_at, is_external, reviewer_id, external_reviewer_id, participant_assessment_id")
+          .eq("request_status", "accepted")
+          .order("created_at", { ascending: false })
+          .limit(100);
+
+        if (nominationsOnly && nominationsOnly.length > 0) {
+          const reviewerIds = [...new Set(nominationsOnly.filter((r: any) => r.reviewer_id).map((r: any) => r.reviewer_id))];
+          const externalReviewerIds = [...new Set(nominationsOnly.filter((r: any) => r.external_reviewer_id).map((r: any) => r.external_reviewer_id))];
+          const participantAssessmentIds = [...new Set(nominationsOnly.map((r: any) => r.participant_assessment_id).filter(Boolean))];
+
+          // Fetch internal reviewers
+          let clientUsers: any[] = [];
+          if (reviewerIds.length > 0) {
+            const { data: users } = await supabase
+              .from("client_users")
+              .select("id, name, surname, email")
+              .in("id", reviewerIds);
+            clientUsers = users || [];
+          }
+
+          // Fetch external reviewers (with review_status)
+          let externalReviewers: any[] = [];
+          if (externalReviewerIds.length > 0) {
+            const { data: externals } = await supabase
+              .from("external_reviewers")
+              .select("id, email, name, review_status")
+              .in("id", externalReviewerIds);
+            externalReviewers = externals || [];
+            // Update the map
+            externals?.forEach((er: any) => {
+              externalReviewerMap.set(er.id, er);
+            });
+          }
+
+          // Fetch participant assessments
+          const { data: participantAssessments } = await supabase
+            .from("participant_assessments")
+            .select("id, cohort_assessment_id")
+            .in("id", participantAssessmentIds);
+
+          const cohortAssessmentIds = [...new Set(participantAssessments?.map((pa: any) => pa.cohort_assessment_id).filter(Boolean) || [])];
+
+          // Fetch cohort assessments
+          const { data: cohortAssessments } = await supabase
+            .from("cohort_assessments")
+            .select("id, name, cohort_id")
+            .in("id", cohortAssessmentIds);
+
+          const cohortIds = [...new Set(cohortAssessments?.map((ca: any) => ca.cohort_id).filter(Boolean) || [])];
+
+          // Fetch cohorts
+          const { data: cohorts } = await supabase
+            .from("cohorts")
+            .select("id, name")
+            .in("id", cohortIds);
+
+          // Merge data and filter by review_status
+          const allMerged = nominationsOnly.map((review: any) => {
+            const participantAssessment = participantAssessments?.find((pa: any) => pa.id === review.participant_assessment_id);
+            const cohortAssessment = cohortAssessments?.find((ca: any) => ca.id === participantAssessment?.cohort_assessment_id);
+            const cohort = cohorts?.find((c: any) => c.id === cohortAssessment?.cohort_id);
+
+            let reviewer = null;
+            let reviewStatus = review.review_status; // Try from nomination first
+            
+            if (review.is_external && review.external_reviewer_id) {
+              const extReviewer = externalReviewers?.find((e: any) => e.id === review.external_reviewer_id);
+              reviewer = extReviewer;
+              reviewStatus = extReviewer?.review_status || reviewStatus; // Use external_reviewers review_status
+            } else if (review.reviewer_id) {
+              reviewer = clientUsers?.find((u: any) => u.id === review.reviewer_id);
+            }
+
+            return {
+              ...review,
+              review_status: reviewStatus,
+              reviewer: reviewer || null,
+              external_reviewer: review.is_external ? reviewer : null,
+              participant_assessment: {
+                cohort_assessment: cohortAssessment ? {
+                  name: cohortAssessment.name,
+                  cohort: cohort || null,
+                } : null,
+              },
+            };
+          });
+          
+          // Filter by review_status (case-insensitive)
+          reviewStatusChanges = allMerged.filter((r: any) => {
+            const status = r.review_status;
+            return status === "In progress" || status === "Completed" || 
+                   status === "in progress" || status === "completed" ||
+                   status?.toLowerCase() === "in progress" || status?.toLowerCase() === "completed";
+          });
+        }
+      } else if (allNominationsData) {
+        // Process all nominations and get review_status from appropriate source
+        reviewStatusChanges = allNominationsData
+          .map((nomination: any) => {
+            // For external reviewers, get review_status from external_reviewers table
+            if (nomination.is_external && nomination.external_reviewer_id) {
+              const extReviewer = externalReviewerMap.get(nomination.external_reviewer_id);
+              const reviewStatus = extReviewer?.review_status || nomination.review_status;
+              return {
+                ...nomination,
+                review_status: reviewStatus,
+                external_reviewer: extReviewer || null,
+              };
+            }
+            // For internal reviewers, review_status should be in nomination (if field exists)
+            return nomination;
+          })
+          .filter((nom: any) => {
+            const status = nom.review_status;
+            const matches = status === "In progress" || status === "Completed" || 
+                           status === "in progress" || status === "completed" ||
+                           status?.toLowerCase() === "in progress" || status?.toLowerCase() === "completed";
+            return matches;
+          });
+      }
+      
+      console.log("Review status changes found:", reviewStatusChanges?.length || 0, reviewStatusChanges);
+
+      if (reviewStatusChanges && reviewStatusChanges.length > 0) {
+        reviewStatusChanges.forEach((review: any) => {
+          const reviewer = review.is_external ? review.external_reviewer : review.reviewer;
+          const assessment = review.participant_assessment?.cohort_assessment;
+          const cohort = assessment?.cohort;
+          
+          const reviewerName = reviewer
+            ? (review.is_external 
+                ? (reviewer.name || reviewer.email || "External Reviewer")
+                : `${reviewer.name || ""} ${reviewer.surname || ""}`.trim() || reviewer.email)
+            : "Unknown";
+          
+          const reviewerEmail = reviewer?.email || "";
+
+          if (review.review_status === "In progress") {
+            allActivities.push({
+              id: `rev_start_${review.id}`,
+              type: "review_started",
+              user_name: reviewerName,
+              user_email: reviewerEmail,
+              details: `started a review`,
+              timestamp: review.created_at,
+              cohort_name: cohort?.name,
+              assessment_name: assessment?.name,
+            });
+          } else if (review.review_status === "Completed") {
+            allActivities.push({
+              id: `rev_comp_${review.id}`,
+              type: "review_completed",
+              user_name: reviewerName,
+              user_email: reviewerEmail,
+              details: `completed a review`,
+              timestamp: review.created_at,
+              cohort_name: cohort?.name,
+              assessment_name: assessment?.name,
+            });
+          }
+        });
+      }
+
       // Sort all activities by timestamp (most recent first) and limit to 30
       allActivities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
       setActivities(allActivities.slice(0, 30));
@@ -398,6 +607,10 @@ export default function DashboardPage() {
         return <Play className="h-4 w-4 text-blue-600" />;
       case "assessment_completed":
         return <CheckCircle className="h-4 w-4 text-green-600" />;
+      case "review_started":
+        return <Clock className="h-4 w-4 text-blue-600" />;
+      case "review_completed":
+        return <CheckCircle2 className="h-4 w-4 text-green-600" />;
       default:
         return <FileText className="h-4 w-4 text-gray-600" />;
     }
