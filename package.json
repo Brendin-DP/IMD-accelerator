@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "generate:types": "node scripts/generate-types.js",
+    "generate:types:local": "node scripts/generate-types.js --local"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",
