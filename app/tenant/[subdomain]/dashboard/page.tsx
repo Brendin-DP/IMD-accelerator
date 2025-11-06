@@ -30,7 +30,10 @@ interface MyAssessment {
 interface MyReview {
   id: string;
   request_status: string | null;
+  review_status: string | null;
   created_at: string | null;
+  is_external: boolean | null;
+  external_reviewer_id: string | null;
   participant_assessment: {
     id: string;
     participant?: {
@@ -206,8 +209,10 @@ export default function TenantDashboardPage() {
         .select(`
           id,
           request_status,
+          review_status,
           created_at,
           is_external,
+          external_reviewer_id,
           nominated_by_id,
           participant_assessment:participant_assessments(
             id,
@@ -231,7 +236,7 @@ export default function TenantDashboardPage() {
         
         const { data: nominationsOnly, error: nominationsOnlyError } = await supabase
           .from("reviewer_nominations")
-          .select("id, request_status, created_at, participant_assessment_id, is_external, nominated_by_id")
+          .select("id, request_status, review_status, created_at, participant_assessment_id, is_external, external_reviewer_id, nominated_by_id")
           .eq("reviewer_id", userId)
           .eq("request_status", "accepted")
           .order("created_at", { ascending: false });
@@ -288,6 +293,25 @@ export default function TenantDashboardPage() {
             .select("id, name")
             .in("id", cohortIds);
 
+          // Fetch external reviewers' review_status if needed
+          const externalReviewerIds = nominationsOnly
+            .filter((n: any) => n.is_external && n.external_reviewer_id)
+            .map((n: any) => n.external_reviewer_id);
+          
+          let externalReviewersMap = new Map();
+          if (externalReviewerIds.length > 0) {
+            const { data: externalReviewers } = await supabase
+              .from("external_reviewers")
+              .select("id, review_status")
+              .in("id", externalReviewerIds);
+            
+            if (externalReviewers) {
+              externalReviewers.forEach((er: any) => {
+                externalReviewersMap.set(er.id, er.review_status);
+              });
+            }
+          }
+
           // Merge data and filter out self-nominated external reviewers
           const merged = nominationsOnly
             .filter((nomination: any) => {
@@ -302,8 +326,15 @@ export default function TenantDashboardPage() {
               const assessmentType = assessmentTypes?.find((at: any) => at.id === cohortAssessment?.assessment_type_id);
               const cohort = cohorts?.find((c: any) => c.id === cohortAssessment?.cohort_id);
 
+              // Get review_status - for external reviewers, get from external_reviewers table
+              let reviewStatus = nomination.review_status;
+              if (nomination.is_external && nomination.external_reviewer_id) {
+                reviewStatus = externalReviewersMap.get(nomination.external_reviewer_id) || null;
+              }
+
               return {
                 ...nomination,
+                review_status: reviewStatus,
                 participant_assessment: {
                   id: participantAssessment?.id,
                   participant: {
@@ -323,10 +354,41 @@ export default function TenantDashboardPage() {
           setMyReviews([]);
         }
       } else if (nominations) {
-        // Filter out self-nominated external reviewers
-        const filtered = nominations.filter((nomination: any) => {
-          return !(nomination.is_external === true && nomination.nominated_by_id === userId);
-        });
+        // Fetch external reviewers' review_status if needed
+        const externalReviewerIds = nominations
+          .filter((n: any) => n.is_external && n.external_reviewer_id)
+          .map((n: any) => n.external_reviewer_id);
+        
+        let externalReviewersMap = new Map();
+        if (externalReviewerIds.length > 0) {
+          const { data: externalReviewers } = await supabase
+            .from("external_reviewers")
+            .select("id, review_status")
+            .in("id", externalReviewerIds);
+          
+          if (externalReviewers) {
+            externalReviewers.forEach((er: any) => {
+              externalReviewersMap.set(er.id, er.review_status);
+            });
+          }
+        }
+
+        // Filter out self-nominated external reviewers and add review_status for external reviewers
+        const filtered = nominations
+          .filter((nomination: any) => {
+            return !(nomination.is_external === true && nomination.nominated_by_id === userId);
+          })
+          .map((nomination: any) => {
+            // Get review_status - for external reviewers, get from external_reviewers table
+            let reviewStatus = nomination.review_status;
+            if (nomination.is_external && nomination.external_reviewer_id) {
+              reviewStatus = externalReviewersMap.get(nomination.external_reviewer_id) || null;
+            }
+            return {
+              ...nomination,
+              review_status: reviewStatus,
+            };
+          });
         setMyReviews(filtered || []);
       } else {
         setMyReviews([]);
@@ -590,6 +652,19 @@ export default function TenantDashboardPage() {
       console.error("Error fetching dashboard stats:", err);
     }
   }
+
+  const getReviewStatusColor = (status: string | null) => {
+    if (!status) return "bg-gray-100 text-gray-800";
+    const statusLower = status.toLowerCase();
+    if (statusLower === "completed" || statusLower === "done" || statusLower === "submitted") {
+      return "bg-green-100 text-green-800";
+    } else if (statusLower === "in progress" || statusLower === "in_progress") {
+      return "bg-blue-100 text-blue-800";
+    } else if (statusLower === "not started" || statusLower === "not_started") {
+      return "bg-gray-100 text-gray-800";
+    }
+    return "bg-gray-100 text-gray-800";
+  };
 
   const getStatusColor = (status: string | null) => {
     if (!status) return "bg-gray-100 text-gray-800";
@@ -981,6 +1056,7 @@ export default function TenantDashboardPage() {
                           const assessmentName = review.participant_assessment?.cohort_assessment?.name ||
                             review.participant_assessment?.cohort_assessment?.assessment_type?.name ||
                             "Assessment";
+                          const reviewStatus = review.review_status || "Not started";
                           
                           return (
                             <div
@@ -999,6 +1075,14 @@ export default function TenantDashboardPage() {
                                       Assigned: {new Date(review.created_at).toLocaleDateString()}
                                     </dd>
                                   )}
+                                </div>
+                                <div className="flex-shrink-0">
+                                  <dt className="sr-only">Review Status</dt>
+                                  <dd>
+                                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${getReviewStatusColor(reviewStatus)}`}>
+                                      {reviewStatus}
+                                    </span>
+                                  </dd>
                                 </div>
                               </dl>
                             </div>

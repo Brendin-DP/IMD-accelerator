@@ -1073,10 +1073,11 @@ export default function AssessmentDetailPage() {
                       </tr>
                       {isExpanded && pa.id && nominationsCount > 0 && (
                         <tr key={`nominations-${pa.id}`}>
-                          <td colSpan={6} className="px-6 py-4 bg-muted/30">
-                            <div className="mt-2">
+                          <td colSpan={7} className="px-0 py-4 bg-muted/30">
+                            <div className="px-6">
                               <h4 className="text-sm font-semibold mb-3">Nominations</h4>
-                              <table className="w-full border rounded-md">
+                              <div className="w-full overflow-x-auto">
+                                <table className="w-full border rounded-md">
                                 <thead>
                                   <tr className="bg-muted/50 border-b">
                                     <th 
@@ -1189,6 +1190,7 @@ export default function AssessmentDetailPage() {
                                   })}
                                 </tbody>
                               </table>
+                              </div>
                             </div>
                           </td>
                         </tr>
