@@ -8,4 +8,5 @@ export { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 export { Breadcrumb } from "./breadcrumb";
 export { Stepper } from "./stepper";
 export type { StepperProps, StepperStep } from "./stepper";
+export { Tabs, TabsList, TabsTrigger, TabsContent } from "./tabs";
 

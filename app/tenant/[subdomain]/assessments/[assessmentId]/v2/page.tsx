@@ -10,10 +10,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Input } from "@/components/ui/input";
 import { ToastContainer, useToast } from "@/components/ui/toast";
 import { Stepper, StepperStep } from "@/components/ui/stepper";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { MoreVertical, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { inviteExternalReviewer } from "@/lib/externalNominationsValidation";
+import { cn } from "@/lib/utils";
 
 interface CohortAssessment {
   id: string;
@@ -101,6 +103,7 @@ export default function TenantAssessmentV2Page() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"internal" | "external">("internal");
+  const [viewTab, setViewTab] = useState<"vertical" | "horizontal">("vertical");
   const [startingAssessment, setStartingAssessment] = useState(false);
   const [completingAssessment, setCompletingAssessment] = useState(false);
   const [resettingAssessment, setResettingAssessment] = useState(false);
@@ -906,6 +909,8 @@ export default function TenantAssessmentV2Page() {
   const isStep2Active = isStep1Completed;
   const isStep2Completed = nominations.length > 0;
   const isStep3Active = assessmentStatus === "Completed" && isStep2Completed;
+  const isStep3Completed = nominations.some(n => n.request_status === "accepted" && (n.review_status === "completed" || n.review_status === "Completed"));
+  const isStep4Active = isStep3Completed;
 
   // Build stepper steps
   const steps: StepperStep[] = [
@@ -967,9 +972,32 @@ export default function TenantAssessmentV2Page() {
       ),
     },
     {
+      title: "Review Process",
+      description: "Track the progress of your nominated reviewers as they complete their reviews.",
+      status: isStep3Completed ? "completed" : isStep3Active ? "active" : "pending",
+      content: (
+        <div className="mt-4">
+          {nominations.length > 0 ? (
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">
+                {nominations.filter(n => n.request_status === "accepted").length} accepted nomination(s)
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {nominations.filter(n => n.request_status === "accepted" && (n.review_status === "completed" || n.review_status === "Completed")).length} completed review(s)
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Complete nominations in Step 2 to begin the review process.
+            </p>
+          )}
+        </div>
+      ),
+    },
+    {
       title: "Review Report",
       description: "View your assessment report and set your commitment based on the feedback received.",
-      status: isStep3Active ? "active" : "pending",
+      status: isStep4Active ? "active" : "pending",
       content: (
         <div className="mt-4 flex gap-2">
           <Button
@@ -1025,15 +1053,149 @@ export default function TenantAssessmentV2Page() {
         </p>
       </div>
 
-      {/* Assessment Info Panel with Stepper */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Assessment Information</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Stepper steps={steps} />
-        </CardContent>
-      </Card>
+      {/* Tabs */}
+      <Tabs value={viewTab} onValueChange={(value) => setViewTab(value as "vertical" | "horizontal")}>
+        <TabsList>
+          <TabsTrigger value="vertical">Vertical</TabsTrigger>
+          <TabsTrigger value="horizontal">Horizontal</TabsTrigger>
+        </TabsList>
+
+        {/* Assessment Info Panel */}
+        <Card className="mt-4">
+          <CardHeader>
+            <CardTitle>Assessment Information</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <TabsContent value="vertical">
+              <Stepper steps={steps} />
+            </TabsContent>
+            <TabsContent value="horizontal">
+              <div className="mt-4">
+                {/* Horizontal Steps */}
+                <div className="flex flex-col gap-6">
+                  {/* Step 1: Complete Your Assessment */}
+                  <div className="border rounded-lg p-6">
+                    <div className="flex gap-6">
+                      {/* Thumbnail */}
+                      <div className="flex-shrink-0">
+                        <div className="w-24 h-24 bg-muted rounded-lg flex items-center justify-center border-2 border-primary/20">
+                          <div className="text-center">
+                            <div className="text-2xl font-bold text-primary">1</div>
+                            <div className="text-xs text-muted-foreground mt-1">Step</div>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Content */}
+                      <div className="flex-1">
+                        <h3 className="text-lg font-semibold mb-2">Complete Your Assessment</h3>
+                        <p className="text-sm text-muted-foreground mb-4">
+                          Start and complete your self-assessment questionnaire.
+                        </p>
+                        
+                        {/* Progress Bar */}
+                        <div className="mb-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm text-muted-foreground">Progress</span>
+                            <span className="text-sm font-medium">
+                              {assessmentStatus === "Not started" || !assessmentStatus
+                                ? "0%"
+                                : assessmentStatus === "In Progress"
+                                ? "50%"
+                                : "100%"}
+                            </span>
+                          </div>
+                          <div className="h-2 bg-muted rounded-full overflow-hidden">
+                            <div
+                              className={cn(
+                                "h-full bg-primary transition-all duration-300 rounded-full",
+                                {
+                                  "w-0": assessmentStatus === "Not started" || !assessmentStatus,
+                                  "w-1/2": assessmentStatus === "In Progress",
+                                  "w-full": assessmentStatus === "Completed",
+                                }
+                              )}
+                            />
+                          </div>
+                        </div>
+                        
+                        {/* Button */}
+                        <div>
+                          {(!participantAssessment || assessmentStatus === "Not started" || !assessmentStatus) && (
+                            <Button
+                              onClick={handleStartAssessment}
+                              disabled={!user?.id || startingAssessment}
+                            >
+                              {startingAssessment ? "Starting..." : "Start Assessment"}
+                            </Button>
+                          )}
+                          {assessmentStatus === "In Progress" && (
+                            <Button
+                              onClick={handleCompleteAssessment}
+                              disabled={!user?.id || completingAssessment}
+                            >
+                              {completingAssessment ? "Completing..." : "Complete Assessment"}
+                            </Button>
+                          )}
+                          {assessmentStatus === "Completed" && (
+                            <Button
+                              onClick={handleResetAssessment}
+                              disabled={!user?.id || resettingAssessment}
+                              variant="secondary"
+                            >
+                              {resettingAssessment ? "Resetting..." : "Not started yet"}
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Step 2: Review Nominations */}
+                  <div className="border rounded-lg p-6 opacity-60">
+                    <div className="flex gap-6">
+                      <div className="flex-shrink-0">
+                        <div className="w-24 h-24 bg-muted rounded-lg flex items-center justify-center border-2 border-muted-foreground/20">
+                          <div className="text-center">
+                            <div className="text-2xl font-bold text-muted-foreground">2</div>
+                            <div className="text-xs text-muted-foreground mt-1">Step</div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-lg font-semibold mb-2 text-muted-foreground">Review Nominations</h3>
+                        <p className="text-sm text-muted-foreground">
+                          Coming soon...
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Step 3: Review Report */}
+                  <div className="border rounded-lg p-6 opacity-60">
+                    <div className="flex gap-6">
+                      <div className="flex-shrink-0">
+                        <div className="w-24 h-24 bg-muted rounded-lg flex items-center justify-center border-2 border-muted-foreground/20">
+                          <div className="text-center">
+                            <div className="text-2xl font-bold text-muted-foreground">3</div>
+                            <div className="text-xs text-muted-foreground mt-1">Step</div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-lg font-semibold mb-2 text-muted-foreground">Review Report</h3>
+                        <p className="text-sm text-muted-foreground">
+                          Coming soon...
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
+          </CardContent>
+        </Card>
+      </Tabs>
 
       {/* Nomination Modal - Reused from original page */}
       <Dialog open={isNominationModalOpen} onOpenChange={setIsNominationModalOpen}>
