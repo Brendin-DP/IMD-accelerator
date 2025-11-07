@@ -2,14 +2,16 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, MoreVertical, Trash2 } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose } from "@/components/ui/dialog";
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { ToastContainer, useToast } from "@/components/ui/toast";
+import { Stepper, StepperStep } from "@/components/ui/stepper";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { MoreVertical, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { inviteExternalReviewer } from "@/lib/externalNominationsValidation";
 
@@ -77,7 +79,7 @@ interface ClientUser {
   client_id: string;
 }
 
-export default function TenantAssessmentDetailPage() {
+export default function TenantAssessmentV2Page() {
   const params = useParams();
   const router = useRouter();
   const subdomain = params.subdomain as string;
@@ -131,7 +133,6 @@ export default function TenantAssessmentDetailPage() {
       setLoading(true);
       setError(null);
 
-      // Try fetching with relationships first
       let { data, error: dbError } = await supabase
         .from("cohort_assessments")
         .select(`
@@ -142,11 +143,9 @@ export default function TenantAssessmentDetailPage() {
         .eq("id", assessmentId)
         .single();
 
-      // If relationship query fails, fallback to separate queries
       if (dbError && (dbError.message?.includes("relationship") || dbError.message?.includes("cache"))) {
         console.warn("Relationship query failed, fetching separately:", dbError.message);
         
-        // Fetch assessment without relationships
         const { data: assessmentData, error: assessmentError } = await supabase
           .from("cohort_assessments")
           .select("*")
@@ -161,7 +160,6 @@ export default function TenantAssessmentDetailPage() {
           throw new Error("Assessment not found");
         }
 
-        // Fetch assessment type separately
         let assessmentType = null;
         if (assessmentData.assessment_type_id) {
           const { data: typeData } = await supabase
@@ -172,7 +170,6 @@ export default function TenantAssessmentDetailPage() {
           assessmentType = typeData;
         }
 
-        // Fetch cohort separately
         let cohort = null;
         if (assessmentData.cohort_id) {
           const { data: cohortData } = await supabase
@@ -206,7 +203,6 @@ export default function TenantAssessmentDetailPage() {
 
   async function fetchParticipantAssessment(userId: string) {
     try {
-      // First, find the cohort_participant for this user
       const { data: participants, error: participantsError } = await supabase
         .from("cohort_participants")
         .select("id")
@@ -221,8 +217,6 @@ export default function TenantAssessmentDetailPage() {
 
       const participantIds = participants.map((p: any) => p.id);
 
-      // Fetch the participant_assessment for this assessment and user
-      // Use limit(1) instead of maybeSingle() to handle potential duplicates
       const { data: participantAssessmentData, error: paError } = await supabase
         .from("participant_assessments")
         .select("*")
@@ -243,12 +237,9 @@ export default function TenantAssessmentDetailPage() {
 
       setParticipantAssessment(pa as ParticipantAssessment | null);
       
-      // Fetch nominations if we have a participant assessment
       if (pa?.id) {
         fetchNominations(pa.id, userId);
       } else {
-        // Check if there are any nominations for this assessment that might exist
-        // by checking all participant_assessments for this assessment
         const { data: allPAs } = await supabase
           .from("participant_assessments")
           .select("id")
@@ -271,7 +262,6 @@ export default function TenantAssessmentDetailPage() {
 
   async function fetchNominations(participantAssessmentId: string, userId: string) {
     try {
-      // Fetch all nominations where this user nominated reviewers (regardless of status)
       const { data: nominationsData, error: nominationsError } = await supabase
         .from("reviewer_nominations")
         .select("*")
@@ -290,11 +280,9 @@ export default function TenantAssessmentDetailPage() {
         return;
       }
 
-      // Separate internal and external nominations
       const internalNominations = nominationsData.filter((n: any) => !n.is_external && n.reviewer_id);
       const externalNominations = nominationsData.filter((n: any) => n.is_external && n.external_reviewer_id);
 
-      // Fetch internal reviewer details
       const reviewerIds = [...new Set(internalNominations.map((n: any) => n.reviewer_id).filter(Boolean))];
       let clientUsers: any[] = [];
       
@@ -309,7 +297,6 @@ export default function TenantAssessmentDetailPage() {
         }
       }
 
-      // Fetch external reviewer details, including review_status
       const externalReviewerIds = [...new Set(externalNominations.map((n: any) => n.external_reviewer_id).filter(Boolean))];
       let externalReviewers: any[] = [];
       
@@ -324,10 +311,8 @@ export default function TenantAssessmentDetailPage() {
         }
       }
 
-      // Merge the data
       const mergedNominations = nominationsData.map((nomination: any) => {
         if (nomination.is_external && nomination.external_reviewer_id) {
-          // External reviewer - get review_status from external_reviewers table
           const externalReviewer = externalReviewers.find((e: any) => e.id === nomination.external_reviewer_id);
           return {
             ...nomination,
@@ -336,7 +321,6 @@ export default function TenantAssessmentDetailPage() {
             review_status: externalReviewer?.review_status || nomination.review_status || null,
           };
         } else {
-          // Internal reviewer - get review_status from reviewer_nominations table
           return {
             ...nomination,
             reviewer: clientUsers.find((u: any) => u.id === nomination.reviewer_id) || null,
@@ -357,7 +341,6 @@ export default function TenantAssessmentDetailPage() {
     try {
       setLoadingRoster(true);
       
-      // Fetch all client_users for this client, excluding the current user
       const { data: rosterData, error: rosterError } = await supabase
         .from("client_users")
         .select("id, name, surname, email, client_id")
@@ -387,7 +370,6 @@ export default function TenantAssessmentDetailPage() {
       return;
     }
     
-    // Get client_id from user
     const clientId = (user as any).client_id;
     if (!clientId) {
       console.error("User client_id not found:", user);
@@ -408,8 +390,6 @@ export default function TenantAssessmentDetailPage() {
       if (prev.includes(reviewerId)) {
         return prev.filter((id) => id !== reviewerId);
       } else {
-        // Limit to 10 total active nominations (existing active + new selections)
-        // Only count active nominations (pending or accepted), not rejected ones
         const activeNominationsCount = nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length;
         const maxNewSelections = 10 - activeNominationsCount;
         if (prev.length >= maxNewSelections) {
@@ -427,18 +407,14 @@ export default function TenantAssessmentDetailPage() {
     }
 
     const trimmedEmail = email.trim().toLowerCase();
-
-    // Basic email format validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(trimmedEmail)) {
       return { valid: false, message: "Please enter a valid email address format" };
     }
 
-    // Extract domain from email
     const domain = trimmedEmail.split("@")[1];
     const allowedDomain = `${subdomain}.com`;
 
-    // Validate domain matches allowed domain
     if (!domain || !domain.endsWith(allowedDomain)) {
       return { 
         valid: false, 
@@ -446,7 +422,6 @@ export default function TenantAssessmentDetailPage() {
       };
     }
 
-    // Check if email is already selected
     if (selectedReviewers.includes(trimmedEmail)) {
       return { 
         valid: false, 
@@ -454,7 +429,6 @@ export default function TenantAssessmentDetailPage() {
       };
     }
 
-    // Check if we've reached the limit
     const activeNominationsCount = nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length;
     const maxNewSelections = 10 - activeNominationsCount;
     if (selectedReviewers.length >= maxNewSelections) {
@@ -471,7 +445,6 @@ export default function TenantAssessmentDetailPage() {
     const value = e.target.value;
     setNewReviewerEmail(value);
 
-    // Validate email in real-time
     if (!value || !value.trim()) {
       setEmailValid(null);
       setEmailValidationMessage("");
@@ -496,8 +469,6 @@ export default function TenantAssessmentDetailPage() {
     }
 
     const trimmedEmail = email.trim().toLowerCase();
-
-    // Add the email to selected reviewers
     setSelectedReviewers((prev) => [...prev, trimmedEmail]);
     setNewReviewerEmail("");
     setEmailValid(null);
@@ -514,7 +485,6 @@ export default function TenantAssessmentDetailPage() {
     try {
       setSubmittingNominations(true);
 
-      // Get client info
       const clientId = (user as any).client_id;
       
       if (!clientId) {
@@ -523,11 +493,9 @@ export default function TenantAssessmentDetailPage() {
         return;
       }
 
-      // If participant assessment doesn't exist, create it first
       let participantAssessmentId = participantAssessment?.id;
       
       if (!participantAssessmentId) {
-        // Find the cohort_participant for this user
         const { data: participants, error: participantsError } = await supabase
           .from("cohort_participants")
           .select("id")
@@ -541,14 +509,13 @@ export default function TenantAssessmentDetailPage() {
 
         const participantIds = participants.map((p: any) => p.id);
 
-        // Create participant_assessment if it doesn't exist
         const { data: newPA, error: createError } = await supabase
           .from("participant_assessments")
           .insert({
-            participant_id: participantIds[0], // Use first participant ID
+            participant_id: participantIds[0],
             cohort_assessment_id: assessmentId,
             status: participantAssessment?.status || "Not started",
-            allow_reviewer_nominations: true, // Default to true for new assessments
+            allow_reviewer_nominations: true,
           })
           .select()
           .single();
@@ -564,8 +531,6 @@ export default function TenantAssessmentDetailPage() {
         setParticipantAssessment(newPA as ParticipantAssessment);
       }
 
-      // Check existing nominations to avoid duplicates
-      // Only check for active nominations (pending or accepted), not rejected ones
       const { data: existingNominations, error: checkError } = await supabase
         .from("reviewer_nominations")
         .select("reviewer_id, external_reviewer_id, request_status")
@@ -580,21 +545,16 @@ export default function TenantAssessmentDetailPage() {
         return;
       }
 
-      // Create sets of existing IDs (both internal and external)
       const existingReviewerIds = new Set(existingNominations?.map((n: any) => n.reviewer_id).filter(Boolean) || []);
       const existingExternalIds = new Set(existingNominations?.map((n: any) => n.external_reviewer_id).filter(Boolean) || []);
 
-      // Separate internal and external reviewers
       const internalReviewers = selectedReviewers.filter((item) => !item.includes("@"));
       const externalReviewers = selectedReviewers.filter((item) => item.includes("@"));
 
-      // Filter out already nominated internal reviewers
       const newInternalReviewers = internalReviewers.filter((id) => !existingReviewerIds.has(id));
 
-      // Build nomination payload
       const nominationPayload = [];
 
-      // Process internal reviewers
       for (const reviewerId of newInternalReviewers) {
         nominationPayload.push({
           participant_assessment_id: participantAssessmentId,
@@ -605,11 +565,9 @@ export default function TenantAssessmentDetailPage() {
         });
       }
 
-      // Process external reviewers
       const externalErrors: string[] = [];
       for (const email of externalReviewers) {
         try {
-          // Check if this external reviewer was already nominated
           const { data: existingExternal, error: externalCheckError } = await supabase
             .from("external_reviewers")
             .select("id")
@@ -623,20 +581,17 @@ export default function TenantAssessmentDetailPage() {
             continue;
           }
 
-          // If external reviewer exists and already nominated, skip
           if (existingExternal && existingExternalIds.has(existingExternal.id)) {
             continue;
           }
 
-          // Invite external reviewer (creates or retrieves external_reviewer record)
-          // invited_by should be the client_user.id (user.id), not participant_id
           let external;
           try {
             external = await inviteExternalReviewer({
               email,
               subdomain,
               clientId,
-              participantId: user.id, // Use user.id (client_users.id) instead of participant_id
+              participantId: user.id,
             });
           } catch (inviteError: any) {
             console.error(`Error inviting external reviewer ${email}:`, inviteError);
@@ -650,12 +605,9 @@ export default function TenantAssessmentDetailPage() {
             continue;
           }
 
-          // For external reviewers, we need to handle reviewer_id constraint
-          // Since reviewer_id has NOT NULL constraint, we'll use a workaround
-          // The database schema should ideally allow reviewer_id to be nullable for external reviewers
           nominationPayload.push({
             participant_assessment_id: participantAssessmentId,
-            reviewer_id: user.id, // Temporary workaround: use nominated_by_id to satisfy NOT NULL constraint
+            reviewer_id: user.id,
             is_external: true,
             external_reviewer_id: external.id,
             nominated_by_id: user.id,
@@ -667,10 +619,8 @@ export default function TenantAssessmentDetailPage() {
         }
       }
 
-      // Show errors for external reviewers if any
       if (externalErrors.length > 0) {
         console.error("External reviewer errors:", externalErrors);
-        // Don't stop the process, just show info message
         showToast(`Some external reviewers could not be added: ${externalErrors.join(", ")}`, "info");
       }
 
@@ -684,34 +634,27 @@ export default function TenantAssessmentDetailPage() {
         return;
       }
 
-      // Insert nominations
       const { error: insertError } = await supabase
         .from("reviewer_nominations")
         .insert(nominationPayload);
 
       if (insertError) {
         console.error("Error creating nominations:", insertError);
-        console.error("Nomination payload:", JSON.stringify(nominationPayload, null, 2));
         showToast(`Error creating nominations: ${insertError.message || "Please try again"}`, "error");
         setSubmittingNominations(false);
         return;
       }
 
-      // Refresh nominations list and participant assessment
       if (participantAssessmentId) {
         await fetchNominations(participantAssessmentId, user.id);
-        // Refresh participant assessment to get updated state
         await fetchParticipantAssessment(user.id);
       }
       
-      // Trigger notification count update for reviewers who received the nominations
       window.dispatchEvent(new CustomEvent('notification-update'));
       
-      // Close modal and reset
       setIsNominationModalOpen(false);
       setSelectedReviewers([]);
       
-      // Show success toast
       showToast(
         `Successfully requested ${nominationPayload.length} nomination${nominationPayload.length > 1 ? "s" : ""}.`,
         "success"
@@ -730,12 +673,11 @@ export default function TenantAssessmentDetailPage() {
     try {
       setDeletingNomination(nominationId);
 
-      // Delete the nomination
       const { error: deleteError } = await supabase
         .from("reviewer_nominations")
         .delete()
         .eq("id", nominationId)
-        .eq("nominated_by_id", user.id); // Ensure user can only delete their own nominations
+        .eq("nominated_by_id", user.id);
 
       if (deleteError) {
         console.error("Error deleting nomination:", deleteError);
@@ -743,7 +685,6 @@ export default function TenantAssessmentDetailPage() {
         return;
       }
 
-      // Refresh nominations list
       if (participantAssessment?.id) {
         await fetchNominations(participantAssessment.id, user.id);
       }
@@ -765,7 +706,6 @@ export default function TenantAssessmentDetailPage() {
 
     setStartingAssessment(true);
     try {
-      // First, find the cohort_participant for this user
       const { data: participants, error: participantsError } = await supabase
         .from("cohort_participants")
         .select("id")
@@ -779,15 +719,13 @@ export default function TenantAssessmentDetailPage() {
 
       const participantIds = participants.map((p: any) => p.id);
 
-      // Check if participant_assessment exists
       let participantAssessmentId = participantAssessment?.id;
 
       if (!participantAssessmentId) {
-        // Create participant_assessment if it doesn't exist
         const { data: newPA, error: createError } = await supabase
           .from("participant_assessments")
           .insert({
-            participant_id: participantIds[0], // Use first participant ID
+            participant_id: participantIds[0],
             cohort_assessment_id: assessmentId,
             status: "In Progress",
           })
@@ -804,7 +742,6 @@ export default function TenantAssessmentDetailPage() {
         participantAssessmentId = newPA.id;
         setParticipantAssessment(newPA as ParticipantAssessment);
       } else {
-        // Update existing participant_assessment status
         const { error: updateError } = await supabase
           .from("participant_assessments")
           .update({ status: "In Progress" })
@@ -817,7 +754,6 @@ export default function TenantAssessmentDetailPage() {
           return;
         }
 
-        // Update local state
         setParticipantAssessment((prev) => 
           prev ? { ...prev, status: "In Progress" } : null
         );
@@ -852,7 +788,6 @@ export default function TenantAssessmentDetailPage() {
         return;
       }
 
-      // Update local state
       setParticipantAssessment((prev) => 
         prev ? { ...prev, status: "Completed" } : null
       );
@@ -886,7 +821,6 @@ export default function TenantAssessmentDetailPage() {
         return;
       }
 
-      // Update local state
       setParticipantAssessment((prev) => 
         prev ? { ...prev, status: "Not started" } : null
       );
@@ -900,6 +834,19 @@ export default function TenantAssessmentDetailPage() {
     }
   }
 
+  const getStatusColor = (status: string | null) => {
+    if (!status) return "bg-gray-100 text-gray-800";
+    const statusLower = status.toLowerCase();
+    if (statusLower === "completed" || statusLower === "submitted") {
+      return "bg-green-100 text-green-800";
+    } else if (statusLower === "in progress" || statusLower === "in_progress" || statusLower === "pending") {
+      return "bg-blue-100 text-blue-800";
+    } else if (statusLower === "not started" || statusLower === "not_started") {
+      return "bg-gray-100 text-gray-800";
+    }
+    return "bg-gray-100 text-gray-800";
+  };
+
   const getReviewStatusColor = (status: string | null) => {
     if (!status) return "bg-gray-100 text-gray-800";
     const statusLower = status.toLowerCase();
@@ -911,19 +858,6 @@ export default function TenantAssessmentDetailPage() {
       return "bg-yellow-100 text-yellow-800";
     } else if (statusLower === "cancelled" || statusLower === "rejected") {
       return "bg-red-100 text-red-800";
-    }
-    return "bg-gray-100 text-gray-800";
-  };
-
-  const getStatusColor = (status: string | null) => {
-    if (!status) return "bg-gray-100 text-gray-800";
-    const statusLower = status.toLowerCase();
-    if (statusLower === "completed" || statusLower === "submitted") {
-      return "bg-green-100 text-green-800";
-    } else if (statusLower === "in progress" || statusLower === "in_progress" || statusLower === "pending") {
-      return "bg-blue-100 text-blue-800";
-    } else if (statusLower === "not started" || statusLower === "not_started") {
-      return "bg-gray-100 text-gray-800";
     }
     return "bg-gray-100 text-gray-800";
   };
@@ -965,6 +899,101 @@ export default function TenantAssessmentDetailPage() {
   const assessmentName = assessment.name || assessment.assessment_type?.name || "Assessment";
   const cohortName = (assessment.cohort as any)?.name || "Cohort";
 
+  // Determine step states
+  const assessmentStatus = participantAssessment?.status || "Not started";
+  const isStep1Completed = assessmentStatus === "In Progress" || assessmentStatus === "Completed";
+  const isStep1Active = assessmentStatus === "Not started" || !assessmentStatus;
+  const isStep2Active = isStep1Completed;
+  const isStep2Completed = nominations.length > 0;
+  const isStep3Active = assessmentStatus === "Completed" && isStep2Completed;
+
+  // Build stepper steps
+  const steps: StepperStep[] = [
+    {
+      title: "Complete Your Assessment",
+      description: "Start and complete your self-assessment questionnaire.",
+      status: isStep1Completed ? "completed" : isStep1Active ? "active" : "pending",
+      content: (
+        <div className="mt-4">
+          {(!participantAssessment || assessmentStatus === "Not started" || !assessmentStatus) && (
+            <Button
+              onClick={handleStartAssessment}
+              disabled={!user?.id || startingAssessment}
+            >
+              {startingAssessment ? "Starting..." : "Start Assessment"}
+            </Button>
+          )}
+          {assessmentStatus === "In Progress" && (
+            <Button
+              onClick={handleCompleteAssessment}
+              disabled={!user?.id || completingAssessment}
+            >
+              {completingAssessment ? "Completing..." : "Complete Assessment"}
+            </Button>
+          )}
+          {assessmentStatus === "Completed" && (
+            <Button
+              onClick={handleResetAssessment}
+              disabled={!user?.id || resettingAssessment}
+              variant="secondary"
+            >
+              {resettingAssessment ? "Resetting..." : "Not started yet"}
+            </Button>
+          )}
+        </div>
+      ),
+    },
+    {
+      title: "Review Nominations",
+      description: "Request nominations from reviewers to provide feedback on your assessment.",
+      status: isStep2Completed ? "completed" : isStep2Active ? "active" : "pending",
+      content: (
+        <div className="mt-4">
+          <Button
+            onClick={handleOpenNominationModal}
+            disabled={
+              (!participantAssessment?.id && !assessment) || 
+              nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length >= 10
+            }
+          >
+            Request Nominations
+          </Button>
+          {nominations.length > 0 && (
+            <p className="text-sm text-muted-foreground mt-2">
+              {nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length} active nomination(s)
+            </p>
+          )}
+        </div>
+      ),
+    },
+    {
+      title: "Review Report",
+      description: "View your assessment report and set your commitment based on the feedback received.",
+      status: isStep3Active ? "active" : "pending",
+      content: (
+        <div className="mt-4 flex gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => {
+              // Placeholder for View Report functionality
+              showToast("View Report functionality coming soon.", "info");
+            }}
+          >
+            View Report
+          </Button>
+          <Button
+            onClick={() => {
+              // Placeholder for Set commitment functionality
+              showToast("Set commitment functionality coming soon.", "info");
+            }}
+          >
+            Set commitment
+          </Button>
+        </div>
+      ),
+    },
+  ];
+
   return (
     <div className="space-y-6">
       {/* Breadcrumbs */}
@@ -996,439 +1025,17 @@ export default function TenantAssessmentDetailPage() {
         </p>
       </div>
 
-      {/* Assessment Details Card */}
+      {/* Assessment Info Panel with Stepper */}
       <Card>
         <CardHeader>
-          <div className="flex items-start justify-between">
-            <div className="flex items-center gap-3">
-              <CardTitle>Assessment Information</CardTitle>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => router.push(`/tenant/${subdomain}/assessments/${assessmentId}/v2`)}
-              >
-                View V2
-              </Button>
-            </div>
-            {assessment.status && (
-              <span className={`px-3 py-1 text-sm font-medium rounded-full ${getStatusColor(assessment.status)}`}>
-                {assessment.status}
-              </span>
-            )}
-          </div>
+          <CardTitle>Assessment Information</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Assessment Type</p>
-              <p className="text-base mt-1">{assessment.assessment_type?.name || "N/A"}</p>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Assessment Status</p>
-              {participantAssessment?.status ? (
-                <span className={`inline-block px-3 py-1 text-sm font-medium rounded-full mt-1 ${getStatusColor(participantAssessment.status)}`}>
-                  {participantAssessment.status}
-                </span>
-              ) : (
-                <span className={`inline-block px-3 py-1 text-sm font-medium rounded-full mt-1 ${getStatusColor("Not started")}`}>
-                  Not started
-                </span>
-              )}
-            </div>
-            {assessment.assessment_type?.description && (
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Description</p>
-                <p className="text-base mt-1">{assessment.assessment_type.description}</p>
-              </div>
-            )}
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Start Date</p>
-              <p className="text-base mt-1">
-                {assessment.start_date ? (
-                  new Date(assessment.start_date).toLocaleDateString()
-                ) : (
-                  <span className="text-muted-foreground">Not set</span>
-                )}
-              </p>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">End Date</p>
-              <p className="text-base mt-1">
-                {assessment.end_date ? (
-                  new Date(assessment.end_date).toLocaleDateString()
-                ) : (
-                  <span className="text-muted-foreground">Not set</span>
-                )}
-              </p>
-            </div>
-          </div>
-          {/* Assessment Action Buttons */}
-          <div className="mt-6 pt-6 border-t flex justify-between items-center gap-4">
-            <div className="flex gap-2">
-              {(!participantAssessment || participantAssessment.status === "Not started" || !participantAssessment.status) && (
-                <Button
-                  onClick={handleStartAssessment}
-                  disabled={!user?.id || startingAssessment}
-                  className="w-full sm:w-auto"
-                >
-                  {startingAssessment ? "Starting..." : "Start Assessment"}
-                </Button>
-              )}
-              {participantAssessment?.status === "In Progress" && (
-                <Button
-                  onClick={handleCompleteAssessment}
-                  disabled={!user?.id || completingAssessment}
-                  className="w-full sm:w-auto"
-                >
-                  {completingAssessment ? "Completing..." : "Complete Assessment"}
-                </Button>
-              )}
-              {participantAssessment?.status === "Completed" && (
-                <Button
-                  onClick={handleResetAssessment}
-                  disabled={!user?.id || resettingAssessment}
-                  variant="secondary"
-                  className="w-full sm:w-auto"
-                >
-                  {resettingAssessment ? "Resetting..." : "Not started yet"}
-                </Button>
-              )}
-            </div>
-            <Button
-              onClick={() => router.push(`/tenant/${subdomain}/assessments/${assessmentId}/questionnaire`)}
-              variant="outline"
-              className="w-full sm:w-auto"
-            >
-              Simulate
-            </Button>
-          </div>
+          <Stepper steps={steps} />
         </CardContent>
       </Card>
 
-      {/* My Assessment Status Card - Hidden for now */}
-      {false && (
-        <Card>
-          <CardHeader>
-            <CardTitle>My Assessment Status</CardTitle>
-          </CardHeader>
-          <CardContent>
-          {participantAssessment ? (
-            <div className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Status</p>
-                  {participantAssessment.status && (
-                    <span className={`inline-block px-3 py-1 text-sm font-medium rounded-full mt-2 ${getStatusColor(participantAssessment.status)}`}>
-                      {participantAssessment.status}
-                    </span>
-                  )}
-                  {!participantAssessment.status && (
-                    <p className="text-base mt-1 text-muted-foreground">Not started</p>
-                  )}
-                </div>
-                {participantAssessment.score !== null && (
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Score</p>
-                    <p className="text-2xl font-bold mt-1">{participantAssessment.score}</p>
-                  </div>
-                )}
-                {participantAssessment.submitted_at && (
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Submitted At</p>
-                    <p className="text-base mt-1">
-                      {new Date(participantAssessment.submitted_at).toLocaleString()}
-                    </p>
-                  </div>
-                )}
-              </div>
-              {participantAssessment.allow_reviewer_nominations && (
-                <div className="pt-4 border-t">
-                  <p className="text-sm text-muted-foreground">
-                    Reviewer nominations are enabled for this assessment.
-                  </p>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="text-center py-8">
-              <p className="text-muted-foreground">Your assessment has not been started yet.</p>
-              <Button
-                className="mt-4"
-                onClick={() => {
-                  // TODO: Implement assessment start/launch functionality
-                  alert("Assessment launch functionality will be implemented here");
-                }}
-              >
-                Start Assessment
-              </Button>
-            </div>
-          )}
-        </CardContent>
-        </Card>
-      )}
-
-      {/* Nominate for Review Section */}
-      {/* Show nominations section if participant assessment exists and allows nominations, OR if assessment exists and we should allow by default */}
-      {(participantAssessment?.allow_reviewer_nominations !== false) && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle>Nominate for Review</CardTitle>
-              <div className="flex items-center gap-2">
-                <Input
-                  type="text"
-                  placeholder="Search nominations..."
-                  value={nominationSearch}
-                  onChange={(e) => setNominationSearch(e.target.value)}
-                  className="w-64"
-                />
-                <Button
-                  onClick={handleOpenNominationModal}
-                  disabled={
-                    (!participantAssessment?.id && !assessment) || 
-                    nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length >= 10
-                  }
-                >
-                  Request Nomination
-                </Button>
-              </div>
-            </div>
-            {nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length >= 10 && (
-              <p className="text-sm text-muted-foreground mt-2">
-                You have reached the maximum of 10 active nominations (internal + external).
-              </p>
-            )}
-          </CardHeader>
-          <CardContent>
-            {/* Tabs */}
-            <div className="flex space-x-1 border-b mb-4">
-              <button
-                onClick={() => setActiveTab("internal")}
-                className={`px-4 py-2 text-sm font-medium transition-colors ${
-                  activeTab === "internal"
-                    ? "border-b-2 border-primary text-primary"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Internal Nominations
-              </button>
-              <button
-                onClick={() => setActiveTab("external")}
-                className={`px-4 py-2 text-sm font-medium transition-colors ${
-                  activeTab === "external"
-                    ? "border-b-2 border-primary text-primary"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                External Nominations
-              </button>
-            </div>
-            {activeTab === "internal" ? (
-              (() => {
-                let internalNominations = nominations.filter((n) => !n.is_external);
-                
-                // Filter by search term
-                if (nominationSearch.trim()) {
-                  const searchLower = nominationSearch.toLowerCase();
-                  internalNominations = internalNominations.filter((nomination) => {
-                    const reviewer = nomination.reviewer;
-                    const reviewerName = reviewer ? `${reviewer.name || ""} ${reviewer.surname || ""}`.trim().toLowerCase() || reviewer.email.toLowerCase() : "";
-                    const email = reviewer?.email?.toLowerCase() || "";
-                    const status = (nomination.request_status || "").toLowerCase();
-                    const reviewStatus = (nomination.review_status || "").toLowerCase();
-                    return reviewerName.includes(searchLower) || 
-                           email.includes(searchLower) || 
-                           status.includes(searchLower) ||
-                           reviewStatus.includes(searchLower);
-                  });
-                }
-                
-                return internalNominations.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    {nominationSearch.trim() ? "No nominations match your search." : "No internal nominations requested yet."}
-                  </p>
-                ) : (
-                  <div className="rounded-md border">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b bg-muted/50">
-                          <th className="px-6 py-3 text-left text-sm font-medium">Name</th>
-                          <th className="px-6 py-3 text-left text-sm font-medium">Surname</th>
-                          <th className="px-6 py-3 text-left text-sm font-medium">Email</th>
-                          <th className="px-6 py-3 text-left text-sm font-medium">Status</th>
-                          <th className="px-6 py-3 text-left text-sm font-medium">Requested</th>
-                          <th className="px-6 py-3 text-left text-sm font-medium">Review Progress</th>
-                          <th className="px-6 py-3 text-left text-sm font-medium w-12"></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {internalNominations.map((nomination) => {
-                          const reviewer = nomination.reviewer;
-                          const canDelete = nomination.request_status === "pending";
-                          
-                          return (
-                            <tr key={nomination.id} className="border-b hover:bg-muted/50">
-                              <td className="px-6 py-4 text-sm font-medium">
-                                {reviewer?.name || "-"}
-                              </td>
-                              <td className="px-6 py-4 text-sm font-medium">
-                                {reviewer?.surname || "-"}
-                              </td>
-                              <td className="px-6 py-4 text-sm">{reviewer?.email || "-"}</td>
-                              <td className="px-6 py-4 text-sm">
-                                {nomination.request_status ? (
-                                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(nomination.request_status)}`}>
-                                    {nomination.request_status}
-                                  </span>
-                                ) : (
-                                  "-"
-                                )}
-                              </td>
-                              <td className="px-6 py-4 text-sm">
-                                {nomination.created_at
-                                  ? new Date(nomination.created_at).toLocaleDateString()
-                                  : "-"}
-                              </td>
-                              <td className="px-6 py-4 text-sm">
-                                {nomination.review_status ? (
-                                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${getReviewStatusColor(nomination.review_status)}`}>
-                                    {nomination.review_status}
-                                  </span>
-                                ) : (
-                                  "-"
-                                )}
-                              </td>
-                              <td className="px-6 py-4 text-sm">
-                                <div onClick={(e) => e.stopPropagation()}>
-                                  <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                        <MoreVertical className="h-4 w-4" />
-                                      </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end">
-                                      <DropdownMenuItem
-                                        onClick={() => handleDeleteNomination(nomination.id)}
-                                        className="text-destructive"
-                                        disabled={!canDelete || deletingNomination === nomination.id}
-                                      >
-                                        <Trash2 className="mr-2 h-4 w-4" />
-                                        {deletingNomination === nomination.id ? "Removing..." : "Remove"}
-                                      </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                  </DropdownMenu>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                );
-              })()
-            ) : (
-              (() => {
-                let externalNominations = nominations.filter((n) => n.is_external);
-                
-                // Filter by search term
-                if (nominationSearch.trim()) {
-                  const searchLower = nominationSearch.toLowerCase();
-                  externalNominations = externalNominations.filter((nomination) => {
-                    const externalReviewer = nomination.external_reviewer;
-                    const email = externalReviewer?.email?.toLowerCase() || "";
-                    const status = (nomination.request_status || "").toLowerCase();
-                    const reviewStatus = (nomination.review_status || "").toLowerCase();
-                    return email.includes(searchLower) || 
-                           status.includes(searchLower) ||
-                           reviewStatus.includes(searchLower);
-                  });
-                }
-                
-                return externalNominations.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    {nominationSearch.trim() ? "No nominations match your search." : "No external nominations requested yet."}
-                  </p>
-                ) : (
-                  <div className="rounded-md border">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b bg-muted/50">
-                          <th className="px-6 py-3 text-left text-sm font-medium">Email</th>
-                          <th className="px-6 py-3 text-left text-sm font-medium">Status</th>
-                          <th className="px-6 py-3 text-left text-sm font-medium">Requested</th>
-                          <th className="px-6 py-3 text-left text-sm font-medium">Review Progress</th>
-                          <th className="px-6 py-3 text-left text-sm font-medium w-12"></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {externalNominations.map((nomination) => {
-                          const externalReviewer = nomination.external_reviewer;
-                          const canDelete = nomination.request_status === "pending";
-                          
-                          return (
-                            <tr key={nomination.id} className="border-b hover:bg-muted/50">
-                              <td className="px-6 py-4 text-sm font-medium">
-                                {externalReviewer?.email || "-"}
-                              </td>
-                              <td className="px-6 py-4 text-sm">
-                                {nomination.request_status ? (
-                                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(nomination.request_status)}`}>
-                                    {nomination.request_status}
-                                  </span>
-                                ) : (
-                                  "-"
-                                )}
-                              </td>
-                              <td className="px-6 py-4 text-sm">
-                                {nomination.created_at
-                                  ? new Date(nomination.created_at).toLocaleDateString()
-                                  : "-"}
-                              </td>
-                              <td className="px-6 py-4 text-sm">
-                                {nomination.review_status ? (
-                                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${getReviewStatusColor(nomination.review_status)}`}>
-                                    {nomination.review_status}
-                                  </span>
-                                ) : (
-                                  "-"
-                                )}
-                              </td>
-                              <td className="px-6 py-4 text-sm">
-                                <div onClick={(e) => e.stopPropagation()}>
-                                  <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                        <MoreVertical className="h-4 w-4" />
-                                      </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end">
-                                      <DropdownMenuItem
-                                        onClick={() => handleDeleteNomination(nomination.id)}
-                                        className="text-destructive"
-                                        disabled={!canDelete || deletingNomination === nomination.id}
-                                      >
-                                        <Trash2 className="mr-2 h-4 w-4" />
-                                        {deletingNomination === nomination.id ? "Removing..." : "Remove"}
-                                      </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                  </DropdownMenu>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                );
-              })()
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Nomination Modal */}
+      {/* Nomination Modal - Reused from original page */}
       <Dialog open={isNominationModalOpen} onOpenChange={setIsNominationModalOpen}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
@@ -1440,7 +1047,6 @@ export default function TenantAssessmentDetailPage() {
           <DialogClose onClick={() => setIsNominationModalOpen(false)} />
 
           <div className="space-y-4">
-            {/* Add External Reviewer Section */}
             <div className="space-y-2">
               <div className="flex gap-2 items-end">
                 <div className="flex-1">
@@ -1484,14 +1090,8 @@ export default function TenantAssessmentDetailPage() {
                   {emailValidationMessage}
                 </p>
               )}
-              {!emailValidationMessage && newReviewerEmail && (
-                <p className="text-xs text-muted-foreground">
-                  Email must be from {subdomain}.com domain
-                </p>
-              )}
             </div>
 
-            {/* Selected External Reviewers Display */}
             {selectedReviewers.filter(email => email.includes("@")).length > 0 && (
               <div className="p-3 bg-muted rounded-md">
                 <p className="text-sm font-medium mb-2">External Reviewers Added:</p>
@@ -1537,7 +1137,6 @@ export default function TenantAssessmentDetailPage() {
                     <tbody>
                       {clientRoster.map((user) => {
                         const isSelected = selectedReviewers.includes(user.id);
-                        // Only disable if they have an active nomination (pending or accepted), not rejected
                         const activeNominationsCount = nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length;
                         const isAlreadyNominated = nominations.some(
                           (n) => n.reviewer_id === user.id && (n.request_status === "pending" || n.request_status === "accepted")
