@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Check, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
@@ -104,6 +104,7 @@ export default function TenantAssessmentV2Page() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"internal" | "external">("internal");
   const [viewTab, setViewTab] = useState<"vertical" | "horizontal">("vertical");
+  const [currentHorizontalStep, setCurrentHorizontalStep] = useState<1 | 2 | 3 | 4>(1);
   const [startingAssessment, setStartingAssessment] = useState(false);
   const [completingAssessment, setCompletingAssessment] = useState(false);
   const [resettingAssessment, setResettingAssessment] = useState(false);
@@ -1070,127 +1071,340 @@ export default function TenantAssessmentV2Page() {
               <Stepper steps={steps} />
             </TabsContent>
             <TabsContent value="horizontal">
-              <div className="mt-4">
-                {/* Horizontal Steps */}
-                <div className="flex flex-col gap-6">
-                  {/* Step 1: Complete Your Assessment */}
-                  <div className="border rounded-lg p-6">
-                    <div className="flex gap-6">
-                      {/* Thumbnail */}
-                      <div className="flex-shrink-0">
-                        <div className="w-24 h-24 bg-muted rounded-lg flex items-center justify-center border-2 border-primary/20">
-                          <div className="text-center">
-                            <div className="text-2xl font-bold text-primary">1</div>
-                            <div className="text-xs text-muted-foreground mt-1">Step</div>
+              {/* Horizontal Stepper Navigation */}
+              <div className="mb-6">
+                <div className="flex items-center justify-between">
+                  {[1, 2, 3, 4].map((stepNum) => {
+                    const isStep1Completed = assessmentStatus === "In Progress" || assessmentStatus === "Completed";
+                    const isStep2Completed = nominations.length > 0;
+                    const isStep3Completed = nominations.some(n => n.request_status === "accepted" && (n.review_status === "completed" || n.review_status === "Completed"));
+                    
+                    let isCompleted = false;
+                    let isActive = currentHorizontalStep === stepNum;
+                    
+                    if (stepNum === 1) {
+                      isCompleted = isStep1Completed;
+                    } else if (stepNum === 2) {
+                      isCompleted = isStep2Completed;
+                    } else if (stepNum === 3) {
+                      isCompleted = isStep3Completed;
+                    } else if (stepNum === 4) {
+                      isCompleted = isStep3Completed;
+                    }
+                    
+                    const isPending = !isCompleted && !isActive;
+                    
+                    return (
+                      <div key={stepNum} className="flex items-center flex-1">
+                        <button
+                          onClick={() => setCurrentHorizontalStep(stepNum as 1 | 2 | 3 | 4)}
+                          className="flex flex-col items-center flex-1"
+                        >
+                          <div
+                            className={cn(
+                              "flex items-center justify-center w-10 h-10 rounded-full border-2 transition-colors mb-2",
+                              {
+                                "bg-primary border-primary text-primary-foreground": isCompleted || isActive,
+                                "bg-background border-muted-foreground/30 text-muted-foreground": isPending,
+                              }
+                            )}
+                          >
+                            {isCompleted ? (
+                              <Check className="h-5 w-5" />
+                            ) : (
+                              <span className="text-sm font-semibold">{stepNum}</span>
+                            )}
                           </div>
+                          <span
+                            className={cn("text-xs font-medium", {
+                              "text-foreground": isActive || isCompleted,
+                              "text-muted-foreground": isPending,
+                            })}
+                          >
+                            {stepNum === 1 && "Complete Assessment"}
+                            {stepNum === 2 && "Review Nominations"}
+                            {stepNum === 3 && "Review Process"}
+                            {stepNum === 4 && "Review Report"}
+                          </span>
+                        </button>
+                        {stepNum < 4 && (
+                          <div
+                            className={cn(
+                              "h-0.5 flex-1 mx-2 mb-5 transition-colors",
+                              {
+                                "bg-primary": isCompleted,
+                                "bg-muted-foreground/30": !isCompleted,
+                              }
+                            )}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Step Content */}
+              <div className="mt-6">
+                {/* Step 1: Complete Your Assessment */}
+                {currentHorizontalStep === 1 && (
+                  <div className="flex gap-6">
+                    {/* Thumbnail */}
+                    <div className="flex-shrink-0">
+                      <div className="w-32 h-32 bg-muted rounded-lg flex flex-col items-center justify-center border-2 border-primary/20">
+                        <div className="text-3xl font-bold text-primary mb-1">1</div>
+                        <div className="text-xs text-muted-foreground">Step</div>
+                      </div>
+                    </div>
+                    
+                    {/* Content */}
+                    <div className="flex-1">
+                      <h3 className="text-lg font-semibold mb-2">Complete Your Assessment</h3>
+                      <p className="text-sm text-muted-foreground mb-4">
+                        Start and complete your self-assessment questionnaire.
+                      </p>
+                      
+                      {/* Status Badge */}
+                      <div className="mb-4">
+                        {assessmentStatus && (
+                          <span className={cn("px-3 py-1 text-sm font-medium rounded-full", getStatusColor(assessmentStatus))}>
+                            {assessmentStatus}
+                          </span>
+                        )}
+                      </div>
+                      
+                      {/* Progress Bar */}
+                      <div className="mb-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm text-muted-foreground">Progress</span>
+                          <span className="text-sm font-medium">
+                            {assessmentStatus === "Not started" || !assessmentStatus
+                              ? "0%"
+                              : assessmentStatus === "In Progress"
+                              ? "50%"
+                              : "100%"}
+                          </span>
+                        </div>
+                        <div className="h-2 bg-muted rounded-full overflow-hidden">
+                          <div
+                            className={cn(
+                              "h-full bg-primary transition-all duration-300 rounded-full",
+                              {
+                                "w-0": assessmentStatus === "Not started" || !assessmentStatus,
+                                "w-1/2": assessmentStatus === "In Progress",
+                                "w-full": assessmentStatus === "Completed",
+                              }
+                            )}
+                          />
                         </div>
                       </div>
                       
-                      {/* Content */}
-                      <div className="flex-1">
-                        <h3 className="text-lg font-semibold mb-2">Complete Your Assessment</h3>
-                        <p className="text-sm text-muted-foreground mb-4">
-                          Start and complete your self-assessment questionnaire.
-                        </p>
-                        
-                        {/* Progress Bar */}
-                        <div className="mb-4">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm text-muted-foreground">Progress</span>
-                            <span className="text-sm font-medium">
-                              {assessmentStatus === "Not started" || !assessmentStatus
-                                ? "0%"
-                                : assessmentStatus === "In Progress"
-                                ? "50%"
-                                : "100%"}
-                            </span>
-                          </div>
-                          <div className="h-2 bg-muted rounded-full overflow-hidden">
-                            <div
-                              className={cn(
-                                "h-full bg-primary transition-all duration-300 rounded-full",
-                                {
-                                  "w-0": assessmentStatus === "Not started" || !assessmentStatus,
-                                  "w-1/2": assessmentStatus === "In Progress",
-                                  "w-full": assessmentStatus === "Completed",
-                                }
-                              )}
-                            />
-                          </div>
-                        </div>
-                        
-                        {/* Button */}
-                        <div>
-                          {(!participantAssessment || assessmentStatus === "Not started" || !assessmentStatus) && (
-                            <Button
-                              onClick={handleStartAssessment}
-                              disabled={!user?.id || startingAssessment}
-                            >
-                              {startingAssessment ? "Starting..." : "Start Assessment"}
-                            </Button>
-                          )}
-                          {assessmentStatus === "In Progress" && (
-                            <Button
-                              onClick={handleCompleteAssessment}
-                              disabled={!user?.id || completingAssessment}
-                            >
-                              {completingAssessment ? "Completing..." : "Complete Assessment"}
-                            </Button>
-                          )}
-                          {assessmentStatus === "Completed" && (
-                            <Button
-                              onClick={handleResetAssessment}
-                              disabled={!user?.id || resettingAssessment}
-                              variant="secondary"
-                            >
-                              {resettingAssessment ? "Resetting..." : "Not started yet"}
-                            </Button>
-                          )}
-                        </div>
+                      {/* Button */}
+                      <div>
+                        {(!participantAssessment || assessmentStatus === "Not started" || !assessmentStatus) && (
+                          <Button
+                            onClick={handleStartAssessment}
+                            disabled={!user?.id || startingAssessment}
+                          >
+                            {startingAssessment ? "Starting..." : "Start Assessment"}
+                          </Button>
+                        )}
+                        {assessmentStatus === "In Progress" && (
+                          <Button
+                            onClick={handleCompleteAssessment}
+                            disabled={!user?.id || completingAssessment}
+                          >
+                            {completingAssessment ? "Completing..." : "Complete Assessment"}
+                          </Button>
+                        )}
+                        {assessmentStatus === "Completed" && (
+                          <Button
+                            onClick={handleResetAssessment}
+                            disabled={!user?.id || resettingAssessment}
+                            variant="secondary"
+                          >
+                            {resettingAssessment ? "Resetting..." : "Not started yet"}
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </div>
+                )}
 
-                  {/* Step 2: Review Nominations */}
-                  <div className="border rounded-lg p-6 opacity-60">
-                    <div className="flex gap-6">
-                      <div className="flex-shrink-0">
-                        <div className="w-24 h-24 bg-muted rounded-lg flex items-center justify-center border-2 border-muted-foreground/20">
-                          <div className="text-center">
-                            <div className="text-2xl font-bold text-muted-foreground">2</div>
-                            <div className="text-xs text-muted-foreground mt-1">Step</div>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="text-lg font-semibold mb-2 text-muted-foreground">Review Nominations</h3>
-                        <p className="text-sm text-muted-foreground">
-                          Coming soon...
-                        </p>
-                      </div>
+                {/* Step 2: Review Nominations Table */}
+                {currentHorizontalStep === 2 && (
+                  <div>
+                    <div className="mb-4 flex items-center justify-between">
+                      <h3 className="text-lg font-semibold">Review Nominations</h3>
+                      <Button
+                        onClick={handleOpenNominationModal}
+                        disabled={
+                          (!participantAssessment?.id && !assessment) || 
+                          nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length >= 10
+                        }
+                      >
+                        Request Nomination
+                      </Button>
                     </div>
+                    {nominations.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No nominations requested yet.</p>
+                    ) : (
+                      <div className="rounded-md border">
+                        <table className="w-full">
+                          <thead>
+                            <tr className="border-b bg-muted/50">
+                              <th className="px-6 py-3 text-left text-sm font-medium">Name</th>
+                              <th className="px-6 py-3 text-left text-sm font-medium">Surname</th>
+                              <th className="px-6 py-3 text-left text-sm font-medium">Email</th>
+                              <th className="px-6 py-3 text-left text-sm font-medium">Request Status</th>
+                              <th className="px-6 py-3 text-left text-sm font-medium">Requested</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {nominations.map((nomination) => {
+                              const reviewer = nomination.reviewer;
+                              const externalReviewer = nomination.external_reviewer;
+                              
+                              return (
+                                <tr key={nomination.id} className="border-b hover:bg-muted/50">
+                                  <td className="px-6 py-4 text-sm font-medium">
+                                    {reviewer?.name || "-"}
+                                  </td>
+                                  <td className="px-6 py-4 text-sm font-medium">
+                                    {reviewer?.surname || "-"}
+                                  </td>
+                                  <td className="px-6 py-4 text-sm">
+                                    {reviewer?.email || externalReviewer?.email || "-"}
+                                  </td>
+                                  <td className="px-6 py-4 text-sm">
+                                    {nomination.request_status ? (
+                                      <span className={cn("px-2 py-1 text-xs font-medium rounded-full", getStatusColor(nomination.request_status))}>
+                                        {nomination.request_status}
+                                      </span>
+                                    ) : (
+                                      "-"
+                                    )}
+                                  </td>
+                                  <td className="px-6 py-4 text-sm">
+                                    {nomination.created_at
+                                      ? new Date(nomination.created_at).toLocaleDateString()
+                                      : "-"}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
+                )}
 
-                  {/* Step 3: Review Report */}
-                  <div className="border rounded-lg p-6 opacity-60">
-                    <div className="flex gap-6">
-                      <div className="flex-shrink-0">
-                        <div className="w-24 h-24 bg-muted rounded-lg flex items-center justify-center border-2 border-muted-foreground/20">
-                          <div className="text-center">
-                            <div className="text-2xl font-bold text-muted-foreground">3</div>
-                            <div className="text-xs text-muted-foreground mt-1">Step</div>
-                          </div>
-                        </div>
+                {/* Step 3: Accepted Nominations Table */}
+                {currentHorizontalStep === 3 && (
+                  <div>
+                    <h3 className="text-lg font-semibold mb-4">Review Process</h3>
+                    {nominations.filter(n => n.request_status === "accepted").length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No accepted nominations yet.</p>
+                    ) : (
+                      <div className="rounded-md border">
+                        <table className="w-full">
+                          <thead>
+                            <tr className="border-b bg-muted/50">
+                              <th className="px-6 py-3 text-left text-sm font-medium">Name</th>
+                              <th className="px-6 py-3 text-left text-sm font-medium">Surname</th>
+                              <th className="px-6 py-3 text-left text-sm font-medium">Email</th>
+                              <th className="px-6 py-3 text-left text-sm font-medium">Review Status</th>
+                              <th className="px-6 py-3 text-left text-sm font-medium">Review Progress</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {nominations
+                              .filter(n => n.request_status === "accepted")
+                              .map((nomination) => {
+                                const reviewer = nomination.reviewer;
+                                const externalReviewer = nomination.external_reviewer;
+                                const reviewStatus = nomination.is_external
+                                  ? (externalReviewer?.review_status || nomination.review_status)
+                                  : nomination.review_status;
+                                
+                                return (
+                                  <tr key={nomination.id} className="border-b hover:bg-muted/50">
+                                    <td className="px-6 py-4 text-sm font-medium">
+                                      {reviewer?.name || "-"}
+                                    </td>
+                                    <td className="px-6 py-4 text-sm font-medium">
+                                      {reviewer?.surname || "-"}
+                                    </td>
+                                    <td className="px-6 py-4 text-sm">
+                                      {reviewer?.email || externalReviewer?.email || "-"}
+                                    </td>
+                                    <td className="px-6 py-4 text-sm">
+                                      {reviewStatus ? (
+                                        <span className={cn("px-2 py-1 text-xs font-medium rounded-full", getReviewStatusColor(reviewStatus))}>
+                                          {reviewStatus}
+                                        </span>
+                                      ) : (
+                                        "-"
+                                      )}
+                                    </td>
+                                    <td className="px-6 py-4 text-sm">
+                                      {reviewStatus ? (
+                                        <span className={cn("px-2 py-1 text-xs font-medium rounded-full", getReviewStatusColor(reviewStatus))}>
+                                          {reviewStatus}
+                                        </span>
+                                      ) : (
+                                        <span className="text-muted-foreground">Not started</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                          </tbody>
+                        </table>
                       </div>
-                      <div className="flex-1">
-                        <h3 className="text-lg font-semibold mb-2 text-muted-foreground">Review Report</h3>
-                        <p className="text-sm text-muted-foreground">
-                          Coming soon...
-                        </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Step 4: Review Report */}
+                {currentHorizontalStep === 4 && (
+                  <div className="flex gap-6">
+                    {/* PDF Thumbnail */}
+                    <div className="flex-shrink-0">
+                      <div className="w-32 h-32 bg-muted rounded-lg flex items-center justify-center border-2 border-primary/20">
+                        <FileText className="h-12 w-12 text-primary" />
+                      </div>
+                    </div>
+                    
+                    {/* Content */}
+                    <div className="flex-1">
+                      <h3 className="text-lg font-semibold mb-2">Review Report</h3>
+                      <p className="text-sm text-muted-foreground mb-4">
+                        View your assessment report and set your commitment based on the feedback received.
+                      </p>
+                      
+                      {/* Buttons */}
+                      <div className="flex gap-2">
+                        <Button
+                          variant="secondary"
+                          onClick={() => {
+                            showToast("View Report functionality coming soon.", "info");
+                          }}
+                        >
+                          View Report
+                        </Button>
+                        <Button
+                          onClick={() => {
+                            showToast("Set commitment functionality coming soon.", "info");
+                          }}
+                        >
+                          Set commitment
+                        </Button>
                       </div>
                     </div>
                   </div>
-                </div>
+                )}
               </div>
             </TabsContent>
           </CardContent>
