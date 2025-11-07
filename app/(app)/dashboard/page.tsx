@@ -661,64 +661,64 @@ export default function DashboardPage() {
         <p className="text-muted-foreground mt-2">Overview of your cohorts and assessments</p>
       </div>
 
-      {/* Stats Panels and Activity Feed Section */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Stats Panels Section - Left Column */}
-        <div className="space-y-6">
-          {/* Active Cohorts Stat */}
-          <div 
-            className="relative overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:px-6 cursor-pointer hover:shadow-md transition-shadow border border-gray-200"
-            onClick={() => router.push("/cohorts")}
-          >
-            <dt>
-              <div className="absolute rounded-md bg-blue-500 p-3">
-                <Users className="h-6 w-6 text-white" aria-hidden="true" />
-              </div>
-              <p className="ml-16 truncate text-sm font-medium text-gray-500">Active Cohorts</p>
-            </dt>
-            <dd className="ml-16 flex items-baseline">
-              <p className="text-2xl font-semibold text-gray-900">{activeCohortsCount}</p>
-              <p className="ml-2 text-sm text-gray-500">cohorts</p>
-            </dd>
-          </div>
-
-          {/* Assessments Stat */}
-          <div 
-            className="relative overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:px-6 cursor-pointer hover:shadow-md transition-shadow border border-gray-200"
-            onClick={() => router.push("/cohorts")}
-          >
-            <dt>
-              <div className="absolute rounded-md bg-indigo-500 p-3">
-                <FileText className="h-6 w-6 text-white" aria-hidden="true" />
-              </div>
-              <p className="ml-16 truncate text-sm font-medium text-gray-500">Assessments</p>
-            </dt>
-            <dd className="ml-16 flex items-baseline">
-              <p className="text-2xl font-semibold text-gray-900">{assessmentsCount}</p>
-              <p className="ml-2 text-sm text-gray-500">total</p>
-            </dd>
-          </div>
-
-          {/* Completed Cohorts Stat */}
-          <div 
-            className="relative overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:px-6 cursor-pointer hover:shadow-md transition-shadow border border-gray-200"
-            onClick={() => router.push("/cohorts")}
-          >
-            <dt>
-              <div className="absolute rounded-md bg-green-500 p-3">
-                <CheckCircle2 className="h-6 w-6 text-white" aria-hidden="true" />
-              </div>
-              <p className="ml-16 truncate text-sm font-medium text-gray-500">Completed</p>
-            </dt>
-            <dd className="ml-16 flex items-baseline">
-              <p className="text-2xl font-semibold text-gray-900">{completedCohortsCount}</p>
-              <p className="ml-2 text-sm text-gray-500">cohorts</p>
-            </dd>
-          </div>
+      {/* Stats Panels - Top Row */}
+      <div className="grid gap-6 md:grid-cols-3">
+        {/* Active Cohorts Stat */}
+        <div 
+          className="relative overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:px-6 cursor-pointer hover:shadow-md transition-shadow border border-gray-200"
+          onClick={() => router.push("/cohorts")}
+        >
+          <dt>
+            <div className="absolute rounded-md bg-blue-500 p-3">
+              <Users className="h-6 w-6 text-white" aria-hidden="true" />
+            </div>
+            <p className="ml-16 truncate text-sm font-medium text-gray-500">Active Cohorts</p>
+          </dt>
+          <dd className="ml-16 flex items-baseline">
+            <p className="text-2xl font-semibold text-gray-900">{activeCohortsCount}</p>
+            <p className="ml-2 text-sm text-gray-500">cohorts</p>
+          </dd>
         </div>
 
-        {/* Activity Feed - Right Column */}
-        <Card className="h-full">
+        {/* Assessments Stat */}
+        <div 
+          className="relative overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:px-6 cursor-pointer hover:shadow-md transition-shadow border border-gray-200"
+          onClick={() => router.push("/cohorts")}
+        >
+          <dt>
+            <div className="absolute rounded-md bg-indigo-500 p-3">
+              <FileText className="h-6 w-6 text-white" aria-hidden="true" />
+            </div>
+            <p className="ml-16 truncate text-sm font-medium text-gray-500">Assessments</p>
+          </dt>
+          <dd className="ml-16 flex items-baseline">
+            <p className="text-2xl font-semibold text-gray-900">{assessmentsCount}</p>
+            <p className="ml-2 text-sm text-gray-500">total</p>
+          </dd>
+        </div>
+
+        {/* Completed Cohorts Stat */}
+        <div 
+          className="relative overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:px-6 cursor-pointer hover:shadow-md transition-shadow border border-gray-200"
+          onClick={() => router.push("/cohorts")}
+        >
+          <dt>
+            <div className="absolute rounded-md bg-green-500 p-3">
+              <CheckCircle2 className="h-6 w-6 text-white" aria-hidden="true" />
+            </div>
+            <p className="ml-16 truncate text-sm font-medium text-gray-500">Completed</p>
+          </dt>
+          <dd className="ml-16 flex items-baseline">
+            <p className="text-2xl font-semibold text-gray-900">{completedCohortsCount}</p>
+            <p className="ml-2 text-sm text-gray-500">cohorts</p>
+          </dd>
+        </div>
+      </div>
+
+      {/* Activity Feed and Action Items Section */}
+      <div className="grid gap-6 lg:grid-cols-5">
+        {/* Activity Feed - 40% width */}
+        <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Activity Feed</CardTitle>
           </CardHeader>
@@ -755,6 +755,18 @@ export default function DashboardPage() {
                   </div>
                 ))
               )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* My Action Items - 60% width */}
+        <Card className="lg:col-span-3">
+          <CardHeader>
+            <CardTitle>My Action Items</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4 h-full overflow-y-auto">
+              <p className="text-sm text-muted-foreground text-center py-4">No action items at this time</p>
             </div>
           </CardContent>
         </Card>
