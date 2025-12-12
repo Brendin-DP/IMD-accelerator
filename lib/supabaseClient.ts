@@ -3,8 +3,9 @@
 import { createBrowserClient } from "@supabase/ssr";
 
 // Get environment variables - these must be available at build time
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+// Trim whitespace and remove quotes if present
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim().replace(/^["']|["']$/g, '');
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim().replace(/^["']|["']$/g, '');
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.error(
