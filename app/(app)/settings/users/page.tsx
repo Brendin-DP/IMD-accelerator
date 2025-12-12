@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus, ArrowUp, ArrowDown } from "lucide-react";
+import { Plus, ArrowUp, ArrowDown, MoreVertical, Edit, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -12,6 +12,12 @@ import {
   DialogDescription,
   DialogClose,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 import { supabase } from "@/lib/supabaseClient";
 import { useTableSort } from "@/hooks/useTableSort";
 
@@ -42,6 +48,19 @@ export default function UsersPage() {
   });
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    name: "",
+    surname: "",
+    email: "",
+    role: "",
+    status: "active",
+    password: "",
+  });
+  const [editing, setEditing] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchUsers();
@@ -77,6 +96,95 @@ export default function UsersPage() {
   function handleInputChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
+  }
+
+  function handleEditInputChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
+    const { name, value } = e.target;
+    setEditFormData((prev) => ({ ...prev, [name]: value }));
+  }
+
+  async function handleEditSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingUser) return;
+
+    setEditing(true);
+    setEditError(null);
+
+    try {
+      // Prepare update data
+      const updateData: any = {
+        name: editFormData.name.trim(),
+        surname: editFormData.surname.trim(),
+        email: editFormData.email.toLowerCase().trim(),
+        role: editFormData.role || null,
+        status: editFormData.status || "active",
+      };
+
+      // Add password if provided (temp workaround - set password_hash directly)
+      if (editFormData.password && editFormData.password.trim() !== "") {
+        updateData.password_hash = editFormData.password.trim();
+      }
+
+      const { error: updateError } = await supabase
+        .from("imd_users")
+        .update(updateData)
+        .eq("id", editingUser.id);
+
+      if (updateError) {
+        console.error("Error updating user:", updateError);
+        setEditError(`Failed to update user: ${updateError.message}`);
+        setEditing(false);
+        return;
+      }
+
+      // Reset form and close dialog
+      setEditFormData({
+        name: "",
+        surname: "",
+        email: "",
+        role: "",
+        status: "active",
+        password: "",
+      });
+      setEditingUser(null);
+      setIsEditDialogOpen(false);
+      
+      // Refresh users list
+      await fetchUsers();
+    } catch (err) {
+      console.error("Unexpected error:", err);
+      setEditError(err instanceof Error ? err.message : "An unexpected error occurred");
+    } finally {
+      setEditing(false);
+    }
+  }
+
+  async function handleDeleteUser(userId: string) {
+    if (!confirm("Are you sure you want to delete this user? This action cannot be undone.")) {
+      return;
+    }
+
+    setDeletingUserId(userId);
+
+    try {
+      const { error: deleteError } = await supabase
+        .from("imd_users")
+        .delete()
+        .eq("id", userId);
+
+      if (deleteError) {
+        console.error("Error deleting user:", deleteError);
+        alert(`Failed to delete user: ${deleteError.message}`);
+      } else {
+        // Refresh users list
+        await fetchUsers();
+      }
+    } catch (err) {
+      console.error("Unexpected error:", err);
+      alert(err instanceof Error ? err.message : "An unexpected error occurred");
+    } finally {
+      setDeletingUserId(null);
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -227,6 +335,7 @@ export default function UsersPage() {
                     )}
                   </div>
                 </th>
+                <th className="px-6 py-3 text-left text-sm font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -265,6 +374,45 @@ export default function UsersPage() {
                     {user.created_at
                       ? new Date(user.created_at).toLocaleDateString()
                       : "-"}
+                  </td>
+                  <td className="px-6 py-4 text-sm" onClick={(e) => e.stopPropagation()}>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setEditingUser(user);
+                            setEditFormData({
+                              name: user.name || "",
+                              surname: user.surname || "",
+                              email: user.email || "",
+                              role: user.role || "",
+                              status: user.status || "active",
+                              password: "",
+                            });
+                            setIsEditDialogOpen(true);
+                          }}
+                        >
+                          <Edit className="mr-2 h-4 w-4" />
+                          Edit User
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => {
+                            if (deletingUserId === user.id) return;
+                            handleDeleteUser(user.id);
+                          }}
+                          aria-disabled={deletingUserId === user.id}
+                          className={`text-destructive ${deletingUserId === user.id ? "pointer-events-none opacity-50" : ""}`}
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          {deletingUserId === user.id ? "Deleting..." : "Delete User"}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </td>
                 </tr>
               ))}
@@ -386,6 +534,151 @@ export default function UsersPage() {
               </Button>
               <Button type="submit" disabled={submitting}>
                 {submitting ? "Creating..." : "Create User"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit User Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent>
+          <DialogClose onClick={() => {
+            setIsEditDialogOpen(false);
+            setEditingUser(null);
+            setEditFormData({
+              name: "",
+              surname: "",
+              email: "",
+              role: "",
+              status: "active",
+              password: "",
+            });
+            setEditError(null);
+          }} />
+          <DialogHeader>
+            <DialogTitle>Edit User</DialogTitle>
+            <DialogDescription>
+              Update user information below. Leave password blank to keep current password.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleEditSubmit} className="space-y-4">
+            <div className="space-y-2.5">
+              <label htmlFor="edit_name" className="text-sm font-medium">
+                Name <span className="text-destructive">*</span>
+              </label>
+              <Input
+                id="edit_name"
+                name="name"
+                value={editFormData.name}
+                onChange={handleEditInputChange}
+                required
+                placeholder="First name"
+              />
+            </div>
+
+            <div className="space-y-2.5">
+              <label htmlFor="edit_surname" className="text-sm font-medium">
+                Surname <span className="text-destructive">*</span>
+              </label>
+              <Input
+                id="edit_surname"
+                name="surname"
+                value={editFormData.surname}
+                onChange={handleEditInputChange}
+                required
+                placeholder="Last name"
+              />
+            </div>
+
+            <div className="space-y-2.5">
+              <label htmlFor="edit_email" className="text-sm font-medium">
+                Email <span className="text-destructive">*</span>
+              </label>
+              <Input
+                id="edit_email"
+                name="email"
+                type="email"
+                value={editFormData.email}
+                onChange={handleEditInputChange}
+                required
+                placeholder="user@example.com"
+              />
+            </div>
+
+            <div className="space-y-2.5">
+              <label htmlFor="edit_password" className="text-sm font-medium">
+                Password
+              </label>
+              <Input
+                id="edit_password"
+                name="password"
+                type="password"
+                value={editFormData.password}
+                onChange={handleEditInputChange}
+                placeholder="Leave blank to keep current password"
+              />
+              <p className="text-xs text-muted-foreground">
+                This will update the password_hash field in the database. The password will be stored as plain text (temporary workaround).
+              </p>
+            </div>
+
+            <div className="space-y-2.5">
+              <label htmlFor="edit_role" className="text-sm font-medium">
+                Role
+              </label>
+              <Input
+                id="edit_role"
+                name="role"
+                value={editFormData.role}
+                onChange={handleEditInputChange}
+                placeholder="e.g., admin, manager"
+              />
+            </div>
+
+            <div className="space-y-2.5">
+              <label htmlFor="edit_status" className="text-sm font-medium">
+                Status
+              </label>
+              <select
+                id="edit_status"
+                name="status"
+                value={editFormData.status}
+                onChange={handleEditInputChange}
+                className="w-full border border-input bg-background px-3 py-2 rounded-md text-sm"
+              >
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
+
+            {editError && (
+              <p className="text-sm text-destructive">{editError}</p>
+            )}
+
+            <div className="flex justify-end gap-2 pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setIsEditDialogOpen(false);
+                  setEditingUser(null);
+                  setEditFormData({
+                    name: "",
+                    surname: "",
+                    email: "",
+                    role: "",
+                    status: "active",
+                    password: "",
+                  });
+                  setEditError(null);
+                }}
+                disabled={editing}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={editing}>
+                {editing ? "Updating..." : "Update User"}
               </Button>
             </div>
           </form>

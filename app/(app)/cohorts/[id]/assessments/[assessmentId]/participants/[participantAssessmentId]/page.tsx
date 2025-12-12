@@ -483,9 +483,9 @@ export default function ParticipantAssessmentDetailPage() {
     );
   }
 
-  const participant = participantAssessment!.participant as any;
+  const participant = participantAssessment.participant as any;
   const clientUser = participant?.client_user as any;
-  const assessment = participantAssessment!.cohort_assessment as any;
+  const assessment = participantAssessment.cohort_assessment as any;
   const assessmentType = assessment?.assessment_type as any;
 
   const participantName = clientUser
