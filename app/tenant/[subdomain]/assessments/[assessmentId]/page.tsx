@@ -1155,7 +1155,6 @@ export default function TenantAssessmentDetailPage() {
               </div>
             );
           })() : (
-          ) : (
             <div className="text-center py-8">
               <p className="text-muted-foreground">Your assessment has not been started yet.</p>
               <Button
