@@ -236,7 +236,7 @@ export default function CohortDetailPage() {
       }
 
       // Get all client_user_ids
-      const clientUserIds = participantRecords.map((p) => p.client_user_id);
+      const clientUserIds = participantRecords.map((p: any) => p.client_user_id);
 
       // Fetch client users
       const { data: clientUsers, error: usersError } = await supabase
@@ -251,8 +251,8 @@ export default function CohortDetailPage() {
       }
 
       // Combine the data
-      const participantsWithUsers = participantRecords.map((participant) => {
-        const clientUser = clientUsers?.find((user) => user.id === participant.client_user_id);
+      const participantsWithUsers = participantRecords.map((participant: any) => {
+        const clientUser = clientUsers?.find((user: any) => user.id === participant.client_user_id);
         return {
           ...participant,
           client_user: clientUser || null,
@@ -457,7 +457,7 @@ export default function CohortDetailPage() {
       const participantIds = participants.map((p) => p.client_user_id);
 
       // Filter out already added users
-      const available = allUsers?.filter((user) => !participantIds.includes(user.id)) || [];
+      const available = allUsers?.filter((user: any) => !participantIds.includes(user.id)) || [];
       setAvailableUsers(available);
     } catch (err) {
       console.error("Error fetching available users:", err);
@@ -1019,9 +1019,7 @@ export default function CohortDetailPage() {
                                 handleRemoveParticipant(participant.id);
                               }}
                               aria-disabled={removing === participant.id}
-                              className={`text-destructive ${
-                                removing === participant.id ? "pointer-events-none opacity-50" : ""
-                              }`}
+                              className={`text-destructive ${removing === participant.id ? "pointer-events-none opacity-50" : ""}`}
                             >
                               {removing === participant.id ? "Removing..." : "Remove"}
                             </DropdownMenuItem>
