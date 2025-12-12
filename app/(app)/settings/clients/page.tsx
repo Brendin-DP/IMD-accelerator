@@ -560,7 +560,6 @@ export default function ClientsPage() {
               Cancel
             </Button>
             <Button
-              variant="destructive"
               onClick={handleDeleteConfirm}
               disabled={deleting}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
