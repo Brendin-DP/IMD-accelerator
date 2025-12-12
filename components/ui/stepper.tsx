@@ -35,8 +35,7 @@ const Stepper = React.forwardRef<HTMLDivElement, StepperProps>(
                   className={cn(
                     "flex items-center justify-center w-10 h-10 rounded-full border-2 transition-colors",
                     {
-                      "bg-primary border-primary text-primary-foreground": isCompleted,
-                      "bg-primary border-primary text-primary-foreground": isActive,
+                      "bg-primary border-primary text-primary-foreground": isCompleted || isActive,
                       "bg-background border-muted-foreground/30 text-muted-foreground": isPending,
                     }
                   )}
