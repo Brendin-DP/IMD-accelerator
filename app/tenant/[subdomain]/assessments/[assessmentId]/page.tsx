@@ -1117,12 +1117,12 @@ export default function TenantAssessmentDetailPage() {
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Status</p>
-                  {participantAssessment?.status && (
-                    <span className={`inline-block px-3 py-1 text-sm font-medium rounded-full mt-2 ${getStatusColor(participantAssessment.status!)}`}>
+                  {participantAssessment.status && (
+                    <span className={`inline-block px-3 py-1 text-sm font-medium rounded-full mt-2 ${getStatusColor(participantAssessment.status)}`}>
                       {participantAssessment.status}
                     </span>
                   )}
-                  {!participantAssessment?.status && (
+                  {!participantAssessment.status && (
                     <p className="text-base mt-1 text-muted-foreground">Not started</p>
                   )}
                 </div>
