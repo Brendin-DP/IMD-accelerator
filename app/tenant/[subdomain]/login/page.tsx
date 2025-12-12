@@ -23,7 +23,7 @@ export default function TenantLogin() {
         .select("name")
         .eq("subdomain", subdomain)
         .single()
-        .then(({ data, error }) => {
+        .then(({ data, error }: { data: any; error: any }) => {
           if (!error && data) {
             setClientName(data.name);
           }

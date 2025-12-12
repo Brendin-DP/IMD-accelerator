@@ -221,7 +221,7 @@ export default function ClientsPage() {
         .eq("client_id", deletingClientId);
 
       if (cohorts && cohorts.length > 0) {
-        const cohortIds = cohorts.map((c) => c.id);
+        const cohortIds = cohorts.map((c: any) => c.id);
         
         // Get all cohort assessments for these cohorts
         const { data: cohortAssessments } = await supabase
@@ -230,7 +230,7 @@ export default function ClientsPage() {
           .in("cohort_id", cohortIds);
 
         if (cohortAssessments && cohortAssessments.length > 0) {
-          const cohortAssessmentIds = cohortAssessments.map((ca) => ca.id);
+          const cohortAssessmentIds = cohortAssessments.map((ca: any) => ca.id);
           
           // Get participant assessments for these cohort assessments
           const { data: participantAssessments } = await supabase
@@ -239,7 +239,7 @@ export default function ClientsPage() {
             .in("cohort_assessment_id", cohortAssessmentIds);
 
           if (participantAssessments && participantAssessments.length > 0) {
-            const participantAssessmentIds = participantAssessments.map((pa) => pa.id);
+            const participantAssessmentIds = participantAssessments.map((pa: any) => pa.id);
             
             // Delete nominations
             await supabase
@@ -281,7 +281,7 @@ export default function ClientsPage() {
         .eq("client_id", deletingClientId);
 
       if (clientUsers && clientUsers.length > 0) {
-        const clientUserIds = clientUsers.map((cu) => cu.id);
+        const clientUserIds = clientUsers.map((cu: any) => cu.id);
         
         // Delete external reviewers invited by these users
         await supabase
