@@ -294,7 +294,31 @@ export default function ParticipantAssessmentDetailPage() {
         throw dbError;
       }
 
-      setParticipantAssessment(data);
+      // Supabase relationship selects can sometimes return nested objects as single-element arrays.
+      // Normalize to the shapes our UI/types expect.
+      const normalized = data
+        ? {
+            ...data,
+            participant: Array.isArray((data as any).participant)
+              ? (data as any).participant[0] ?? null
+              : (data as any).participant,
+            cohort_assessment: Array.isArray((data as any).cohort_assessment)
+              ? (data as any).cohort_assessment[0] ?? null
+              : (data as any).cohort_assessment,
+          }
+        : null;
+
+      // Normalize nested participant.client_user as well
+      if (normalized?.participant && Array.isArray((normalized as any).participant?.client_user)) {
+        (normalized as any).participant.client_user = (normalized as any).participant.client_user[0] ?? null;
+      }
+
+      // Normalize nested cohort_assessment.assessment_type as well
+      if (normalized?.cohort_assessment && Array.isArray((normalized as any).cohort_assessment?.assessment_type)) {
+        (normalized as any).cohort_assessment.assessment_type = (normalized as any).cohort_assessment.assessment_type[0] ?? null;
+      }
+
+      setParticipantAssessment(normalized as any);
     } catch (err) {
       console.error("Error fetching participant assessment:", err);
       setError(err instanceof Error ? err.message : "Failed to load participant assessment");
