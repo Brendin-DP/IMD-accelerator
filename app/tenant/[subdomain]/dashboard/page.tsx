@@ -411,6 +411,7 @@ export default function TenantDashboardPage() {
           created_at,
           nominated_by_id,
           is_external,
+          participant_assessment_id,
           participant_assessment:participant_assessments(
             id,
             participant:cohort_participants(
@@ -547,14 +548,139 @@ export default function TenantDashboardPage() {
             .select("id, name, surname, email")
             .in("id", nominatedByIds);
 
-          const merged = filteredNominations.map((nomination: any) => ({
-            ...nomination,
-            nominated_by: clientUsers?.find((cu: any) => cu.id === nomination.nominated_by_id) || null,
-          }));
+          // Supabase embedded selects sometimes return nested relations as arrays.
+          // Normalize participant_assessment, participant, client_user, and cohort_assessment to single objects.
+          const merged = filteredNominations.map((nomination: any): MyAction => {
+            const pa = Array.isArray(nomination.participant_assessment)
+              ? nomination.participant_assessment[0] ?? null
+              : nomination.participant_assessment ?? null;
+
+            const participant = pa
+              ? (Array.isArray(pa.participant)
+                  ? pa.participant[0] ?? null
+                  : pa.participant ?? null)
+              : null;
+
+            const clientUser = participant
+              ? (Array.isArray(participant.client_user)
+                  ? participant.client_user[0] ?? null
+                  : participant.client_user ?? null)
+              : null;
+
+            const cohortAssessment = pa
+              ? (Array.isArray(pa.cohort_assessment)
+                  ? pa.cohort_assessment[0] ?? null
+                  : pa.cohort_assessment ?? null)
+              : null;
+
+            return {
+              id: nomination.id,
+              request_status: nomination.request_status,
+              created_at: nomination.created_at,
+              nominated_by: clientUsers?.find((cu: any) => cu.id === nomination.nominated_by_id) || undefined,
+              participant_assessment: pa
+                ? {
+                    id: pa.id,
+                    participant: participant
+                      ? {
+                          client_user: clientUser
+                            ? {
+                                name: clientUser.name,
+                                surname: clientUser.surname,
+                                email: clientUser.email,
+                              }
+                            : undefined,
+                        }
+                      : undefined,
+                    cohort_assessment: cohortAssessment
+                      ? {
+                          name: cohortAssessment.name,
+                          assessment_type: cohortAssessment.assessment_type
+                            ? (Array.isArray(cohortAssessment.assessment_type)
+                                ? cohortAssessment.assessment_type[0] ?? undefined
+                                : cohortAssessment.assessment_type ?? undefined)
+                            : undefined,
+                          cohort: cohortAssessment.cohort
+                            ? (Array.isArray(cohortAssessment.cohort)
+                                ? cohortAssessment.cohort[0] ?? undefined
+                                : cohortAssessment.cohort ?? undefined)
+                            : undefined,
+                        }
+                      : undefined,
+                  }
+                : {
+                    id: nomination.participant_assessment_id || nomination.id,
+                  },
+            };
+          });
 
           setMyActions(merged || []);
         } else {
-          setMyActions(filteredNominations || []);
+          // Normalize even when there are no nominated_by users to fetch
+          const normalized = filteredNominations.map((nomination: any): MyAction => {
+            const pa = Array.isArray(nomination.participant_assessment)
+              ? nomination.participant_assessment[0] ?? null
+              : nomination.participant_assessment ?? null;
+
+            const participant = pa
+              ? (Array.isArray(pa.participant)
+                  ? pa.participant[0] ?? null
+                  : pa.participant ?? null)
+              : null;
+
+            const clientUser = participant
+              ? (Array.isArray(participant.client_user)
+                  ? participant.client_user[0] ?? null
+                  : participant.client_user ?? null)
+              : null;
+
+            const cohortAssessment = pa
+              ? (Array.isArray(pa.cohort_assessment)
+                  ? pa.cohort_assessment[0] ?? null
+                  : pa.cohort_assessment ?? null)
+              : null;
+
+            return {
+              id: nomination.id,
+              request_status: nomination.request_status,
+              created_at: nomination.created_at,
+              nominated_by_id: nomination.nominated_by_id,
+              is_external: nomination.is_external,
+              participant_assessment: pa
+                ? {
+                    id: pa.id,
+                    participant: participant
+                      ? {
+                          client_user: clientUser
+                            ? {
+                                name: clientUser.name,
+                                surname: clientUser.surname,
+                                email: clientUser.email,
+                              }
+                            : undefined,
+                        }
+                      : undefined,
+                    cohort_assessment: cohortAssessment
+                      ? {
+                          name: cohortAssessment.name,
+                          assessment_type: cohortAssessment.assessment_type
+                            ? (Array.isArray(cohortAssessment.assessment_type)
+                                ? cohortAssessment.assessment_type[0] ?? undefined
+                                : cohortAssessment.assessment_type ?? undefined)
+                            : undefined,
+                          cohort: cohortAssessment.cohort
+                            ? (Array.isArray(cohortAssessment.cohort)
+                                ? cohortAssessment.cohort[0] ?? undefined
+                                : cohortAssessment.cohort ?? undefined)
+                            : undefined,
+                        }
+                      : undefined,
+                  }
+                : undefined,
+            };
+          });
+
+          setMyActions(normalized || []);
         }
       } else {
         setMyActions([]);
