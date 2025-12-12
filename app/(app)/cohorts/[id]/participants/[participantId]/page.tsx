@@ -164,7 +164,7 @@ export default function ParticipantDetailPage() {
         console.error("Error fetching participant assessments:", assessmentsError);
         setParticipantAssessments([]);
       } else {
-        const normalized: ParticipantAssessment[] = (assessmentsData || []).map((row: any) => {
+        const normalized: ParticipantAssessment[] = (assessmentsData || []).map((row: any): ParticipantAssessment => {
           const ca = Array.isArray(row.cohort_assessment)
             ? row.cohort_assessment[0] ?? null
             : row.cohort_assessment ?? null;
@@ -181,7 +181,7 @@ export default function ParticipantDetailPage() {
                   assessment_type: at,
                 }
               : null,
-          };
+          } as ParticipantAssessment;
         });
 
         setParticipantAssessments(normalized);
