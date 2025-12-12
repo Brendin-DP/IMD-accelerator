@@ -1140,7 +1140,7 @@ export default function TenantAssessmentDetailPage() {
                     <div>
                       <p className="text-sm font-medium text-muted-foreground">Submitted At</p>
                       <p className="text-base mt-1">
-                        {new Date(pa.submitted_at).toLocaleString()}
+                        {new Date(pa.submitted_at!).toLocaleString()}
                       </p>
                     </div>
                   )}
