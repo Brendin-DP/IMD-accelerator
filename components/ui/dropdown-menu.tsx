@@ -56,6 +56,9 @@ const DropdownMenuTrigger = React.forwardRef<
       onClick: () => context.setIsOpen(!context.isOpen),
       ...props,
     })
+
+
+    
   }
 
   return (
