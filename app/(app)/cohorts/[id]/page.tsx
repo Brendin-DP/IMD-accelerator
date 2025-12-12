@@ -1012,7 +1012,7 @@ export default function CohortDetailPage() {
                               <MoreVertical className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
+                          <DropdownMenuContent>
                             <DropdownMenuItem
                               onClick={() => handleRemoveParticipant(participant.id)}
                               className="text-destructive"
