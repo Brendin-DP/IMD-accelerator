@@ -745,7 +745,7 @@ export default function TenantAssessmentDetailPage() {
 
       // Refresh nominations list
       if (participantAssessment?.id) {
-        await fetchNominations(participantAssessment.id, user.id);
+        await fetchNominations(participantAssessment.id!, user.id);
       }
 
       showToast("Nomination request removed successfully.", "success");
@@ -838,12 +838,13 @@ export default function TenantAssessmentDetailPage() {
       return;
     }
 
+    const paId = participantAssessment.id;
     setCompletingAssessment(true);
     try {
       const { error: updateError } = await supabase
         .from("participant_assessments")
         .update({ status: "Completed" })
-        .eq("id", participantAssessment.id);
+        .eq("id", paId);
 
       if (updateError) {
         console.error("Error completing assessment:", updateError);
@@ -872,12 +873,13 @@ export default function TenantAssessmentDetailPage() {
       return;
     }
 
+    const paId = participantAssessment.id;
     setResettingAssessment(true);
     try {
       const { error: updateError } = await supabase
         .from("participant_assessments")
         .update({ status: "Not started" })
-        .eq("id", participantAssessment.id);
+        .eq("id", paId);
 
       if (updateError) {
         console.error("Error resetting assessment:", updateError);
@@ -1026,7 +1028,7 @@ export default function TenantAssessmentDetailPage() {
             <div>
               <p className="text-sm font-medium text-muted-foreground">Assessment Status</p>
               {participantAssessment?.status ? (
-                <span className={`inline-block px-3 py-1 text-sm font-medium rounded-full mt-1 ${getStatusColor(participantAssessment.status)}`}>
+                <span className={`inline-block px-3 py-1 text-sm font-medium rounded-full mt-1 ${getStatusColor(participantAssessment.status!)}`}>
                   {participantAssessment.status}
                 </span>
               ) : (
@@ -1065,7 +1067,7 @@ export default function TenantAssessmentDetailPage() {
           {/* Assessment Action Buttons */}
           <div className="mt-6 pt-6 border-t flex justify-between items-center gap-4">
             <div className="flex gap-2">
-              {(!participantAssessment || participantAssessment.status === "Not started" || !participantAssessment.status) && (
+              {(!participantAssessment || (participantAssessment && (participantAssessment.status === "Not started" || !participantAssessment.status))) && (
                 <Button
                   onClick={handleStartAssessment}
                   disabled={!user?.id || startingAssessment}
@@ -1112,43 +1114,47 @@ export default function TenantAssessmentDetailPage() {
             <CardTitle>My Assessment Status</CardTitle>
           </CardHeader>
           <CardContent>
-          {participantAssessment ? (
-            <div className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Status</p>
-                  {participantAssessment.status && (
-                    <span className={`inline-block px-3 py-1 text-sm font-medium rounded-full mt-2 ${getStatusColor(participantAssessment.status)}`}>
-                      {participantAssessment.status}
-                    </span>
+          {participantAssessment ? (() => {
+            const pa = participantAssessment;
+            return (
+              <div className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Status</p>
+                    {pa.status && (
+                      <span className={`inline-block px-3 py-1 text-sm font-medium rounded-full mt-2 ${getStatusColor(pa.status)}`}>
+                        {pa.status}
+                      </span>
+                    )}
+                    {!pa.status && (
+                      <p className="text-base mt-1 text-muted-foreground">Not started</p>
+                    )}
+                  </div>
+                  {pa.score !== null && (
+                    <div>
+                      <p className="text-sm font-medium text-muted-foreground">Score</p>
+                      <p className="text-2xl font-bold mt-1">{pa.score}</p>
+                    </div>
                   )}
-                  {!participantAssessment.status && (
-                    <p className="text-base mt-1 text-muted-foreground">Not started</p>
+                  {pa.submitted_at && (
+                    <div>
+                      <p className="text-sm font-medium text-muted-foreground">Submitted At</p>
+                      <p className="text-base mt-1">
+                        {new Date(pa.submitted_at).toLocaleString()}
+                      </p>
+                    </div>
                   )}
                 </div>
-                {participantAssessment.score !== null && (
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Score</p>
-                    <p className="text-2xl font-bold mt-1">{participantAssessment.score}</p>
-                  </div>
-                )}
-                {participantAssessment.submitted_at && (
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Submitted At</p>
-                    <p className="text-base mt-1">
-                      {new Date(participantAssessment.submitted_at).toLocaleString()}
+                {pa.allow_reviewer_nominations && (
+                  <div className="pt-4 border-t">
+                    <p className="text-sm text-muted-foreground">
+                      Reviewer nominations are enabled for this assessment.
                     </p>
                   </div>
                 )}
               </div>
-              {participantAssessment.allow_reviewer_nominations && (
-                <div className="pt-4 border-t">
-                  <p className="text-sm text-muted-foreground">
-                    Reviewer nominations are enabled for this assessment.
-                  </p>
-                </div>
-              )}
-            </div>
+            );
+          })() : (
           ) : (
             <div className="text-center py-8">
               <p className="text-muted-foreground">Your assessment has not been started yet.</p>
