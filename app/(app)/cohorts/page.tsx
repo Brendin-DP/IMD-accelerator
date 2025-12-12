@@ -518,8 +518,8 @@ export default function CohortsPage() {
 
       // Prepare participants data
       const participantsData = (allParticipants || []).map((participant: any) => {
-        const cohort = cohortsMap.get(participant.cohort_id);
-        const user = usersMap.get(participant.client_user_id);
+        const cohort = cohortsMap.get(participant.cohort_id) as { name: string; clientId: string } | undefined;
+        const user = usersMap.get(participant.client_user_id) as { name: string; surname: string; email: string } | undefined;
         return {
           "Participant ID": participant.id,
           "Cohort Name": cohort?.name || "",
@@ -616,19 +616,19 @@ export default function CohortsPage() {
           ]));
 
           nominationsData = (nominations || []).map((nomination: any) => {
-            const pa = participantAssessmentsMap.get(nomination.participant_assessment_id);
+            const pa = participantAssessmentsMap.get(nomination.participant_assessment_id) as { cohortAssessmentId?: string; clientUserId?: string } | undefined;
             const cohortAssessmentId = pa?.cohortAssessmentId;
-            const cohortId = cohortAssessmentsMap.get(cohortAssessmentId || "");
-            const cohort = cohortsMap.get(cohortId || "");
-            const participant = usersMap.get(pa?.clientUserId || "");
+            const cohortId = cohortAssessmentsMap.get(cohortAssessmentId || "") as string | undefined;
+            const cohort = cohortsMap.get(cohortId || "") as { name: string; clientId: string } | undefined;
+            const participant = usersMap.get(pa?.clientUserId || "") as { name: string; surname: string; email: string } | undefined;
 
             let reviewerName = "";
             let reviewerEmail = "";
 
             if (nomination.is_external) {
-              reviewerEmail = externalReviewersMap.get(nomination.external_reviewer_id) || "";
+              reviewerEmail = externalReviewersMap.get(nomination.external_reviewer_id) as string | undefined || "";
             } else {
-              const reviewer = reviewersMap.get(nomination.reviewer_id);
+              const reviewer = reviewersMap.get(nomination.reviewer_id) as { name: string; surname: string; email: string } | undefined;
               reviewerName = `${reviewer?.name || ""} ${reviewer?.surname || ""}`.trim();
               reviewerEmail = reviewer?.email || "";
             }
