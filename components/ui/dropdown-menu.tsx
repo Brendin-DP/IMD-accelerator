@@ -74,10 +74,16 @@ const DropdownMenuTrigger = React.forwardRef<
 })
 DropdownMenuTrigger.displayName = "DropdownMenuTrigger"
 
+type DropdownMenuAlign = "start" | "center" | "end"
+
+interface DropdownMenuContentProps extends React.HTMLAttributes<HTMLDivElement> {
+  align?: DropdownMenuAlign
+}
+
 const DropdownMenuContent = React.forwardRef<
   HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement>
->(({ className, children, ...props }, ref) => {
+  DropdownMenuContentProps
+>(({ className, children, align = "end", ...props }, ref) => {
   const context = React.useContext(DropdownMenuContext)
   if (!context) throw new Error("DropdownMenuContent must be used within DropdownMenu")
 
@@ -87,8 +93,11 @@ const DropdownMenuContent = React.forwardRef<
     <div
       ref={ref}
       className={cn(
-        "absolute right-0 mt-2 w-56 rounded-md border bg-popover shadow-md z-50",
+        "absolute mt-2 w-56 rounded-md border bg-popover shadow-md z-50",
         "min-w-[8rem] overflow-hidden py-1",
+        align === "end" && "right-0",
+        align === "start" && "left-0",
+        align === "center" && "left-1/2 -translate-x-1/2",
         className
       )}
       {...props}
@@ -96,7 +105,9 @@ const DropdownMenuContent = React.forwardRef<
       {children}
     </div>
   )
-})
+}) as React.ForwardRefExoticComponent<
+  DropdownMenuContentProps & React.RefAttributes<HTMLDivElement>
+>
 DropdownMenuContent.displayName = "DropdownMenuContent"
 
 const DropdownMenuItem = React.forwardRef<
@@ -127,4 +138,3 @@ const DropdownMenuItem = React.forwardRef<
 DropdownMenuItem.displayName = "DropdownMenuItem"
 
 export { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem }
-
