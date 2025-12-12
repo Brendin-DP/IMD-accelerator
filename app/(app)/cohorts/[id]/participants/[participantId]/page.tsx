@@ -197,7 +197,7 @@ export default function ParticipantDetailPage() {
                       }
                     : undefined,
                 }
-              : null,
+              : undefined,
           };
         });
 
