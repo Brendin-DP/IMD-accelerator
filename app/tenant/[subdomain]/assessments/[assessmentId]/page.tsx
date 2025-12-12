@@ -1308,9 +1308,12 @@ export default function TenantAssessmentDetailPage() {
                                     </DropdownMenuTrigger>
                                     <DropdownMenuContent align="end">
                                       <DropdownMenuItem
-                                        onClick={() => handleDeleteNomination(nomination.id)}
-                                        className="text-destructive"
-                                        disabled={!canDelete || deletingNomination === nomination.id}
+                                        onClick={() => {
+                                          if (!canDelete || deletingNomination === nomination.id) return;
+                                          handleDeleteNomination(nomination.id);
+                                        }}
+                                        aria-disabled={!canDelete || deletingNomination === nomination.id}
+                                        className={`text-destructive ${!canDelete || deletingNomination === nomination.id ? "pointer-events-none opacity-50" : ""}`}
                                       >
                                         <Trash2 className="mr-2 h-4 w-4" />
                                         {deletingNomination === nomination.id ? "Removing..." : "Remove"}
@@ -1404,9 +1407,12 @@ export default function TenantAssessmentDetailPage() {
                                     </DropdownMenuTrigger>
                                     <DropdownMenuContent align="end">
                                       <DropdownMenuItem
-                                        onClick={() => handleDeleteNomination(nomination.id)}
-                                        className="text-destructive"
-                                        disabled={!canDelete || deletingNomination === nomination.id}
+                                        onClick={() => {
+                                          if (!canDelete || deletingNomination === nomination.id) return;
+                                          handleDeleteNomination(nomination.id);
+                                        }}
+                                        aria-disabled={!canDelete || deletingNomination === nomination.id}
+                                        className={`text-destructive ${!canDelete || deletingNomination === nomination.id ? "pointer-events-none opacity-50" : ""}`}
                                       >
                                         <Trash2 className="mr-2 h-4 w-4" />
                                         {deletingNomination === nomination.id ? "Removing..." : "Remove"}

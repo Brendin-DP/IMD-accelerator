@@ -706,9 +706,12 @@ export default function ClientDetailPage() {
                               Edit User
                             </DropdownMenuItem>
                             <DropdownMenuItem
-                              onClick={() => handleDeleteUser(user.id)}
-                              className="text-destructive"
-                              disabled={deletingUserId === user.id}
+                              onClick={() => {
+                                if (deletingUserId === user.id) return;
+                                handleDeleteUser(user.id);
+                              }}
+                              aria-disabled={deletingUserId === user.id}
+                              className={`text-destructive ${deletingUserId === user.id ? "pointer-events-none opacity-50" : ""}`}
                             >
                               <Trash2 className="mr-2 h-4 w-4" />
                               {deletingUserId === user.id ? "Deleting..." : "Delete User"}
