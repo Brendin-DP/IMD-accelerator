@@ -2,30 +2,38 @@
 
 import { createBrowserClient } from "@supabase/ssr";
 
-export function createClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+// Get environment variables - these must be available at build time
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error(
-      `Missing Supabase environment variables. Please ensure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are set in your environment variables.\n` +
-      `Check your Supabase project's API settings: https://supabase.com/dashboard/project/_/settings/api`
-    );
-  }
-
-  return createBrowserClient(supabaseUrl, supabaseAnonKey);
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error(
+    "⚠️ Missing Supabase environment variables!\n" +
+    "Please ensure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are set.\n" +
+    "For Vercel: Add them in Project Settings → Environment Variables\n" +
+    "For local: Create a .env.local file with these variables\n" +
+    "Get your keys: https://supabase.com/dashboard/project/_/settings/api"
+  );
 }
 
-// Lazy singleton instance - only created when accessed in the browser
+// Create the client instance - this will throw if env vars are missing, which is expected
 let _supabaseInstance: ReturnType<typeof createBrowserClient> | null = null;
 
 function getSupabase() {
   if (typeof window === 'undefined') {
     throw new Error('Supabase client can only be accessed in the browser');
   }
+  
   if (!_supabaseInstance) {
-    _supabaseInstance = createClient();
+    if (!supabaseUrl || !supabaseAnonKey) {
+      throw new Error(
+        'Supabase environment variables are not configured. ' +
+        'Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in your environment variables.'
+      );
+    }
+    _supabaseInstance = createBrowserClient(supabaseUrl, supabaseAnonKey);
   }
+  
   return _supabaseInstance;
 }
 
@@ -40,3 +48,8 @@ export const supabase = new Proxy({} as ReturnType<typeof createBrowserClient>, 
     return value;
   }
 });
+
+// Also export createClient for direct use if needed
+export function createClient() {
+  return getSupabase();
+}
