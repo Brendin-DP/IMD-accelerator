@@ -20,25 +20,34 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // 3️⃣ Get default tenant from env var
-  const defaultTenant = process.env.NEXT_PUBLIC_DEFAULT_TENANT ?? "admin";
+  // 3️⃣ Skip admin routes - admin uses /login directly, not tenant system
+  const adminRoutes = ["/login", "/dashboard", "/cohorts", "/settings", "/profile", "/help"];
+  const isAdminRoute = adminRoutes.some(route => pathname === route || pathname.startsWith(route + "/"));
+  
+  if (isAdminRoute) {
+    console.log("⏭️ Skipping middleware - Admin route:", pathname);
+    return NextResponse.next();
+  }
 
-  // 4️⃣ Resolve tenant based on environment
+  // 4️⃣ Get default tenant from env var (for redirecting /login to default tenant if needed)
+  const defaultTenant = process.env.NEXT_PUBLIC_DEFAULT_TENANT;
+
+  // 5️⃣ Resolve tenant based on environment
   let tenant: string | null = null;
   
   if (isLocalhost) {
     // Localhost: Extract tenant from subdomain
-    // admin.lvh.me → admin
-    // admin.localhost → admin
-    // localhost → null (no subdomain)
+    // spacex.lvh.me → spacex
+    // spacex.localhost → spacex
+    // localhost → null (no subdomain, goes to admin)
     if (hostname === "localhost" || hostname === "127.0.0.1") {
-      tenant = null; // No subdomain
+      tenant = null; // No subdomain - admin routes
     } else {
       tenant = hostname.split(".")[0];
     }
   } else {
     // Production: Extract tenant from path
-    // /tenant/admin/login → admin
+    // /tenant/spacex/login → spacex
     // /tenant/imd/login → imd
     const pathParts = pathname.split("/");
     if (pathParts[1] === "tenant" && pathParts[2]) {
@@ -46,31 +55,27 @@ export function middleware(req: NextRequest) {
     }
   }
 
-  // 5️⃣ Fallback to default tenant if no tenant resolved
-  tenant = tenant ?? defaultTenant;
-
   console.log("🔹 Middleware - Host:", host, "| IsLocalhost:", isLocalhost, "| Tenant:", tenant, "| Path:", pathname);
 
-  // 6️⃣ Production-only redirect: /login → /tenant/{defaultTenant}/login
-  if (!isLocalhost && pathname === "/login") {
+  // 6️⃣ Production-only redirect: /login → /tenant/{defaultTenant}/login (only if defaultTenant is set and not "admin")
+  if (!isLocalhost && pathname === "/login" && defaultTenant && defaultTenant !== "admin") {
     const redirectUrl = new URL(`/tenant/${defaultTenant}/login`, req.url);
     console.log("🔄 Redirecting /login to:", redirectUrl.pathname);
     return NextResponse.redirect(redirectUrl);
   }
 
-  // 7️⃣ Skip admin routes and plain localhost (no subdomain) in localhost mode
+  // 7️⃣ Skip plain localhost (no subdomain) in localhost mode - these are admin routes
   if (isLocalhost) {
     const isPlainLocalhost = hostname === "localhost" || hostname === "127.0.0.1";
-    const isAdmin = tenant === "admin";
     
-    if (isAdmin || isPlainLocalhost) {
-      console.log("⏭️ Skipping middleware - Admin or plain localhost:", { isAdmin, isPlainLocalhost, host, tenant });
+    if (isPlainLocalhost) {
+      console.log("⏭️ Skipping middleware - Plain localhost (admin routes):", { host, tenant });
       return NextResponse.next();
     }
   }
 
   // 8️⃣ Localhost: Rewrite subdomain routes to tenant paths
-  if (isLocalhost && tenant && tenant !== "admin" && !pathname.startsWith("/tenant/")) {
+  if (isLocalhost && tenant && !pathname.startsWith("/tenant/")) {
     let tenantPath = pathname;
     
     // Normalize root routes to known tenant paths
