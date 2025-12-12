@@ -174,14 +174,31 @@ export default function ParticipantDetailPage() {
             : null;
 
           return {
-            ...row,
+            id: row.id,
+            participant_id: row.participant_id,
+            cohort_assessment_id: row.cohort_assessment_id,
+            score: row.score,
+            status: row.status,
+            submitted_at: row.submitted_at,
+            allow_reviewer_nominations: row.allow_reviewer_nominations,
+            created_at: row.created_at,
             cohort_assessment: ca
               ? {
-                  ...ca,
-                  assessment_type: at,
+                  id: ca.id,
+                  name: ca.name,
+                  start_date: ca.start_date,
+                  end_date: ca.end_date,
+                  assessment_status: ca.assessment_status,
+                  assessment_type: at
+                    ? {
+                        id: at.id,
+                        name: at.name,
+                        description: at.description,
+                      }
+                    : undefined,
                 }
               : null,
-          } as ParticipantAssessment;
+          };
         });
 
         setParticipantAssessments(normalized);
