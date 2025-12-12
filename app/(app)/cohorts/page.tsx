@@ -282,7 +282,7 @@ export default function CohortsPage() {
         plan_id: cohort.plan_id || "",
         start_date: cohort.start_date ? cohort.start_date.split('T')[0] : "",
         end_date: cohort.end_date ? cohort.end_date.split('T')[0] : "",
-        participant_ids: participants?.map((p) => p.client_user_id) || [],
+        participant_ids: participants?.map((p: any) => p.client_user_id) || [],
       });
 
       // Fetch client users for the selected client
