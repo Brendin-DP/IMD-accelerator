@@ -11,6 +11,8 @@
     "generate:types:local": "node scripts/generate-types.js --local"
   },
   "dependencies": {
+    "@radix-ui/react-accordion": "^1.2.12",
+    "@radix-ui/react-select": "^2.2.6",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.78.0",
     "bcrypt": "^6.0.0",
