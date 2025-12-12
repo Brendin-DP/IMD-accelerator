@@ -224,7 +224,25 @@ export default function ParticipantDetailPage() {
         console.error("Error fetching nominations:", nominationsError);
         setNominations([]);
       } else {
-        setNominations(nominationsData || []);
+        // Supabase embedded selects sometimes return nested relations as arrays.
+        // Normalize `reviewer` and `external_reviewer` to single objects.
+        const normalized: ReviewerNomination[] = (nominationsData || []).map((row: any): ReviewerNomination => {
+          const reviewer = Array.isArray(row.reviewer)
+            ? row.reviewer[0] ?? null
+            : row.reviewer ?? null;
+
+          const externalReviewer = Array.isArray(row.external_reviewer)
+            ? row.external_reviewer[0] ?? null
+            : row.external_reviewer ?? null;
+
+          return {
+            ...row,
+            reviewer: reviewer,
+            external_reviewer: externalReviewer,
+          } as ReviewerNomination;
+        });
+
+        setNominations(normalized);
       }
     } catch (err) {
       console.error("Error fetching nominations:", err);
