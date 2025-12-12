@@ -25,9 +25,10 @@ export default function Assessment360() {
 
   useEffect(() => {
     const loadData = async () => {
-      // Fetch questions
-      const res = await fetch("http://localhost:4000/assessment_questions_360");
-      const questionsData = await res.json();
+      // Fetch questions from public/db.json
+      const res = await fetch("/db.json");
+      const data = await res.json();
+      const questionsData = data.assessment_questions_360 || [];
       setQuestions(questionsData);
 
       // Fetch participant_assessment_id

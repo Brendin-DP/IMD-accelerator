@@ -32,7 +32,7 @@ export default function IntegrationsPage() {
       icon: <Database className="h-8 w-8 text-primary" />,
       connected: true,
       canDisconnect: false,
-      url: "http://localhost:4000/assessment_questions_360",
+      url: "/db.json",
     },
     {
       id: "sso",
