@@ -1014,9 +1014,14 @@ export default function CohortDetailPage() {
                           </DropdownMenuTrigger>
                           <DropdownMenuContent>
                             <DropdownMenuItem
-                              onClick={() => handleRemoveParticipant(participant.id)}
-                              className="text-destructive"
-                              disabled={removing === participant.id}
+                              onClick={() => {
+                                if (removing === participant.id) return;
+                                handleRemoveParticipant(participant.id);
+                              }}
+                              aria-disabled={removing === participant.id}
+                              className={`text-destructive ${
+                                removing === participant.id ? "pointer-events-none opacity-50" : ""
+                              }`}
                             >
                               {removing === participant.id ? "Removing..." : "Remove"}
                             </DropdownMenuItem>
