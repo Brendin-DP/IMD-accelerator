@@ -644,8 +644,6 @@ export default function TenantDashboardPage() {
               id: nomination.id,
               request_status: nomination.request_status,
               created_at: nomination.created_at,
-              nominated_by_id: nomination.nominated_by_id,
-              is_external: nomination.is_external,
               participant_assessment: pa
                 ? {
                     id: pa.id,
@@ -676,7 +674,9 @@ export default function TenantDashboardPage() {
                         }
                       : undefined,
                   }
-                : undefined,
+                : {
+                    id: nomination.participant_assessment_id || nomination.id,
+                  },
             };
           });
 
