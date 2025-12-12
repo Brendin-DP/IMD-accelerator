@@ -1115,7 +1115,7 @@ export default function TenantAssessmentDetailPage() {
           </CardHeader>
           <CardContent>
           {participantAssessment ? (() => {
-            const pa = participantAssessment;
+            const pa = participantAssessment!;
             return (
               <div className="space-y-4">
                 <div className="grid gap-4 md:grid-cols-2">
