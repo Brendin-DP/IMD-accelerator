@@ -164,7 +164,31 @@ export default function ParticipantDetailPage() {
         console.error("Error fetching participant assessments:", assessmentsError);
         setParticipantAssessments([]);
       } else {
-        setParticipantAssessments(assessmentsData || []);
+        // Supabase embedded selects sometimes return nested relations as arrays.
+        // Normalize `cohort_assessment` and `assessment_type` to single objects.
+        const normalizedAssessments: ParticipantAssessment[] = (assessmentsData || []).map((row: any) => {
+          const cohortAssessment = Array.isArray(row.cohort_assessment)
+            ? row.cohort_assessment[0] ?? null
+            : row.cohort_assessment ?? null;
+
+          const assessmentType = cohortAssessment
+            ? (Array.isArray(cohortAssessment.assessment_type)
+                ? cohortAssessment.assessment_type[0] ?? null
+                : cohortAssessment.assessment_type ?? null)
+            : null;
+
+          return {
+            ...row,
+            cohort_assessment: cohortAssessment
+              ? {
+                  ...cohortAssessment,
+                  assessment_type: assessmentType,
+                }
+              : null,
+          };
+        });
+
+        setParticipantAssessments(normalizedAssessments);
         
         // Fetch nominations for all participant assessments
         if (assessmentsData && assessmentsData.length > 0) {
