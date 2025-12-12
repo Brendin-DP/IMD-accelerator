@@ -113,7 +113,18 @@ export default function ParticipantDetailPage() {
         return;
       }
 
-      setParticipant(participantData as Participant);
+      // Supabase relationship selects sometimes return nested rows as an array.
+      // Normalize `client_user` to a single object for our Participant type.
+      const normalizedClientUser = Array.isArray((participantData as any).client_user)
+        ? (participantData as any).client_user[0] ?? null
+        : (participantData as any).client_user ?? null;
+
+      const normalizedParticipant: Participant = {
+        ...(participantData as any),
+        client_user: normalizedClientUser,
+      };
+
+      setParticipant(normalizedParticipant);
 
       // Fetch cohort details
       const { data: cohortData, error: cohortError } = await supabase
