@@ -82,6 +82,10 @@ export default function ClientDetailPage() {
     email: "",
   });
   const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
+  const [isGlobalPasswordDialogOpen, setIsGlobalPasswordDialogOpen] = useState(false);
+  const [globalPassword, setGlobalPassword] = useState("");
+  const [settingGlobalPassword, setSettingGlobalPassword] = useState(false);
+  const [globalPasswordError, setGlobalPasswordError] = useState<string | null>(null);
 
   useEffect(() => {
     if (clientId) {
@@ -485,6 +489,43 @@ export default function ClientDetailPage() {
     }
   }
 
+  async function handleSetGlobalPassword(e: React.FormEvent) {
+    e.preventDefault();
+    setSettingGlobalPassword(true);
+    setGlobalPasswordError(null);
+
+    if (!globalPassword.trim()) {
+      setGlobalPasswordError("Password cannot be empty");
+      setSettingGlobalPassword(false);
+      return;
+    }
+
+    try {
+      // Update password_hash for all users in this client
+      const { error: updateError } = await supabase
+        .from("client_users")
+        .update({ password_hash: globalPassword })
+        .eq("client_id", clientId);
+
+      if (updateError) {
+        console.error("Error setting global passwords:", updateError);
+        setGlobalPasswordError(`Failed to set passwords: ${updateError.message}`);
+      } else {
+        // Success - close modal and refresh users
+        setIsGlobalPasswordDialogOpen(false);
+        setGlobalPassword("");
+        await fetchClientUsers();
+        // Show success message (optional - could use toast)
+        alert(`Password set successfully for all users in ${client?.name || "this client"}`);
+      }
+    } catch (err) {
+      console.error("Unexpected error:", err);
+      setGlobalPasswordError(err instanceof Error ? err.message : "An unexpected error occurred");
+    } finally {
+      setSettingGlobalPassword(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -640,6 +681,10 @@ export default function ClientDetailPage() {
                     <Upload className="mr-2 h-4 w-4" />
                     Import Users
                   </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setIsGlobalPasswordDialogOpen(true)}>
+                    <FileUp className="mr-2 h-4 w-4" />
+                    Set global Passwords (temp)
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -679,7 +724,11 @@ export default function ClientDetailPage() {
                 </thead>
                 <tbody>
                   {filteredUsers.map((user) => (
-                    <tr key={user.id} className="border-b hover:bg-muted/50 transition-colors">
+                    <tr 
+                      key={user.id} 
+                      className="border-b hover:bg-muted/50 transition-colors cursor-pointer"
+                      onClick={() => router.push(`/settings/clients/${clientId}/users/${user.id}`)}
+                    >
                       <td className="px-6 py-4 text-sm font-medium">{user.name || "-"}</td>
                       <td className="px-6 py-4 text-sm font-medium">{user.surname || "-"}</td>
                       <td className="px-6 py-4 text-sm">{user.email || "-"}</td>
@@ -1079,6 +1128,75 @@ export default function ClientDetailPage() {
               </Button>
               <Button type="submit" disabled={editing}>
                 {editing ? "Updating..." : "Update Client"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Global Password Dialog */}
+      <Dialog open={isGlobalPasswordDialogOpen} onOpenChange={setIsGlobalPasswordDialogOpen}>
+        <DialogContent>
+          <DialogClose onClick={() => {
+            setIsGlobalPasswordDialogOpen(false);
+            setGlobalPassword("");
+            setGlobalPasswordError(null);
+          }} />
+          <DialogHeader>
+            <DialogTitle>Set Global Passwords (temp)</DialogTitle>
+            <DialogDescription>
+              This is a temporary workaround to help set passwords for all users in this client. All users will have the same password.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSetGlobalPassword} className="space-y-4">
+            <div className="space-y-2">
+              <label htmlFor="global_password" className="text-sm font-medium">
+                Password <span className="text-destructive">*</span>
+              </label>
+              <Input
+                id="global_password"
+                type="password"
+                value={globalPassword}
+                onChange={(e) => setGlobalPassword(e.target.value)}
+                required
+                placeholder="Enter password for all users"
+                disabled={settingGlobalPassword}
+              />
+              <p className="text-sm text-muted-foreground">
+                This password will be set for all users in this client. The password will be stored as plain text (temporary workaround).
+              </p>
+            </div>
+
+            <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
+              <p className="text-sm text-yellow-800">
+                ⚠️ Warning: This is a temporary feature for prototyping. All users in this client will have the same password.
+              </p>
+            </div>
+
+            {globalPasswordError && (
+              <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">
+                {globalPasswordError}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setIsGlobalPasswordDialogOpen(false);
+                  setGlobalPassword("");
+                  setGlobalPasswordError(null);
+                }}
+                disabled={settingGlobalPassword}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={!globalPassword.trim() || settingGlobalPassword}
+              >
+                {settingGlobalPassword ? "Setting Passwords..." : "Set Global Password"}
               </Button>
             </div>
           </form>
