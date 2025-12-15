@@ -7,6 +7,7 @@ import { LayoutDashboard, Users, User, LogOut, ChevronDown, Bell, HelpCircle } f
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabaseClient";
+import { Analytics } from "@vercel/analytics/next"
 
 export default function TenantLayout({ children }: { children: React.ReactNode }) {
   const params = useParams();
