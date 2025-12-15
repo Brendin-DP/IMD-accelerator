@@ -7,6 +7,7 @@ import { LayoutDashboard, Users, Settings, User, LogOut, ChevronDown, HelpCircle
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabaseClient";
+import { Analytics } from "@vercel/analytics/next"
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
