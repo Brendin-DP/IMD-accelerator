@@ -563,8 +563,15 @@ export default function Assessment360() {
         return { questionIndex: 0, stepIndex: 0 };
       }
 
+      type AssessmentResponseRow = {
+        question_id: string;
+        is_answered: boolean;
+      };
+
       const answeredQuestionIds = new Set(
-        responses?.filter((r) => r.is_answered).map((r) => r.question_id) || []
+        ((responses ?? []) as AssessmentResponseRow[])
+          .filter((r) => r.is_answered)
+          .map((r) => r.question_id)
       );
 
       // If we have last_question_id, try to resume from there
