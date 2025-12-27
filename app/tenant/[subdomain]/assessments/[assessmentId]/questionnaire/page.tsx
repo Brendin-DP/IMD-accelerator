@@ -689,6 +689,11 @@ export default function Assessment360() {
   // Helper function to load existing responses
   async function loadExistingResponses(sessionId: string) {
     try {
+      type ResponseRow = {
+        question_id: string | number;
+        answer_text: string | null;
+      };
+
       const { data: responses, error } = await supabase
         .from("assessment_responses")
         .select("question_id, answer_text")
@@ -701,7 +706,7 @@ export default function Assessment360() {
 
       if (responses && responses.length > 0) {
         const existingAnswers: Record<string | number, string> = {};
-        responses.forEach((response) => {
+        (responses as ResponseRow[]).forEach((response) => {
           if (response.answer_text) {
             existingAnswers[response.question_id] = response.answer_text;
           }
