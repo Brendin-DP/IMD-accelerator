@@ -105,6 +105,7 @@ export default function TenantAssessmentDetailPage() {
   const [responseCount, setResponseCount] = useState<number>(0);
   const [totalQuestions, setTotalQuestions] = useState<number>(0);
   const [retakingAssessment, setRetakingAssessment] = useState(false);
+  const [startingAssessment, setStartingAssessment] = useState(false);
 
   useEffect(() => {
     const storedUser = localStorage.getItem("participant");
