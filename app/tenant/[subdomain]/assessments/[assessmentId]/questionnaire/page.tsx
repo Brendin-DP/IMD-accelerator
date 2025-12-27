@@ -564,14 +564,14 @@ export default function Assessment360() {
       }
 
       type AssessmentResponseRow = {
-        question_id: string;
+        question_id: string | number;
         is_answered: boolean;
       };
 
       const answeredQuestionIds = new Set(
         ((responses ?? []) as AssessmentResponseRow[])
           .filter((r) => r.is_answered)
-          .map((r) => r.question_id)
+          .map((r) => String(r.question_id))
       );
 
       // If we have last_question_id, try to resume from there
@@ -625,7 +625,7 @@ export default function Assessment360() {
         // Pulse assessment with steps
         const allQuestions = questionGroups.flatMap((g) => g.questions);
         for (let i = 0; i < allQuestions.length; i++) {
-          if (!answeredQuestionIds.has(allQuestions[i].id)) {
+          if (!answeredQuestionIds.has(String(allQuestions[i].id))) {
             // Find which step this question belongs to
             let currentIndex = 0;
             let stepIndex = 0;
@@ -667,7 +667,7 @@ export default function Assessment360() {
       } else {
         // 360 assessment without steps
         for (let i = 0; i < questions.length; i++) {
-          if (!answeredQuestionIds.has(questions[i].id)) {
+          if (!answeredQuestionIds.has(String(questions[i].id))) {
             console.log("✅ [DEBUG] Resuming at first unanswered question:", { questionIndex: i });
             return { questionIndex: i };
           }
