@@ -17,6 +17,12 @@ interface Question {
   step_id?: string | null;
 }
 
+type AssessmentResponseRow = {
+  question_id: string | number;
+  answer_text: string | null;
+  is_answered: boolean;
+};
+
 export default function ReviewQuestionnaire() {
   const params = useParams();
   const router = useRouter();
@@ -416,8 +422,10 @@ export default function ReviewQuestionnaire() {
         return { questionIndex: 0 };
       }
 
-      const answeredQuestionIds = new Set(
-        responses?.filter((r) => r.is_answered).map((r) => r.question_id) || []
+      const answeredQuestionIds = new Set<string>(
+        ((responses ?? []) as AssessmentResponseRow[])
+          .filter((r) => r.is_answered)
+          .map((r) => String(r.question_id))
       );
 
       // If we have last_question_id, try to resume from there
@@ -438,7 +446,7 @@ export default function ReviewQuestionnaire() {
 
       // Find first unanswered question
       for (let i = 0; i < questions.length; i++) {
-        if (!answeredQuestionIds.has(questions[i].id)) {
+        if (!answeredQuestionIds.has(String(questions[i].id))) {
           console.log("✅ [DEBUG REVIEWER] Resuming at first unanswered question:", {
             questionIndex: i,
           });
@@ -473,7 +481,7 @@ export default function ReviewQuestionnaire() {
 
       if (responses && responses.length > 0) {
         const existingAnswers: Record<string | number, string> = {};
-        responses.forEach((response) => {
+        (responses as AssessmentResponseRow[]).forEach((response) => {
           if (response.answer_text) {
             existingAnswers[response.question_id] = response.answer_text;
           }
