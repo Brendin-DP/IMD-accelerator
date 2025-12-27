@@ -109,14 +109,20 @@ export default function AssessmentDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [nominationSortStates, setNominationSortStates] = useState<Map<string, { key: string | null; direction: "asc" | "desc" | null }>>(new Map());
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [participantProgress, setParticipantProgress] = useState<Map<string, { answered: number; total: number; percentage: number }>>(new Map());
+  const [reviewerProgress, setReviewerProgress] = useState<Map<string, { answered: number; total: number; percentage: number }>>(new Map());
 
   // Prepare participant assessments for sorting
-  const participantsForSorting = participantAssessments.map((pa) => ({
-    ...pa,
-    name: ((pa.participant as any)?.client_user as any)?.name || "",
-    surname: ((pa.participant as any)?.client_user as any)?.surname || "",
-    email: ((pa.participant as any)?.client_user as any)?.email || "",
-  }));
+  const participantsForSorting = participantAssessments.map((pa) => {
+    const progress = pa.id ? participantProgress.get(pa.id) : null;
+    return {
+      ...pa,
+      name: ((pa.participant as any)?.client_user as any)?.name || "",
+      surname: ((pa.participant as any)?.client_user as any)?.surname || "",
+      email: ((pa.participant as any)?.client_user as any)?.email || "",
+      progressPercentage: progress?.percentage || 0,
+    };
+  });
 
   // Filter participants based on search query
   const filteredParticipants = participantsForSorting.filter((pa) => {
@@ -141,8 +147,47 @@ export default function AssessmentDetailPage() {
     // Fetch nominations when participant assessments are loaded
     if (participantAssessments.length > 0) {
       fetchAllNominations(participantAssessments);
+      fetchParticipantProgress();
     }
-  }, [participantAssessments]);
+  }, [participantAssessments, assessment]);
+
+  useEffect(() => {
+    // Fetch reviewer progress when nominations are loaded
+    if (nominations.length > 0 && assessment) {
+      fetchReviewerProgress();
+    }
+  }, [nominations, assessment]);
+
+  // Refresh progress when page gains focus or becomes visible (user returns to tab/window)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        if (participantAssessments.length > 0 && assessment) {
+          fetchParticipantProgress();
+        }
+        if (nominations.length > 0 && assessment) {
+          fetchReviewerProgress();
+        }
+      }
+    };
+
+    const handleFocus = () => {
+      if (participantAssessments.length > 0 && assessment) {
+        fetchParticipantProgress();
+      }
+      if (nominations.length > 0 && assessment) {
+        fetchReviewerProgress();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [participantAssessments, nominations, assessment]);
 
   async function fetchAssessmentDetails() {
     try {
@@ -350,6 +395,321 @@ export default function AssessmentDetailPage() {
     } catch (err) {
       console.error("Error fetching participant assessments:", err);
       setParticipantAssessments([]);
+    }
+  }
+
+  async function fetchParticipantProgress() {
+    try {
+      if (!assessment) return;
+
+      // Get assessment_definition_id
+      let assessmentDefinitionId: string | null = null;
+
+      // First, try to get it directly from cohort_assessment
+      if ((assessment as any).assessment_definition_id) {
+        assessmentDefinitionId = (assessment as any).assessment_definition_id;
+      } else {
+        // Fallback: get from plan mapping (workaround)
+        const cohortId = assessment.cohort_id;
+        const { data: cohort } = await supabase
+          .from("cohorts")
+          .select("plan_id")
+          .eq("id", cohortId)
+          .single();
+
+        if (cohort?.plan_id) {
+          const { data: planData } = await supabase
+            .from("plans")
+            .select("description")
+            .eq("id", cohort.plan_id)
+            .single();
+
+          if (planData?.description) {
+            const planMappingMatch = planData.description.match(/<!--PLAN_ASSESSMENT_DEFINITIONS:(.*?)-->/);
+            if (planMappingMatch) {
+              try {
+                const mapping = JSON.parse(planMappingMatch[1]);
+                const assessmentTypeId = assessment.assessment_type_id;
+                assessmentDefinitionId = mapping[assessmentTypeId] || null;
+              } catch (e) {
+                console.error("Error parsing plan assessment mapping:", e);
+              }
+            }
+          }
+        }
+
+        // If still no custom assessment, fall back to system assessment
+        if (!assessmentDefinitionId) {
+          const { data: systemAssessment } = await supabase
+            .from("assessment_definitions_v2")
+            .select("id")
+            .eq("assessment_type_id", assessment.assessment_type_id)
+            .eq("is_system", true)
+            .maybeSingle();
+
+          if (systemAssessment) {
+            assessmentDefinitionId = systemAssessment.id;
+          }
+        }
+      }
+
+      if (!assessmentDefinitionId) {
+        console.warn("Could not determine assessment_definition_id");
+        return;
+      }
+
+      // Count total questions for this assessment
+      const { count: totalQuestionsCount, error: countError } = await supabase
+        .from("assessment_questions_v2")
+        .select("*", { count: "exact", head: true })
+        .eq("assessment_definition_id", assessmentDefinitionId);
+
+      const total = totalQuestionsCount || 0;
+
+      // Get all participant assessment IDs
+      const participantAssessmentIds = participantAssessments
+        .map((pa) => pa.id)
+        .filter((id): id is string => id !== null);
+
+      if (participantAssessmentIds.length === 0) {
+        return;
+      }
+
+      // Fetch all response sessions for these participant assessments
+      const { data: responseSessions, error: sessionsError } = await supabase
+        .from("assessment_response_sessions")
+        .select("id, participant_assessment_id")
+        .in("participant_assessment_id", participantAssessmentIds);
+
+      if (sessionsError) {
+        console.error("Error fetching response sessions:", sessionsError);
+        return;
+      }
+
+      if (!responseSessions || responseSessions.length === 0) {
+        // No sessions yet, set all progress to 0
+        const progressMap = new Map<string, { answered: number; total: number; percentage: number }>();
+        participantAssessments.forEach((pa) => {
+          if (pa.id) {
+            progressMap.set(pa.id, { answered: 0, total, percentage: 0 });
+          }
+        });
+        setParticipantProgress(progressMap);
+        return;
+      }
+
+      // Get all session IDs
+      const sessionIds = responseSessions.map((s: any) => s.id);
+
+      // Count answered questions per session - use is_answered flag for accurate tracking
+      const { data: responses, error: responsesError } = await supabase
+        .from("assessment_responses")
+        .select("session_id, question_id, is_answered")
+        .in("session_id", sessionIds)
+        .eq("is_answered", true);
+
+      if (responsesError) {
+        console.error("Error fetching responses:", responsesError);
+        return;
+      }
+
+      // Create a map of session_id -> participant_assessment_id
+      const sessionToParticipantMap = new Map<string, string>();
+      responseSessions.forEach((s: any) => {
+        sessionToParticipantMap.set(s.id, s.participant_assessment_id);
+      });
+
+      // Count answered questions per participant assessment
+      const progressMap = new Map<string, { answered: number; total: number; percentage: number }>();
+      
+      // Initialize all participants with 0 progress
+      participantAssessments.forEach((pa) => {
+        if (pa.id) {
+          progressMap.set(pa.id, { answered: 0, total, percentage: 0 });
+        }
+      });
+
+      // Count unique answered questions per participant (using is_answered = true)
+      const participantAnsweredMap = new Map<string, Set<string>>();
+      (responses || []).forEach((r: any) => {
+        // Only count if is_answered is true
+        if (r.is_answered) {
+          const participantAssessmentId = sessionToParticipantMap.get(r.session_id);
+          if (participantAssessmentId) {
+            if (!participantAnsweredMap.has(participantAssessmentId)) {
+              participantAnsweredMap.set(participantAssessmentId, new Set());
+            }
+            participantAnsweredMap.get(participantAssessmentId)!.add(String(r.question_id));
+          }
+        }
+      });
+
+      // Calculate percentages
+      participantAnsweredMap.forEach((answeredSet, participantAssessmentId) => {
+        const answered = answeredSet.size;
+        const percentage = total > 0 ? Math.round((answered / total) * 100) : 0;
+        progressMap.set(participantAssessmentId, { answered, total, percentage });
+      });
+
+      setParticipantProgress(progressMap);
+    } catch (err) {
+      console.error("Error fetching participant progress:", err);
+    }
+  }
+
+  async function fetchReviewerProgress() {
+    try {
+      if (!assessment) return;
+
+      // Get assessment_definition_id (same logic as participant progress)
+      let assessmentDefinitionId: string | null = null;
+
+      if ((assessment as any).assessment_definition_id) {
+        assessmentDefinitionId = (assessment as any).assessment_definition_id;
+      } else {
+        const cohortId = assessment.cohort_id;
+        const { data: cohort } = await supabase
+          .from("cohorts")
+          .select("plan_id")
+          .eq("id", cohortId)
+          .single();
+
+        if (cohort?.plan_id) {
+          const { data: planData } = await supabase
+            .from("plans")
+            .select("description")
+            .eq("id", cohort.plan_id)
+            .single();
+
+          if (planData?.description) {
+            const planMappingMatch = planData.description.match(/<!--PLAN_ASSESSMENT_DEFINITIONS:(.*?)-->/);
+            if (planMappingMatch) {
+              try {
+                const mapping = JSON.parse(planMappingMatch[1]);
+                const assessmentTypeId = assessment.assessment_type_id;
+                assessmentDefinitionId = mapping[assessmentTypeId] || null;
+              } catch (e) {
+                console.error("Error parsing plan assessment mapping:", e);
+              }
+            }
+          }
+        }
+
+        if (!assessmentDefinitionId) {
+          const { data: systemAssessment } = await supabase
+            .from("assessment_definitions_v2")
+            .select("id")
+            .eq("assessment_type_id", assessment.assessment_type_id)
+            .eq("is_system", true)
+            .maybeSingle();
+
+          if (systemAssessment) {
+            assessmentDefinitionId = systemAssessment.id;
+          }
+        }
+      }
+
+      if (!assessmentDefinitionId) {
+        console.warn("Could not determine assessment_definition_id for reviewer progress");
+        return;
+      }
+
+      // Count total questions for this assessment
+      const { count: totalQuestionsCount } = await supabase
+        .from("assessment_questions_v2")
+        .select("*", { count: "exact", head: true })
+        .eq("assessment_definition_id", assessmentDefinitionId);
+
+      const total = totalQuestionsCount || 0;
+
+      // Get all reviewer nomination IDs
+      const reviewerNominationIds = nominations
+        .map((n) => n.id)
+        .filter((id): id is string => id !== null);
+
+      if (reviewerNominationIds.length === 0) {
+        return;
+      }
+
+      // Fetch all response sessions for reviewers
+      const { data: responseSessions, error: sessionsError } = await supabase
+        .from("assessment_response_sessions")
+        .select("id, reviewer_nomination_id")
+        .in("reviewer_nomination_id", reviewerNominationIds)
+        .eq("respondent_type", "reviewer");
+
+      if (sessionsError) {
+        console.error("Error fetching reviewer response sessions:", sessionsError);
+        return;
+      }
+
+      if (!responseSessions || responseSessions.length === 0) {
+        // No sessions yet, set all progress to 0
+        const progressMap = new Map<string, { answered: number; total: number; percentage: number }>();
+        nominations.forEach((n) => {
+          if (n.id) {
+            progressMap.set(n.id, { answered: 0, total, percentage: 0 });
+          }
+        });
+        setReviewerProgress(progressMap);
+        return;
+      }
+
+      // Get all session IDs
+      const sessionIds = responseSessions.map((s: any) => s.id);
+
+      // Count answered questions per session - use is_answered flag
+      const { data: responses, error: responsesError } = await supabase
+        .from("assessment_responses")
+        .select("session_id, question_id, is_answered")
+        .in("session_id", sessionIds)
+        .eq("is_answered", true);
+
+      if (responsesError) {
+        console.error("Error fetching reviewer responses:", responsesError);
+        return;
+      }
+
+      // Create a map of session_id -> reviewer_nomination_id
+      const sessionToNominationMap = new Map<string, string>();
+      responseSessions.forEach((s: any) => {
+        sessionToNominationMap.set(s.id, s.reviewer_nomination_id);
+      });
+
+      // Count answered questions per reviewer nomination
+      const progressMap = new Map<string, { answered: number; total: number; percentage: number }>();
+      
+      // Initialize all nominations with 0 progress
+      nominations.forEach((n) => {
+        if (n.id) {
+          progressMap.set(n.id, { answered: 0, total, percentage: 0 });
+        }
+      });
+
+      // Count unique answered questions per reviewer nomination
+      const nominationAnsweredMap = new Map<string, Set<string>>();
+      (responses || []).forEach((r: any) => {
+        if (r.is_answered) {
+          const nominationId = sessionToNominationMap.get(r.session_id);
+          if (nominationId) {
+            if (!nominationAnsweredMap.has(nominationId)) {
+              nominationAnsweredMap.set(nominationId, new Set());
+            }
+            nominationAnsweredMap.get(nominationId)!.add(String(r.question_id));
+          }
+        }
+      });
+
+      // Calculate percentages
+      nominationAnsweredMap.forEach((answeredSet, nominationId) => {
+        const answered = answeredSet.size;
+        const percentage = total > 0 ? Math.round((answered / total) * 100) : 0;
+        progressMap.set(nominationId, { answered, total, percentage });
+      });
+
+      setReviewerProgress(progressMap);
+    } catch (err) {
+      console.error("Error fetching reviewer progress:", err);
     }
   }
 
@@ -901,12 +1261,23 @@ export default function AssessmentDetailPage() {
                     </div>
                   </th>
                   <th 
-                    className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none"
+                    className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none w-[140px]"
                     onClick={() => handleSort("status")}
                   >
                     <div className="flex items-center gap-2">
                       Status
                       {sortConfig.key === "status" && (
+                        sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-6 py-3 text-left text-sm font-medium cursor-pointer hover:bg-muted/70 select-none w-[200px]"
+                    onClick={() => handleSort("progressPercentage")}
+                  >
+                    <div className="flex items-center gap-2">
+                      Progress
+                      {sortConfig.key === "progressPercentage" && (
                         sortConfig.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
                       )}
                     </div>
@@ -1053,6 +1424,28 @@ export default function AssessmentDetailPage() {
                           )}
                         </td>
                         <td className="px-6 py-4 text-sm cursor-pointer">
+                          {pa.id ? (() => {
+                            const progress = participantProgress.get(pa.id) || { answered: 0, total: 0, percentage: 0 };
+                            return (
+                              <div className="flex items-center gap-3 min-w-[120px]">
+                                <div className="flex-1 min-w-[80px]">
+                                  <div className="h-2 bg-muted rounded-full overflow-hidden">
+                                    <div
+                                      className="h-full bg-primary transition-all duration-300 rounded-full"
+                                      style={{ width: `${progress.percentage}%` }}
+                                    />
+                                  </div>
+                                </div>
+                                <span className="text-sm font-medium whitespace-nowrap">
+                                  {progress.percentage}%
+                                </span>
+                              </div>
+                            );
+                          })() : (
+                            "-"
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-sm cursor-pointer">
                           {nominationsCount > 0 ? (
                             <span className="text-sm font-medium">
                               {acceptedCount}/{nominationsCount}
@@ -1073,7 +1466,7 @@ export default function AssessmentDetailPage() {
                       </tr>
                       {isExpanded && pa.id && nominationsCount > 0 && (
                         <tr key={`nominations-${pa.id}`}>
-                          <td colSpan={7} className="px-0 py-4 bg-muted/30">
+                          <td colSpan={8} className="px-0 py-4 bg-muted/30">
                             <div className="px-6">
                               <h4 className="text-sm font-semibold mb-3">Nominations</h4>
                               <div className="w-full overflow-x-auto">
@@ -1125,15 +1518,20 @@ export default function AssessmentDetailPage() {
                                       </div>
                                     </th>
                                     <th 
-                                      className="px-4 py-2 text-left text-xs font-medium cursor-pointer hover:bg-muted/70 select-none"
+                                      className="px-4 py-2 text-left text-xs font-medium cursor-pointer hover:bg-muted/70 select-none w-[120px]"
                                       onClick={() => handleNominationSort("review_status")}
                                     >
                                       <div className="flex items-center gap-1">
-                                        Review Progress
+                                        Review Status
                                         {sortState.key === "review_status" && (
                                           sortState.direction === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
                                         )}
                                       </div>
+                                    </th>
+                                    <th 
+                                      className="px-4 py-2 text-left text-xs font-medium cursor-pointer hover:bg-muted/70 select-none w-[150px]"
+                                    >
+                                      Review Progress
                                     </th>
                                   </tr>
                                 </thead>
@@ -1184,6 +1582,26 @@ export default function AssessmentDetailPage() {
                                               Not started
                                             </span>
                                           )}
+                                        </td>
+                                        <td className="px-4 py-2 text-xs">
+                                          {(() => {
+                                            const progress = reviewerProgress.get(nomination.id) || { answered: 0, total: 0, percentage: 0 };
+                                            return (
+                                              <div className="flex items-center gap-2 min-w-[120px]">
+                                                <div className="flex-1 min-w-[60px]">
+                                                  <div className="h-2 bg-muted rounded-full overflow-hidden">
+                                                    <div
+                                                      className="h-full bg-primary transition-all duration-300 rounded-full"
+                                                      style={{ width: `${progress.percentage}%` }}
+                                                    />
+                                                  </div>
+                                                </div>
+                                                <span className="text-xs font-medium whitespace-nowrap">
+                                                  {progress.percentage}%
+                                                </span>
+                                              </div>
+                                            );
+                                          })()}
                                         </td>
                                       </tr>
                                     );
