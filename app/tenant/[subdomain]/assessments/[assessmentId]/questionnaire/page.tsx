@@ -49,6 +49,8 @@ export default function Assessment360() {
   const [usesNewPlan, setUsesNewPlan] = useState(false);
   const [assessmentType, setAssessmentType] = useState<string>("");
   const [assessmentDefinitionId, setAssessmentDefinitionId] = useState<string | null>(null);
+  const [responseSessionId, setResponseSessionId] = useState<string | null>(null);
+  const [loadingSession, setLoadingSession] = useState(false);
 
   useEffect(() => {
     const loadData = async () => {
@@ -151,43 +153,89 @@ export default function Assessment360() {
           setAssessmentDefinitionId(assessmentDefinitionId);
           setUsesNewPlan(true);
           await loadQuestionsFromDB(assessmentDefinitionId, assessmentTypeId, assessmentTypeName);
+
+          // Fetch participant_assessment_id and create session AFTER assessmentDefinitionId is determined
+          const storedUser = localStorage.getItem("participant");
+          if (storedUser) {
+            try {
+              const userData = JSON.parse(storedUser);
+
+              // Find the cohort_participant for this user AND this specific cohort
+              const { data: participants, error: participantsError } = await supabase
+                .from("cohort_participants")
+                .select("id")
+                .eq("client_user_id", userData.id)
+                .eq("cohort_id", cohortAssessment.cohort_id);
+
+              if (participantsError || !participants || participants.length === 0) {
+                console.warn("⚠️ [DEBUG] No participants found for this user in this cohort");
+              } else {
+                const participantIds = participants.map((p: any) => p.id);
+
+                // Fetch participant_assessment
+                const { data: participantAssessmentData, error: paError } = await supabase
+                  .from("participant_assessments")
+                  .select("*")
+                  .eq("cohort_assessment_id", assessmentId)
+                  .in("participant_id", participantIds)
+                  .maybeSingle();
+
+                if (!paError && participantAssessmentData) {
+                  setParticipantAssessmentId(participantAssessmentData.id);
+                  
+                  // Create or get response session - use local variable, not state
+                  console.log("🔵 [DEBUG] Creating/getting response session for participant");
+                  console.log("🔵 [DEBUG] Using assessmentDefinitionId:", assessmentDefinitionId);
+                  const sessionId = await createOrGetResponseSession(
+                    participantAssessmentData.id,
+                    assessmentDefinitionId, // Use local variable, not state
+                    "participant",
+                    undefined,
+                    undefined,
+                    userData.id
+                  );
+                  console.log("🔵 [DEBUG] Session ID result:", sessionId);
+                } else {
+                  console.warn("⚠️ [DEBUG] No participant assessment found:", paError);
+                }
+              }
+            } catch (error) {
+              console.error("❌ [DEBUG] Error loading participant data:", error);
+            }
+          }
         } else {
           // Simulate: Always load from db.json
           await loadQuestionsFromJSON();
-        }
+          
+          // Still try to fetch participant_assessment_id for old plan (but won't create session)
+          const storedUser = localStorage.getItem("participant");
+          if (storedUser) {
+            try {
+              const userData = JSON.parse(storedUser);
 
-        // Fetch participant_assessment_id
-        const storedUser = localStorage.getItem("participant");
-        if (storedUser) {
-          try {
-            const userData = JSON.parse(storedUser);
+              const { data: participants, error: participantsError } = await supabase
+                .from("cohort_participants")
+                .select("id")
+                .eq("client_user_id", userData.id)
+                .eq("cohort_id", cohortAssessment.cohort_id);
 
-            // Find the cohort_participant for this user AND this specific cohort
-            const { data: participants, error: participantsError } = await supabase
-              .from("cohort_participants")
-              .select("id")
-              .eq("client_user_id", userData.id)
-              .eq("cohort_id", cohortAssessment.cohort_id);
+              if (!participantsError && participants && participants.length > 0) {
+                const participantIds = participants.map((p: any) => p.id);
 
-            if (participantsError || !participants || participants.length === 0) {
-              console.warn("No participants found for this user in this cohort");
-            } else {
-              const participantIds = participants.map((p: any) => p.id);
+                const { data: participantAssessmentData, error: paError } = await supabase
+                  .from("participant_assessments")
+                  .select("*")
+                  .eq("cohort_assessment_id", assessmentId)
+                  .in("participant_id", participantIds)
+                  .maybeSingle();
 
-              // Fetch participant_assessment
-              const { data: participantAssessmentData, error: paError } = await supabase
-                .from("participant_assessments")
-                .select("*")
-                .eq("cohort_assessment_id", assessmentId)
-                .in("participant_id", participantIds)
-                .maybeSingle();
-
-              if (!paError && participantAssessmentData) {
-                setParticipantAssessmentId(participantAssessmentData.id);
+                if (!paError && participantAssessmentData) {
+                  setParticipantAssessmentId(participantAssessmentData.id);
+                }
               }
+            } catch (error) {
+              console.error("Error loading participant data:", error);
             }
-          } catch (error) {
-            console.error("Error loading participant data:", error);
           }
         }
       } catch (error) {
@@ -341,6 +389,278 @@ export default function Assessment360() {
     setQuestionGroups(groups);
   }
 
+  // Helper function to create or get response session
+  async function createOrGetResponseSession(
+    participantAssessmentId: string,
+    assessmentDefinitionId: string,
+    respondentType: "participant" | "reviewer",
+    reviewerNominationId?: string,
+    externalReviewerId?: string,
+    clientUserId?: string
+  ): Promise<string | null> {
+    try {
+      setLoadingSession(true);
+      console.log("🔵 [DEBUG] createOrGetResponseSession called with:", {
+        participantAssessmentId,
+        assessmentDefinitionId,
+        respondentType,
+        reviewerNominationId,
+        externalReviewerId,
+        clientUserId,
+      });
+
+      // Check if session already exists
+      let query = supabase
+        .from("assessment_response_sessions")
+        .select("id")
+        .eq("participant_assessment_id", participantAssessmentId)
+        .eq("assessment_definition_id", assessmentDefinitionId)
+        .eq("respondent_type", respondentType);
+
+      if (reviewerNominationId) {
+        query = query.eq("reviewer_nomination_id", reviewerNominationId);
+      }
+
+      const { data: existingSession, error: checkError } = await query.maybeSingle();
+
+      console.log("🔵 [DEBUG] Session check result:", { existingSession, checkError });
+
+      if (checkError && checkError.code !== "PGRST116") {
+        console.error("❌ [DEBUG] Error checking for existing session:", checkError);
+        return null;
+      }
+
+      if (existingSession) {
+        console.log("✅ [DEBUG] Found existing session:", existingSession.id);
+        setResponseSessionId(existingSession.id);
+        // Load existing responses
+        await loadExistingResponses(existingSession.id);
+        return existingSession.id;
+      }
+
+      // Create new session
+      const sessionData: any = {
+        participant_assessment_id: participantAssessmentId,
+        assessment_definition_id: assessmentDefinitionId,
+        respondent_type: respondentType,
+        status: "in_progress",
+        started_at: new Date().toISOString(),
+        completion_percent: 0,
+      };
+
+      if (reviewerNominationId) {
+        sessionData.reviewer_nomination_id = reviewerNominationId;
+      }
+
+      if (externalReviewerId) {
+        sessionData.respondent_external_reviewer_id = externalReviewerId;
+      }
+
+      if (clientUserId) {
+        sessionData.respondent_client_user_id = clientUserId;
+      }
+
+      console.log("🔵 [DEBUG] Creating new session with data:", sessionData);
+
+      const { data: newSession, error: createError } = await supabase
+        .from("assessment_response_sessions")
+        .insert([sessionData])
+        .select()
+        .single();
+
+      if (createError) {
+        console.error("❌ [DEBUG] Error creating response session:", createError);
+        return null;
+      }
+
+      if (newSession) {
+        console.log("✅ [DEBUG] Created new session:", newSession.id);
+        setResponseSessionId(newSession.id);
+        return newSession.id;
+      }
+
+      console.warn("⚠️ [DEBUG] No session returned from create");
+      return null;
+    } catch (error) {
+      console.error("❌ [DEBUG] Unexpected error creating/getting session:", error);
+      return null;
+    } finally {
+      setLoadingSession(false);
+    }
+  }
+
+  // Helper function to load existing responses
+  async function loadExistingResponses(sessionId: string) {
+    try {
+      const { data: responses, error } = await supabase
+        .from("assessment_responses")
+        .select("question_id, answer_text")
+        .eq("session_id", sessionId);
+
+      if (error) {
+        console.error("Error loading existing responses:", error);
+        return;
+      }
+
+      if (responses && responses.length > 0) {
+        const existingAnswers: Record<string | number, string> = {};
+        responses.forEach((response) => {
+          if (response.answer_text) {
+            existingAnswers[response.question_id] = response.answer_text;
+          }
+        });
+        setAnswers((prev) => ({ ...prev, ...existingAnswers }));
+      }
+    } catch (error) {
+      console.error("Unexpected error loading responses:", error);
+    }
+  }
+
+  // Helper function to save question response
+  async function saveQuestionResponse(
+    sessionId: string,
+    questionId: string,
+    answerText: string | null
+  ): Promise<void> {
+    try {
+      console.log("💾 [DEBUG] saveQuestionResponse called:", {
+        sessionId,
+        questionId,
+        answerText: answerText ? `${answerText.substring(0, 50)}...` : null,
+        answerLength: answerText?.length || 0,
+      });
+
+      if (!sessionId) {
+        console.error("❌ [DEBUG] No sessionId provided!");
+        return;
+      }
+
+      if (!questionId) {
+        console.error("❌ [DEBUG] No questionId provided!");
+        return;
+      }
+
+      if (!answerText || answerText.trim() === "") {
+        console.log("ℹ️ [DEBUG] Empty answer, checking for existing response to mark as not answered");
+        // Don't save empty answers, but mark as not answered if exists
+        const { data: existingResponse, error: checkError } = await supabase
+          .from("assessment_responses")
+          .select("id")
+          .eq("session_id", sessionId)
+          .eq("question_id", questionId)
+          .maybeSingle();
+
+        console.log("🔵 [DEBUG] Empty answer check:", { existingResponse, checkError });
+
+        if (existingResponse) {
+          const { error: updateError } = await supabase
+            .from("assessment_responses")
+            .update({
+              answer_text: null,
+              is_answered: false,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", existingResponse.id);
+
+          if (updateError) {
+            console.error("❌ [DEBUG] Error updating empty response:", updateError);
+          } else {
+            console.log("✅ [DEBUG] Marked existing response as not answered");
+          }
+        }
+        return;
+      }
+
+      // Check if response exists
+      const { data: existingResponse, error: checkError } = await supabase
+        .from("assessment_responses")
+        .select("id")
+        .eq("session_id", sessionId)
+        .eq("question_id", questionId)
+        .maybeSingle();
+
+      console.log("🔵 [DEBUG] Response existence check:", { existingResponse, checkError });
+
+      if (existingResponse) {
+        // Update existing response
+        console.log("🔄 [DEBUG] Updating existing response:", existingResponse.id);
+        const { error: updateError } = await supabase
+          .from("assessment_responses")
+          .update({
+            answer_text: answerText,
+            is_answered: true,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", existingResponse.id);
+
+        if (updateError) {
+          console.error("❌ [DEBUG] Error updating response:", updateError);
+        } else {
+          console.log("✅ [DEBUG] Successfully updated response");
+        }
+      } else {
+        // Insert new response
+        console.log("➕ [DEBUG] Inserting new response");
+        const insertData = {
+          session_id: sessionId,
+          question_id: questionId,
+          answer_text: answerText,
+          is_answered: true,
+        };
+        console.log("🔵 [DEBUG] Insert data:", insertData);
+
+        const { data: insertedData, error: insertError } = await supabase
+          .from("assessment_responses")
+          .insert(insertData)
+          .select();
+
+        if (insertError) {
+          console.error("❌ [DEBUG] Error inserting response:", insertError);
+          console.error("❌ [DEBUG] Insert error details:", JSON.stringify(insertError, null, 2));
+        } else {
+          console.log("✅ [DEBUG] Successfully inserted response:", insertedData);
+        }
+      }
+    } catch (error) {
+      console.error("❌ [DEBUG] Unexpected error saving response:", error);
+    }
+  }
+
+  // Helper function to update session progress
+  async function updateSessionProgress(
+    sessionId: string,
+    lastQuestionId: string,
+    lastStepId?: string | null,
+    totalQuestions?: number,
+    answeredCount?: number
+  ): Promise<void> {
+    try {
+      const updateData: any = {
+        last_question_id: lastQuestionId,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (lastStepId !== undefined) {
+        updateData.last_step_id = lastStepId;
+      }
+
+      if (totalQuestions !== undefined && answeredCount !== undefined) {
+        updateData.completion_percent = Math.round((answeredCount / totalQuestions) * 100);
+      }
+
+      const { error } = await supabase
+        .from("assessment_response_sessions")
+        .update(updateData)
+        .eq("id", sessionId);
+
+      if (error) {
+        console.error("Error updating session progress:", error);
+      }
+    } catch (error) {
+      console.error("Unexpected error updating session progress:", error);
+    }
+  }
+
   const handleAnswerChange = (questionId: number | string, value: string) => {
     setAnswers((prev) => ({
       ...prev,
@@ -349,6 +669,72 @@ export default function Assessment360() {
   };
 
   const handleNext = async () => {
+    console.log("➡️ [DEBUG] handleNext called");
+    console.log("🔵 [DEBUG] Current state:", {
+      responseSessionId,
+      usesNewPlan,
+      assessmentDefinitionId,
+      current,
+      currentStep,
+      answersCount: Object.keys(answers).length,
+    });
+
+    // Save current question response before navigating
+    if (responseSessionId && usesNewPlan && assessmentDefinitionId) {
+      console.log("✅ [DEBUG] Conditions met for saving response");
+      let currentQuestion: Question;
+      let currentStepId: string | null = null;
+
+      if (assessmentType && assessmentType.toLowerCase() === "pulse" && questionGroups.length > 0) {
+        const allQuestions = questionGroups.flatMap(g => g.questions);
+        currentQuestion = allQuestions[current];
+        const currentGroup = questionGroups[currentStep];
+        if (currentGroup.step) {
+          currentStepId = currentGroup.step.id;
+        }
+        console.log("🔵 [DEBUG] Pulse assessment - current question:", {
+          questionId: currentQuestion?.id,
+          questionText: currentQuestion?.text?.substring(0, 50),
+          stepId: currentStepId,
+        });
+      } else {
+        currentQuestion = questions[current];
+        console.log("🔵 [DEBUG] 360 assessment - current question:", {
+          questionId: currentQuestion?.id,
+          questionText: currentQuestion?.text?.substring(0, 50),
+        });
+      }
+
+      if (currentQuestion && typeof currentQuestion.id === "string") {
+        const answerText = answers[currentQuestion.id] || null;
+        console.log("💾 [DEBUG] About to save response:", {
+          questionId: currentQuestion.id,
+          answerText: answerText ? `${answerText.substring(0, 50)}...` : null,
+        });
+        await saveQuestionResponse(responseSessionId, currentQuestion.id, answerText);
+
+        // Calculate progress
+        const allQuestions = assessmentType && assessmentType.toLowerCase() === "pulse" && questionGroups.length > 0
+          ? questionGroups.flatMap(g => g.questions)
+          : questions;
+        
+        const totalQuestions = allQuestions.length;
+        const answeredCount = allQuestions.filter((q: Question) => {
+          const answer = answers[q.id];
+          return answer && answer.trim() !== "";
+        }).length;
+
+        await updateSessionProgress(
+          responseSessionId,
+          currentQuestion.id,
+          currentStepId,
+          totalQuestions,
+          answeredCount
+        );
+      }
+    }
+
+    // Navigate to next question
     if (assessmentType && assessmentType.toLowerCase() === "pulse" && usesNewPlan && questionGroups.length > 0) {
       // Pulse with steps - navigate to next question in current step or next step
       const allQuestions = questionGroups.flatMap(g => g.questions);
@@ -436,6 +822,52 @@ export default function Assessment360() {
 
     setCompleting(true);
     try {
+      // Save final question response if using new plan
+      if (responseSessionId && usesNewPlan && assessmentDefinitionId) {
+        let currentQuestion: Question;
+        let currentStepId: string | null = null;
+
+        if (assessmentType && assessmentType.toLowerCase() === "pulse" && questionGroups.length > 0) {
+          const allQuestions = questionGroups.flatMap(g => g.questions);
+          currentQuestion = allQuestions[current];
+          const currentGroup = questionGroups[currentStep];
+          if (currentGroup.step) {
+            currentStepId = currentGroup.step.id;
+          }
+        } else {
+          currentQuestion = questions[current];
+        }
+
+        if (currentQuestion && typeof currentQuestion.id === "string") {
+          const answerText = answers[currentQuestion.id] || null;
+          await saveQuestionResponse(responseSessionId, currentQuestion.id, answerText);
+
+          // Update session to completed
+          const allQuestions = assessmentType && assessmentType.toLowerCase() === "pulse" && questionGroups.length > 0
+            ? questionGroups.flatMap(g => g.questions)
+            : questions;
+          
+          const totalQuestions = allQuestions.length;
+          const answeredCount = allQuestions.filter((q: Question) => {
+            const answer = answers[q.id];
+            return answer && answer.trim() !== "";
+          }).length;
+
+          await supabase
+            .from("assessment_response_sessions")
+            .update({
+              status: "completed",
+              submitted_at: new Date().toISOString(),
+              last_question_id: currentQuestion.id,
+              last_step_id: currentStepId,
+              completion_percent: Math.round((answeredCount / totalQuestions) * 100),
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", responseSessionId);
+        }
+      }
+
+      // Update participant assessment status
       const { error: updateError } = await supabase
         .from("participant_assessments")
         .update({ status: "Completed" })

@@ -110,6 +110,158 @@ export type Database = {
           },
         ]
       }
+      assessment_response_sessions: {
+        Row: {
+          assessment_definition_id: string
+          completion_percent: number
+          created_at: string
+          id: string
+          last_question_id: string | null
+          last_step_id: string | null
+          participant_assessment_id: string
+          respondent_client_user_id: string | null
+          respondent_external_reviewer_id: string | null
+          respondent_type: string
+          reviewer_nomination_id: string | null
+          started_at: string | null
+          status: string
+          submitted_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          assessment_definition_id: string
+          completion_percent?: number
+          created_at?: string
+          id?: string
+          last_question_id?: string | null
+          last_step_id?: string | null
+          participant_assessment_id: string
+          respondent_client_user_id?: string | null
+          respondent_external_reviewer_id?: string | null
+          respondent_type: string
+          reviewer_nomination_id?: string | null
+          started_at?: string | null
+          status?: string
+          submitted_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          assessment_definition_id?: string
+          completion_percent?: number
+          created_at?: string
+          id?: string
+          last_question_id?: string | null
+          last_step_id?: string | null
+          participant_assessment_id?: string
+          respondent_client_user_id?: string | null
+          respondent_external_reviewer_id?: string | null
+          respondent_type?: string
+          reviewer_nomination_id?: string | null
+          started_at?: string | null
+          status?: string
+          submitted_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assessment_response_sessions_assessment_definition_fkey"
+            columns: ["assessment_definition_id"]
+            isOneToOne: false
+            referencedRelation: "assessment_definitions_v2"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assessment_response_sessions_last_question_fkey"
+            columns: ["last_question_id"]
+            isOneToOne: false
+            referencedRelation: "assessment_questions_v2"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assessment_response_sessions_last_step_fkey"
+            columns: ["last_step_id"]
+            isOneToOne: false
+            referencedRelation: "assessment_steps_v2"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assessment_response_sessions_participant_assessment_fkey"
+            columns: ["participant_assessment_id"]
+            isOneToOne: false
+            referencedRelation: "participant_assessments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assessment_response_sessions_resp_client_user_fkey"
+            columns: ["respondent_client_user_id"]
+            isOneToOne: false
+            referencedRelation: "client_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assessment_response_sessions_resp_external_reviewer_fkey"
+            columns: ["respondent_external_reviewer_id"]
+            isOneToOne: false
+            referencedRelation: "external_reviewers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assessment_response_sessions_reviewer_nomination_fkey"
+            columns: ["reviewer_nomination_id"]
+            isOneToOne: false
+            referencedRelation: "reviewer_nominations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      assessment_responses: {
+        Row: {
+          answer_json: Json | null
+          answer_text: string | null
+          created_at: string
+          id: string
+          is_answered: boolean
+          question_id: string
+          session_id: string
+          updated_at: string
+        }
+        Insert: {
+          answer_json?: Json | null
+          answer_text?: string | null
+          created_at?: string
+          id?: string
+          is_answered?: boolean
+          question_id: string
+          session_id: string
+          updated_at?: string
+        }
+        Update: {
+          answer_json?: Json | null
+          answer_text?: string | null
+          created_at?: string
+          id?: string
+          is_answered?: boolean
+          question_id?: string
+          session_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assessment_responses_question_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "assessment_questions_v2"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assessment_responses_session_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "assessment_response_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       assessment_steps_v2: {
         Row: {
           assessment_definition_id: string
@@ -159,134 +311,6 @@ export type Database = {
           name?: string
         }
         Relationships: []
-      }
-      assessments_360: {
-        Row: {
-          assessment_status: Database["public"]["Enums"]["assessment_status"]
-          cohort_assessment_id: string
-          created_at: string | null
-          end_date: string | null
-          id: string
-          name: string | null
-          participant_assessment_id: string
-          participant_id: string
-          progress: number | null
-          source: string | null
-          start_date: string | null
-        }
-        Insert: {
-          assessment_status?: Database["public"]["Enums"]["assessment_status"]
-          cohort_assessment_id: string
-          created_at?: string | null
-          end_date?: string | null
-          id?: string
-          name?: string | null
-          participant_assessment_id: string
-          participant_id: string
-          progress?: number | null
-          source?: string | null
-          start_date?: string | null
-        }
-        Update: {
-          assessment_status?: Database["public"]["Enums"]["assessment_status"]
-          cohort_assessment_id?: string
-          created_at?: string | null
-          end_date?: string | null
-          id?: string
-          name?: string | null
-          participant_assessment_id?: string
-          participant_id?: string
-          progress?: number | null
-          source?: string | null
-          start_date?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "assessments_360_cohort_assessment_id_fkey"
-            columns: ["cohort_assessment_id"]
-            isOneToOne: false
-            referencedRelation: "cohort_assessments"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "assessments_360_participant_assessment_id_fkey"
-            columns: ["participant_assessment_id"]
-            isOneToOne: false
-            referencedRelation: "participant_assessments"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "assessments_360_participant_id_fkey"
-            columns: ["participant_id"]
-            isOneToOne: false
-            referencedRelation: "cohort_participants"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      assessments_pulse: {
-        Row: {
-          assessment_status: Database["public"]["Enums"]["assessment_status"]
-          cohort_assessment_id: string
-          created_at: string | null
-          end_date: string | null
-          id: string
-          name: string | null
-          participant_assessment_id: string
-          participant_id: string
-          progress: number | null
-          source: string | null
-          start_date: string | null
-        }
-        Insert: {
-          assessment_status?: Database["public"]["Enums"]["assessment_status"]
-          cohort_assessment_id: string
-          created_at?: string | null
-          end_date?: string | null
-          id?: string
-          name?: string | null
-          participant_assessment_id: string
-          participant_id: string
-          progress?: number | null
-          source?: string | null
-          start_date?: string | null
-        }
-        Update: {
-          assessment_status?: Database["public"]["Enums"]["assessment_status"]
-          cohort_assessment_id?: string
-          created_at?: string | null
-          end_date?: string | null
-          id?: string
-          name?: string | null
-          participant_assessment_id?: string
-          participant_id?: string
-          progress?: number | null
-          source?: string | null
-          start_date?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "assessments_pulse_cohort_assessment_id_fkey"
-            columns: ["cohort_assessment_id"]
-            isOneToOne: false
-            referencedRelation: "cohort_assessments"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "assessments_pulse_participant_assessment_id_fkey"
-            columns: ["participant_assessment_id"]
-            isOneToOne: false
-            referencedRelation: "participant_assessments"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "assessments_pulse_participant_id_fkey"
-            columns: ["participant_id"]
-            isOneToOne: false
-            referencedRelation: "cohort_participants"
-            referencedColumns: ["id"]
-          },
-        ]
       }
       client_users: {
         Row: {
@@ -378,6 +402,7 @@ export type Database = {
       }
       cohort_assessments: {
         Row: {
+          assessment_definition_id: string | null
           assessment_status: Database["public"]["Enums"]["assessment_status"]
           assessment_type_id: string
           cohort_id: string
@@ -389,6 +414,7 @@ export type Database = {
           template_version_id: string | null
         }
         Insert: {
+          assessment_definition_id?: string | null
           assessment_status?: Database["public"]["Enums"]["assessment_status"]
           assessment_type_id: string
           cohort_id: string
@@ -400,6 +426,7 @@ export type Database = {
           template_version_id?: string | null
         }
         Update: {
+          assessment_definition_id?: string | null
           assessment_status?: Database["public"]["Enums"]["assessment_status"]
           assessment_type_id?: string
           cohort_id?: string
@@ -411,6 +438,13 @@ export type Database = {
           template_version_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "cohort_assessments_assessment_definition_id_fkey"
+            columns: ["assessment_definition_id"]
+            isOneToOne: false
+            referencedRelation: "assessment_definitions_v2"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "cohort_assessments_assessment_type_id_fkey"
             columns: ["assessment_type_id"]
