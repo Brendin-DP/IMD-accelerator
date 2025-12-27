@@ -15,7 +15,7 @@ const Dialog = ({ open, onOpenChange, children }: DialogProps) => {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
       onClick={() => onOpenChange(false)}
     >
       <div
@@ -23,7 +23,7 @@ const Dialog = ({ open, onOpenChange, children }: DialogProps) => {
         aria-hidden="true"
       />
       <div
-        className="relative z-50 w-full max-w-lg"
+        className="relative z-50 w-full flex items-center justify-center"
         onClick={(e) => e.stopPropagation()}
       >
         {children}
