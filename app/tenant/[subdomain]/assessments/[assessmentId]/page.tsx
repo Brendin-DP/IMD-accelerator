@@ -106,6 +106,7 @@ export default function TenantAssessmentDetailPage() {
   const [totalQuestions, setTotalQuestions] = useState<number>(0);
   const [retakingAssessment, setRetakingAssessment] = useState(false);
   const [startingAssessment, setStartingAssessment] = useState(false);
+  const [completingAssessment, setCompletingAssessment] = useState(false);
 
   useEffect(() => {
     const storedUser = localStorage.getItem("participant");
@@ -1161,7 +1162,6 @@ export default function TenantAssessmentDetailPage() {
       if (updateError) {
         console.error("Error completing assessment:", updateError);
         showToast(`Error: ${updateError.message}`, "error");
-        setCompletingAssessment(false);
         return;
       }
 
