@@ -916,6 +916,18 @@ export default function Assessment360() {
           totalQuestions,
           answeredCount
         );
+
+        // Update participant assessment status if this is the first answer
+        if (answeredCount === 1 && participantAssessmentId) {
+          const { error: statusError } = await supabase
+            .from("participant_assessments")
+            .update({ status: "In Progress" })
+            .eq("id", participantAssessmentId);
+
+          if (statusError) {
+            console.error("Error updating status to In Progress:", statusError);
+          }
+        }
       }
     }
 

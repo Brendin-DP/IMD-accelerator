@@ -8,7 +8,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { ToastContainer, useToast } from "@/components/ui/toast";
 import { supabase } from "@/lib/supabaseClient";
@@ -100,9 +99,12 @@ export default function TenantAssessmentDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"internal" | "external">("internal");
-  const [updatingStatus, setUpdatingStatus] = useState(false);
   const [nominationSearch, setNominationSearch] = useState("");
   const { toasts, showToast, removeToast } = useToast();
+  const [responseSession, setResponseSession] = useState<any>(null);
+  const [responseCount, setResponseCount] = useState<number>(0);
+  const [totalQuestions, setTotalQuestions] = useState<number>(0);
+  const [retakingAssessment, setRetakingAssessment] = useState(false);
 
   useEffect(() => {
     const storedUser = localStorage.getItem("participant");
@@ -124,6 +126,18 @@ export default function TenantAssessmentDetailPage() {
       setLoading(false);
     }
   }, [assessmentId]);
+
+  // Refresh data when component gains focus (user returns from questionnaire)
+  useEffect(() => {
+    const handleFocus = () => {
+      if (user?.id && assessmentId) {
+        fetchParticipantAssessment(user.id);
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [user?.id, assessmentId]);
 
   async function fetchAssessmentDetails() {
     try {
@@ -242,8 +256,9 @@ export default function TenantAssessmentDetailPage() {
 
       setParticipantAssessment(pa as ParticipantAssessment | null);
       
-      // Fetch nominations if we have a participant assessment
+      // Fetch response session if participant assessment exists
       if (pa?.id) {
+        await fetchResponseSession(pa.id);
         fetchNominations(pa.id, userId);
       } else {
         // Check if there are any nominations for this assessment that might exist
@@ -265,6 +280,303 @@ export default function TenantAssessmentDetailPage() {
       console.error("Error fetching participant assessment:", err);
       setParticipantAssessment(null);
       setNominations([]);
+    }
+  }
+
+  async function fetchResponseSession(participantAssessmentId: string) {
+    try {
+      // First, check if this assessment uses the new plan (has assessment_definition_id)
+      // We need to get the assessment_definition_id from the cohort -> plan mapping
+      const { data: cohortAssessment } = await supabase
+        .from("cohort_assessments")
+        .select("cohort_id, assessment_type_id")
+        .eq("id", assessmentId)
+        .single();
+
+      if (!cohortAssessment) {
+        setResponseSession(null);
+        setResponseCount(0);
+        setTotalQuestions(0);
+        return;
+      }
+
+      // Get the cohort to find the plan
+      const { data: cohort } = await supabase
+        .from("cohorts")
+        .select("plan_id")
+        .eq("id", cohortAssessment.cohort_id)
+        .single();
+
+      if (!cohort?.plan_id) {
+        setResponseSession(null);
+        setResponseCount(0);
+        setTotalQuestions(0);
+        return;
+      }
+
+      // Fetch the plan's description to get the assessment definition mapping
+      const { data: planData } = await supabase
+        .from("plans")
+        .select("description")
+        .eq("id", cohort.plan_id)
+        .single();
+
+      let assessmentDefinitionId: string | null = null;
+
+      if (planData?.description) {
+        const planMappingMatch = planData.description.match(/<!--PLAN_ASSESSMENT_DEFINITIONS:(.*?)-->/);
+        if (planMappingMatch) {
+          try {
+            const mapping = JSON.parse(planMappingMatch[1]);
+            const selectedDefId = mapping[cohortAssessment.assessment_type_id];
+            if (selectedDefId) {
+              const { data: selectedDef } = await supabase
+                .from("assessment_definitions_v2")
+                .select("id, assessment_type_id")
+                .eq("id", selectedDefId)
+                .eq("assessment_type_id", cohortAssessment.assessment_type_id)
+                .maybeSingle();
+
+              if (selectedDef) {
+                assessmentDefinitionId = selectedDef.id;
+              }
+            }
+          } catch (e) {
+            console.error("Error parsing plan assessment mapping:", e);
+          }
+        }
+      }
+
+      // Fall back to system assessment if no custom found
+      if (!assessmentDefinitionId) {
+        const { data: systemDef } = await supabase
+          .from("assessment_definitions_v2")
+          .select("id")
+          .eq("assessment_type_id", cohortAssessment.assessment_type_id)
+          .eq("is_system", true)
+          .maybeSingle();
+
+        if (systemDef) {
+          assessmentDefinitionId = systemDef.id;
+        }
+      }
+
+      if (!assessmentDefinitionId) {
+        // Old plan - no response sessions
+        setResponseSession(null);
+        setResponseCount(0);
+        setTotalQuestions(0);
+        return;
+      }
+
+      // Fetch response session
+      const { data: session, error: sessionError } = await supabase
+        .from("assessment_response_sessions")
+        .select("id, status, completion_percent, last_question_id, last_step_id")
+        .eq("participant_assessment_id", participantAssessmentId)
+        .eq("assessment_definition_id", assessmentDefinitionId)
+        .eq("respondent_type", "participant")
+        .maybeSingle();
+
+      if (sessionError && sessionError.code !== "PGRST116") {
+        console.error("Error fetching response session:", sessionError);
+        setResponseSession(null);
+        setResponseCount(0);
+        setTotalQuestions(0);
+        return;
+      }
+
+      if (session) {
+        setResponseSession(session);
+
+        // Fetch count of answered questions
+        const { count: answeredCount, error: countError } = await supabase
+          .from("assessment_responses")
+          .select("*", { count: "exact", head: true })
+          .eq("session_id", session.id)
+          .eq("is_answered", true);
+
+        if (!countError) {
+          setResponseCount(answeredCount || 0);
+        }
+
+        // Fetch total questions count
+        const { count: totalCount, error: totalError } = await supabase
+          .from("assessment_questions_v2")
+          .select("*", { count: "exact", head: true })
+          .eq("assessment_definition_id", assessmentDefinitionId);
+
+        if (!totalError) {
+          setTotalQuestions(totalCount || 0);
+        }
+
+        // Auto-update status based on progress
+        await updateStatusFromProgress(session, participantAssessmentId);
+      } else {
+        setResponseSession(null);
+        setResponseCount(0);
+        setTotalQuestions(0);
+      }
+    } catch (error) {
+      console.error("Error fetching response session:", error);
+      setResponseSession(null);
+      setResponseCount(0);
+      setTotalQuestions(0);
+    }
+  }
+
+  async function updateStatusFromProgress(session: any, participantAssessmentId: string) {
+    try {
+      if (!session || !participantAssessmentId) return;
+
+      // Get current status from participant assessment
+      const currentStatus = participantAssessment?.status?.toLowerCase() || "not started";
+      let newStatus: string | null = null;
+
+      // Determine status based on session data
+      if (session.status === "completed" || session.completion_percent === 100) {
+        newStatus = "Completed";
+      } else if (session.completion_percent > 0 && session.completion_percent < 100) {
+        newStatus = "In Progress";
+      } else {
+        // Check if there are any answered responses
+        const { count: answeredCount } = await supabase
+          .from("assessment_responses")
+          .select("*", { count: "exact", head: true })
+          .eq("session_id", session.id)
+          .eq("is_answered", true);
+
+        if (answeredCount && answeredCount > 0) {
+          newStatus = "In Progress";
+        } else {
+          newStatus = "Not started";
+        }
+      }
+
+      // Only update if status needs to change
+      if (newStatus && newStatus.toLowerCase() !== currentStatus) {
+        const { error: updateError } = await supabase
+          .from("participant_assessments")
+          .update({ status: newStatus })
+          .eq("id", participantAssessmentId);
+
+        if (!updateError) {
+          // Update local state
+          setParticipantAssessment((prev) =>
+            prev ? { ...prev, status: newStatus } : null
+          );
+        }
+      }
+    } catch (error) {
+      console.error("Error updating status from progress:", error);
+    }
+  }
+
+  function getButtonConfig() {
+    // Check if assessment is completed (from response session or participant assessment status)
+    const isCompleted = 
+      responseSession?.status === "completed" || 
+      responseSession?.completion_percent === 100 ||
+      participantAssessment?.status?.toLowerCase() === "completed";
+    
+    // Check if there are any responses
+    const hasResponses = 
+      responseCount > 0 || 
+      (responseSession && responseSession.completion_percent > 0) ||
+      participantAssessment?.status?.toLowerCase() === "in progress";
+
+    if (isCompleted) {
+      return {
+        text: "Assessment Completed",
+        disabled: true,
+        variant: "secondary" as const,
+        showRetake: true,
+      };
+    }
+
+    if (hasResponses) {
+      return {
+        text: "Continue Assessment",
+        disabled: false,
+        variant: "default" as const,
+        showRetake: false,
+      };
+    }
+
+    return {
+      text: "Start Assessment",
+      disabled: false,
+      variant: "default" as const,
+      showRetake: false,
+    };
+  }
+
+  async function handleRetakeAssessment() {
+    if (!participantAssessment?.id || !user?.id) {
+      showToast("Cannot retake assessment: missing information", "error");
+      return;
+    }
+
+    setRetakingAssessment(true);
+    try {
+      // If there's a response session (new plan), delete responses and reset session
+      if (responseSession?.id) {
+        // Delete all assessment responses for this session
+        const { error: deleteResponsesError } = await supabase
+          .from("assessment_responses")
+          .delete()
+          .eq("session_id", responseSession.id);
+
+        if (deleteResponsesError) {
+          console.error("Error deleting responses:", deleteResponsesError);
+          showToast("Error deleting responses. Please try again.", "error");
+          setRetakingAssessment(false);
+          return;
+        }
+
+        // Reset the response session
+        const { error: resetSessionError } = await supabase
+          .from("assessment_response_sessions")
+          .update({
+            status: "in_progress",
+            completion_percent: 0,
+            last_question_id: null,
+            last_step_id: null,
+            submitted_at: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", responseSession.id);
+
+        if (resetSessionError) {
+          console.error("Error resetting session:", resetSessionError);
+          showToast("Error resetting session. Please try again.", "error");
+          setRetakingAssessment(false);
+          return;
+        }
+      }
+
+      // Update participant assessment status to "Not started"
+      const { error: updateStatusError } = await supabase
+        .from("participant_assessments")
+        .update({ status: "Not started" })
+        .eq("id", participantAssessment.id);
+
+      if (updateStatusError) {
+        console.error("Error updating status:", updateStatusError);
+        showToast("Error updating status. Please try again.", "error");
+        setRetakingAssessment(false);
+        return;
+      }
+
+      // Refresh data
+      await fetchParticipantAssessment(user.id);
+      
+      showToast("Assessment reset successfully. You can now start fresh.", "success");
+    } catch (err) {
+      console.error("Error retaking assessment:", err);
+      showToast("An unexpected error occurred. Please try again.", "error");
+    } finally {
+      setRetakingAssessment(false);
     }
   }
 
@@ -866,107 +1178,6 @@ export default function TenantAssessmentDetailPage() {
     }
   }
 
-  async function handleStatusChange(newStatus: string) {
-    if (!user?.id) return;
-
-    // If no participant assessment exists, we need to create one first
-    if (!participantAssessment) {
-      // Get cohort_id from assessment
-      if (!assessment?.cohort_id) {
-        showToast("Cannot update status: cohort information missing", "error");
-        return;
-      }
-
-      // Find participant_id
-      const { data: participants, error: participantsError } = await supabase
-        .from("cohort_participants")
-        .select("id")
-        .eq("client_user_id", user.id)
-        .eq("cohort_id", assessment.cohort_id)
-        .maybeSingle();
-
-      if (participantsError || !participants) {
-        showToast("Cannot update status: participant not found", "error");
-        return;
-      }
-
-      // Create participant assessment
-      setUpdatingStatus(true);
-      try {
-        const { data: newParticipantAssessment, error: createError } = await supabase
-          .from("participant_assessments")
-          .insert({
-            participant_id: participants.id,
-            cohort_assessment_id: assessmentId,
-            status: newStatus as any,
-          })
-          .select()
-          .single();
-
-        if (createError) {
-          console.error("Error creating participant assessment:", createError);
-          showToast(`Failed to update status: ${createError.message}`, "error");
-          setUpdatingStatus(false);
-          return;
-        }
-
-        if (!newParticipantAssessment) {
-          console.error("No data returned after creating participant assessment");
-          showToast("Failed to update status: No data returned", "error");
-          setUpdatingStatus(false);
-          return;
-        }
-
-        console.log("Created participant assessment with status:", newParticipantAssessment.status);
-        setParticipantAssessment(newParticipantAssessment);
-        showToast("Status updated successfully", "success");
-      } catch (err) {
-        console.error("Error creating participant assessment:", err);
-        showToast("An unexpected error occurred", "error");
-      } finally {
-        setUpdatingStatus(false);
-      }
-    } else {
-      // Update existing participant assessment
-      setUpdatingStatus(true);
-      try {
-        const { data: updatedData, error: updateError } = await supabase
-          .from("participant_assessments")
-          .update({ status: newStatus as any })
-          .eq("id", participantAssessment.id)
-          .select()
-          .single();
-
-        if (updateError) {
-          console.error("Error updating status:", updateError);
-          showToast(`Failed to update status: ${updateError.message}`, "error");
-          setUpdatingStatus(false);
-          return;
-        }
-
-        if (!updatedData) {
-          console.error("No data returned after updating participant assessment");
-          showToast("Failed to update status: No data returned", "error");
-          setUpdatingStatus(false);
-          return;
-        }
-
-        console.log("Updated participant assessment with status:", updatedData.status);
-        
-        // Update local state immediately with the returned data
-        setParticipantAssessment(updatedData);
-
-        // Also refresh to ensure we have the latest data
-        await fetchParticipantAssessment(user.id);
-        showToast("Status updated successfully", "success");
-      } catch (err) {
-        console.error("Error updating status:", err);
-        showToast("An unexpected error occurred", "error");
-      } finally {
-        setUpdatingStatus(false);
-      }
-    }
-  }
 
   const getReviewStatusColor = (status: string | null) => {
     if (!status) return "bg-gray-100 text-gray-800";
@@ -1093,24 +1304,9 @@ export default function TenantAssessmentDetailPage() {
             </div>
             <div>
               <p className="text-sm font-medium text-muted-foreground mb-2">Assessment Status</p>
-              <Select
-                value={participantAssessment?.status || "Not started"}
-                onValueChange={handleStatusChange}
-                disabled={updatingStatus || !user?.id}
-              >
-                <SelectTrigger className="w-[180px] h-auto border-0 p-0 bg-transparent shadow-none hover:bg-transparent">
-                  <SelectValue>
-                    <span className={`inline-block px-3 py-1 text-sm font-medium rounded-full ${getStatusColor(participantAssessment?.status || "Not started")}`}>
-                      {participantAssessment?.status || "Not started"}
-                    </span>
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Not started">Not started</SelectItem>
-                  <SelectItem value="In Progress">In Progress</SelectItem>
-                  <SelectItem value="Completed">Completed</SelectItem>
-                </SelectContent>
-              </Select>
+              <span className={`inline-block px-3 py-1 text-sm font-medium rounded-full ${getStatusColor(participantAssessment?.status || "Not started")}`}>
+                {participantAssessment?.status || "Not started"}
+              </span>
             </div>
             {assessment.assessment_type?.description && (
               <div>
@@ -1141,14 +1337,31 @@ export default function TenantAssessmentDetailPage() {
           </div>
           {/* Assessment Action Buttons */}
           <div className="mt-6 pt-6 border-t flex justify-end items-center gap-4">
-            <Button
-              onClick={() => router.push(`/tenant/${subdomain}/assessments/${assessmentId}/questionnaire?source=db`)}
-              variant="default"
-              disabled={!user?.id}
-              className="w-full sm:w-auto"
-            >
-              Start New Assessment
-            </Button>
+            {(() => {
+              const buttonConfig = getButtonConfig();
+              return (
+                <>
+                  {buttonConfig.showRetake && (
+                    <Button
+                      onClick={handleRetakeAssessment}
+                      variant="tertiary"
+                      disabled={!user?.id || retakingAssessment}
+                      className="w-full sm:w-auto"
+                    >
+                      {retakingAssessment ? "Resetting..." : "Retake Assessment"}
+                    </Button>
+                  )}
+                  <Button
+                    onClick={() => router.push(`/tenant/${subdomain}/assessments/${assessmentId}/questionnaire?source=db`)}
+                    variant={buttonConfig.variant}
+                    disabled={!user?.id || buttonConfig.disabled}
+                    className="w-full sm:w-auto"
+                  >
+                    {buttonConfig.text}
+                  </Button>
+                </>
+              );
+            })()}
           </div>
         </CardContent>
       </Card>
