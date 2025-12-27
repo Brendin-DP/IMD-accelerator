@@ -82,24 +82,75 @@ export default function Assessment360() {
         // Check query parameter to determine source
         if (useDb) {
           // Start Assessment: Always load from DB
-          // Fetch assessment definition for this assessment_type
-          const { data: assessmentDefinition, error: defError } = await supabase
-            .from("assessment_definitions_v2")
-            .select("id")
-            .eq("assessment_type_id", assessmentTypeId)
-            .eq("is_system", true)
-            .maybeSingle();
+          // First, check if the cohort's plan has a custom assessment definition for this type
+          let assessmentDefinitionId: string | null = null;
 
-          if (defError || !assessmentDefinition) {
-            console.error("Error fetching assessment definition:", defError);
-            alert("Error: Could not find assessment definition. Please try again.");
-            setLoading(false);
-            return;
+          // Get the cohort to find the plan
+          const { data: cohort, error: cohortError } = await supabase
+            .from("cohorts")
+            .select("plan_id")
+            .eq("id", cohortAssessment.cohort_id)
+            .single();
+
+          if (!cohortError && cohort?.plan_id) {
+            // Fetch the plan's description to get the assessment definition mapping
+            const { data: planData, error: planError } = await supabase
+              .from("plans")
+              .select("description")
+              .eq("id", cohort.plan_id)
+              .single();
+
+            if (!planError && planData?.description) {
+              // Extract the assessment definition mapping from plan description
+              const planMappingMatch = planData.description.match(/<!--PLAN_ASSESSMENT_DEFINITIONS:(.*?)-->/);
+              if (planMappingMatch) {
+                try {
+                  const mapping = JSON.parse(planMappingMatch[1]);
+                  const selectedDefId = mapping[assessmentTypeId];
+                  
+                    if (selectedDefId) {
+                      // Verify this assessment definition exists and is for this type
+                      const { data: selectedDef, error: defCheckError } = await supabase
+                        .from("assessment_definitions_v2")
+                        .select("id, assessment_type_id")
+                        .eq("id", selectedDefId)
+                        .eq("assessment_type_id", assessmentTypeId)
+                        .maybeSingle();
+
+                      if (!defCheckError && selectedDef) {
+                        // Use the selected assessment definition (could be custom or system)
+                        assessmentDefinitionId = selectedDef.id;
+                      }
+                    }
+                } catch (e) {
+                  console.error("Error parsing plan assessment mapping:", e);
+                }
+              }
+            }
           }
 
-          setAssessmentDefinitionId(assessmentDefinition.id);
+          // If no custom assessment found, fall back to system assessment
+          if (!assessmentDefinitionId) {
+            const { data: systemDef, error: defError } = await supabase
+              .from("assessment_definitions_v2")
+              .select("id")
+              .eq("assessment_type_id", assessmentTypeId)
+              .eq("is_system", true)
+              .maybeSingle();
+
+            if (defError || !systemDef) {
+              console.error("Error fetching assessment definition:", defError);
+              alert("Error: Could not find assessment definition. Please try again.");
+              setLoading(false);
+              return;
+            }
+
+            assessmentDefinitionId = systemDef.id;
+          }
+
+          setAssessmentDefinitionId(assessmentDefinitionId);
           setUsesNewPlan(true);
-          await loadQuestionsFromDB(assessmentDefinition.id, assessmentTypeId, assessmentTypeName);
+          await loadQuestionsFromDB(assessmentDefinitionId, assessmentTypeId, assessmentTypeName);
         } else {
           // Simulate: Always load from db.json
           await loadQuestionsFromJSON();

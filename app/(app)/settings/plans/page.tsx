@@ -364,10 +364,21 @@ export default function PlansPage() {
           return;
         }
 
+        // Create a map of assessment_type_id -> assessment_definition_id
+        // Store the selected assessment_definition_id for each assessment_type_id
+        // This allows us to know which specific assessment definition was selected (custom or system)
+        const typeToDefinitionMap = new Map<string, string>();
+        
+        // For each selected definition, map its assessment_type_id to its definition id
+        definitionsData?.forEach((def: any) => {
+          typeToDefinitionMap.set(def.assessment_type_id, def.id);
+        });
+
         // Extract unique assessment_type_ids from the selected definitions
         const assessmentTypeIds = [...new Set(definitionsData?.map((d: any) => d.assessment_type_id) || [])];
 
         if (assessmentTypeIds.length > 0) {
+          // Insert plan_assessments with assessment_type_id
           const planAssessmentsToCreate = assessmentTypeIds.map((assessmentTypeId) => ({
             plan_id: plan.id,
             assessment_type_id: assessmentTypeId,
@@ -382,6 +393,27 @@ export default function PlansPage() {
             setSubmitNewPlanError(`Failed to link assessment definitions: ${assessmentsError.message}`);
             setSubmittingNewPlan(false);
             return;
+          }
+
+          // Store the assessment_definition_id mapping in the plan's description as JSON
+          // This is a workaround until we can add a proper table/column
+          // Format: <!--PLAN_ASSESSMENT_DEFINITIONS:{"type_id_1":"def_id_1","type_id_2":"def_id_2"}-->
+          if (typeToDefinitionMap.size > 0) {
+            const definitionMapping = Object.fromEntries(typeToDefinitionMap);
+            const mappingJson = JSON.stringify(definitionMapping);
+            const mappingMarker = `<!--PLAN_ASSESSMENT_DEFINITIONS:${mappingJson}-->`;
+            
+            const currentDesc = plan.description || "";
+            // Remove old mapping if it exists
+            const descWithoutOldMapping = currentDesc.replace(/<!--PLAN_ASSESSMENT_DEFINITIONS:.*?-->/g, "").trim();
+            const updatedDesc = descWithoutOldMapping 
+              ? `${descWithoutOldMapping}\n${mappingMarker}`
+              : mappingMarker;
+            
+            await supabase
+              .from("plans")
+              .update({ description: updatedDesc })
+              .eq("id", plan.id);
           }
         }
       }
