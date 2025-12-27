@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { ToastContainer, useToast } from "@/components/ui/toast";
 import { supabase } from "@/lib/supabaseClient";
@@ -99,9 +100,7 @@ export default function TenantAssessmentDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"internal" | "external">("internal");
-  const [startingAssessment, setStartingAssessment] = useState(false);
-  const [completingAssessment, setCompletingAssessment] = useState(false);
-  const [resettingAssessment, setResettingAssessment] = useState(false);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
   const [nominationSearch, setNominationSearch] = useState("");
   const { toasts, showToast, removeToast } = useToast();
 
@@ -867,38 +866,83 @@ export default function TenantAssessmentDetailPage() {
     }
   }
 
-  async function handleResetAssessment() {
-    if (!user?.id || !participantAssessment?.id) {
-      showToast("Assessment not found. Please try again.", "error");
-      return;
-    }
+  async function handleStatusChange(newStatus: string) {
+    if (!user?.id) return;
 
-    const paId = participantAssessment.id;
-    setResettingAssessment(true);
-    try {
-      const { error: updateError } = await supabase
-        .from("participant_assessments")
-        .update({ status: "Not started" })
-        .eq("id", paId);
-
-      if (updateError) {
-        console.error("Error resetting assessment:", updateError);
-        showToast(`Error: ${updateError.message}`, "error");
-        setResettingAssessment(false);
+    // If no participant assessment exists, we need to create one first
+    if (!participantAssessment) {
+      // Get cohort_id from assessment
+      if (!assessment?.cohort_id) {
+        showToast("Cannot update status: cohort information missing", "error");
         return;
       }
 
-      // Update local state
-      setParticipantAssessment((prev) => 
-        prev ? { ...prev, status: "Not started" } : null
-      );
+      // Find participant_id
+      const { data: participants, error: participantsError } = await supabase
+        .from("cohort_participants")
+        .select("id")
+        .eq("client_user_id", user.id)
+        .eq("cohort_id", assessment.cohort_id)
+        .maybeSingle();
 
-      showToast("Assessment reset to not started.", "success");
-    } catch (err) {
-      console.error("Error resetting assessment:", err);
-      showToast("An unexpected error occurred. Please try again.", "error");
-    } finally {
-      setResettingAssessment(false);
+      if (participantsError || !participants) {
+        showToast("Cannot update status: participant not found", "error");
+        return;
+      }
+
+      // Create participant assessment
+      setUpdatingStatus(true);
+      try {
+        const { data: newParticipantAssessment, error: createError } = await supabase
+          .from("participant_assessments")
+          .insert({
+            participant_id: participants.id,
+            cohort_assessment_id: assessmentId,
+            status: newStatus,
+          })
+          .select()
+          .single();
+
+        if (createError) {
+          console.error("Error creating participant assessment:", createError);
+          showToast(`Failed to update status: ${createError.message}`, "error");
+          setUpdatingStatus(false);
+          return;
+        }
+
+        setParticipantAssessment(newParticipantAssessment);
+        showToast("Status updated successfully", "success");
+      } catch (err) {
+        console.error("Error creating participant assessment:", err);
+        showToast("An unexpected error occurred", "error");
+      } finally {
+        setUpdatingStatus(false);
+      }
+    } else {
+      // Update existing participant assessment
+      setUpdatingStatus(true);
+      try {
+        const { error: updateError } = await supabase
+          .from("participant_assessments")
+          .update({ status: newStatus })
+          .eq("id", participantAssessment.id);
+
+        if (updateError) {
+          console.error("Error updating status:", updateError);
+          showToast(`Failed to update status: ${updateError.message}`, "error");
+          setUpdatingStatus(false);
+          return;
+        }
+
+        // Refresh participant assessment
+        await fetchParticipantAssessment(user.id);
+        showToast("Status updated successfully", "success");
+      } catch (err) {
+        console.error("Error updating status:", err);
+        showToast("An unexpected error occurred", "error");
+      } finally {
+        setUpdatingStatus(false);
+      }
     }
   }
 
@@ -1026,16 +1070,25 @@ export default function TenantAssessmentDetailPage() {
               <p className="text-base mt-1">{assessment.assessment_type?.name || "N/A"}</p>
             </div>
             <div>
-              <p className="text-sm font-medium text-muted-foreground">Assessment Status</p>
-              {participantAssessment?.status ? (
-                <span className={`inline-block px-3 py-1 text-sm font-medium rounded-full mt-1 ${getStatusColor(participantAssessment.status!)}`}>
-                  {participantAssessment.status}
-                </span>
-              ) : (
-                <span className={`inline-block px-3 py-1 text-sm font-medium rounded-full mt-1 ${getStatusColor("Not started")}`}>
-                  Not started
-                </span>
-              )}
+              <p className="text-sm font-medium text-muted-foreground mb-2">Assessment Status</p>
+              <Select
+                value={participantAssessment?.status || "Not started"}
+                onValueChange={handleStatusChange}
+                disabled={updatingStatus || !user?.id}
+              >
+                <SelectTrigger className="w-[180px] h-auto border-0 p-0 bg-transparent shadow-none hover:bg-transparent">
+                  <SelectValue>
+                    <span className={`inline-block px-3 py-1 text-sm font-medium rounded-full ${getStatusColor(participantAssessment?.status || "Not started")}`}>
+                      {participantAssessment?.status || "Not started"}
+                    </span>
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Not started">Not started</SelectItem>
+                  <SelectItem value="In Progress">In Progress</SelectItem>
+                  <SelectItem value="Completed">Completed</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             {assessment.assessment_type?.description && (
               <div>
@@ -1065,53 +1118,14 @@ export default function TenantAssessmentDetailPage() {
             </div>
           </div>
           {/* Assessment Action Buttons */}
-          <div className="mt-6 pt-6 border-t flex justify-between items-center gap-4">
-            <div className="flex gap-2">
-              {(!participantAssessment || (participantAssessment && (participantAssessment.status === "Not started" || !participantAssessment.status))) && (
-                <>
-                  <Button
-                    onClick={handleStartAssessment}
-                    disabled={!user?.id || startingAssessment}
-                    className="w-full sm:w-auto"
-                  >
-                    {startingAssessment ? "Starting..." : "Start Assessment"}
-                  </Button>
-                  <Button
-                    onClick={() => router.push(`/tenant/${subdomain}/assessments/${assessmentId}/questionnaire?source=db`)}
-                    variant="default"
-                    disabled={!user?.id}
-                    className="w-full sm:w-auto"
-                  >
-                    Start New Assessment
-                  </Button>
-                </>
-              )}
-              {participantAssessment?.status === "In Progress" && (
-                <Button
-                  onClick={handleCompleteAssessment}
-                  disabled={!user?.id || completingAssessment}
-                  className="w-full sm:w-auto"
-                >
-                  {completingAssessment ? "Completing..." : "Complete Assessment"}
-                </Button>
-              )}
-              {participantAssessment?.status === "Completed" && (
-                <Button
-                  onClick={handleResetAssessment}
-                  disabled={!user?.id || resettingAssessment}
-                  variant="secondary"
-                  className="w-full sm:w-auto"
-                >
-                  {resettingAssessment ? "Resetting..." : "Not started yet"}
-                </Button>
-              )}
-            </div>
+          <div className="mt-6 pt-6 border-t flex justify-end items-center gap-4">
             <Button
-              onClick={() => router.push(`/tenant/${subdomain}/assessments/${assessmentId}/questionnaire`)}
-              variant="outline"
+              onClick={() => router.push(`/tenant/${subdomain}/assessments/${assessmentId}/questionnaire?source=db`)}
+              variant="default"
+              disabled={!user?.id}
               className="w-full sm:w-auto"
             >
-              Simulate
+              Start New Assessment
             </Button>
           </div>
         </CardContent>
