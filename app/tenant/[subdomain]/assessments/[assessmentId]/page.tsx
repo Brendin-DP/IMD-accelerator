@@ -1068,13 +1068,23 @@ export default function TenantAssessmentDetailPage() {
           <div className="mt-6 pt-6 border-t flex justify-between items-center gap-4">
             <div className="flex gap-2">
               {(!participantAssessment || (participantAssessment && (participantAssessment.status === "Not started" || !participantAssessment.status))) && (
-                <Button
-                  onClick={handleStartAssessment}
-                  disabled={!user?.id || startingAssessment}
-                  className="w-full sm:w-auto"
-                >
-                  {startingAssessment ? "Starting..." : "Start Assessment"}
-                </Button>
+                <>
+                  <Button
+                    onClick={handleStartAssessment}
+                    disabled={!user?.id || startingAssessment}
+                    className="w-full sm:w-auto"
+                  >
+                    {startingAssessment ? "Starting..." : "Start Assessment"}
+                  </Button>
+                  <Button
+                    onClick={() => router.push(`/tenant/${subdomain}/assessments/${assessmentId}/questionnaire?source=db`)}
+                    variant="default"
+                    disabled={!user?.id}
+                    className="w-full sm:w-auto"
+                  >
+                    Start New Assessment
+                  </Button>
+                </>
               )}
               {participantAssessment?.status === "In Progress" && (
                 <Button
