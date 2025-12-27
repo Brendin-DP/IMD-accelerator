@@ -1,18 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { Plus, Edit } from "lucide-react";
+import { useParams, useRouter } from "next/navigation";
+import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogClose,
-} from "@/components/ui/dialog";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { supabase } from "@/lib/supabaseClient";
 
 interface Plan {
@@ -29,12 +23,14 @@ interface AssessmentType {
   description?: string;
 }
 
-export default function PlansPage() {
+export default function PlanDetailPage() {
+  const params = useParams();
   const router = useRouter();
-  const [plans, setPlans] = useState<Plan[]>([]);
+  const planId = params.id as string;
+
+  const [plan, setPlan] = useState<Plan | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     description: "",
@@ -46,44 +42,56 @@ export default function PlansPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchPlans();
-  }, []);
-
-  useEffect(() => {
-    if (isDialogOpen) {
+    if (planId) {
+      fetchPlanDetails();
       fetchAssessmentTypes();
-    } else {
-      // Reset form when dialog closes
-      setFormData({
-        name: "",
-        description: "",
-        assessment_type_ids: [],
-      });
     }
-  }, [isDialogOpen]);
+  }, [planId]);
 
-  async function fetchPlans() {
+  async function fetchPlanDetails() {
     try {
       setLoading(true);
       setError(null);
-      
-      // Query plans table
-      const { data, error: dbError } = await supabase
-        .from("plans")
-        .select("*")
-        .order("created_at", { ascending: false });
 
-      if (dbError) {
-        console.error("Error fetching plans:", dbError);
-        setError(`Failed to load plans: ${dbError.message}`);
-        setPlans([]);
-      } else {
-        setPlans(data || []);
+      // Fetch plan
+      const { data: planData, error: planError } = await supabase
+        .from("plans")
+        .select("id, name, description, created_at")
+        .eq("id", planId)
+        .single();
+
+      if (planError) {
+        console.error("Error fetching plan:", planError);
+        setError(`Failed to load plan: ${planError.message}`);
+        setPlan(null);
+        return;
       }
+
+      setPlan(planData);
+
+      // Fetch selected assessment types via plan_assessments
+      const { data: planAssessments, error: assessmentsError } = await supabase
+        .from("plan_assessments")
+        .select("assessment_type_id")
+        .eq("plan_id", planId);
+
+      if (assessmentsError) {
+        console.error("Error fetching plan assessments:", assessmentsError);
+        // Continue even if this fails - just won't have selected types
+      }
+
+      const selectedAssessmentTypeIds = planAssessments?.map((pa) => pa.assessment_type_id) || [];
+
+      // Populate form with current plan data
+      setFormData({
+        name: planData.name || "",
+        description: planData.description || "",
+        assessment_type_ids: selectedAssessmentTypeIds,
+      });
     } catch (err) {
       console.error("Unexpected error:", err);
       setError(err instanceof Error ? err.message : "An unexpected error occurred");
-      setPlans([]);
+      setPlan(null);
     } finally {
       setLoading(false);
     }
@@ -128,65 +136,65 @@ export default function PlansPage() {
     });
   }
 
-  function handleEdit(plan: Plan) {
-    router.push(`/settings/plans/${plan.id}`);
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
     setSubmitError(null);
 
     try {
-      // Prepare plan data
-      const planData: any = {
-        name: formData.name.trim(),
-        description: formData.description.trim() || null,
-      };
-
-      // Insert plan
-      const { data: plan, error: insertError } = await supabase
+      // Update plan
+      const { error: updateError } = await supabase
         .from("plans")
-        .insert([planData])
-        .select()
-        .single();
+        .update({
+          name: formData.name.trim(),
+          description: formData.description.trim() || null,
+        })
+        .eq("id", planId);
 
-      if (insertError) {
-        console.error("Error creating plan:", insertError);
-        setSubmitError(`Failed to create plan: ${insertError.message}`);
+      if (updateError) {
+        console.error("Error updating plan:", updateError);
+        setSubmitError(`Failed to update plan: ${updateError.message}`);
         setSubmitting(false);
         return;
       }
 
-      // Insert plan_assessments if assessment types are selected
+      // Delete existing plan_assessments for this plan
+      const { error: deleteError } = await supabase
+        .from("plan_assessments")
+        .delete()
+        .eq("plan_id", planId);
+
+      if (deleteError) {
+        console.error("Error deleting plan assessments:", deleteError);
+        setSubmitError(`Failed to update assessment types: ${deleteError.message}`);
+        setSubmitting(false);
+        return;
+      }
+
+      // Insert new plan_assessments if assessment types are selected
       if (formData.assessment_type_ids.length > 0) {
         const planAssessmentsToCreate = formData.assessment_type_ids.map((assessmentTypeId) => ({
-          plan_id: plan.id,
+          plan_id: planId,
           assessment_type_id: assessmentTypeId,
         }));
 
-        const { error: assessmentsError } = await supabase
+        const { error: insertError } = await supabase
           .from("plan_assessments")
           .insert(planAssessmentsToCreate);
 
-        if (assessmentsError) {
-          console.error("Error creating plan assessments:", assessmentsError);
-          setSubmitError(`Failed to link assessment types: ${assessmentsError.message}`);
+        if (insertError) {
+          console.error("Error creating plan assessments:", insertError);
+          setSubmitError(`Failed to link assessment types: ${insertError.message}`);
           setSubmitting(false);
           return;
         }
       }
 
-      // Reset form and close dialog
-      setFormData({
-        name: "",
-        description: "",
-        assessment_type_ids: [],
-      });
-      setIsDialogOpen(false);
+      // Refresh plan data
+      await fetchPlanDetails();
       
-      // Refresh plans list
-      await fetchPlans();
+      // Navigate back to plans list
+      router.push("/settings/plans");
     } catch (err) {
       console.error("Unexpected error:", err);
       setSubmitError(err instanceof Error ? err.message : "An unexpected error occurred");
@@ -195,81 +203,58 @@ export default function PlansPage() {
     }
   }
 
-  return (
-    <div className="space-y-6">
-      {/* Header with Add Plan Button */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Plan Management</h1>
-          <p className="text-muted-foreground mt-2">Manage subscription plans and pricing tiers</p>
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="p-8 text-center text-muted-foreground">Loading plan details...</div>
+      </div>
+    );
+  }
+
+  if (error || !plan) {
+    return (
+      <div className="space-y-6">
+        <div className="p-8 text-center text-destructive">
+          {error || "Plan not found"}
         </div>
-        <Button onClick={() => setIsDialogOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Add Plan
+        <Button variant="tertiary" onClick={() => router.push("/settings/plans")} className="p-0 h-auto">
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Back to Plans
         </Button>
       </div>
+    );
+  }
 
-      {/* Plans Table */}
-      <div className="rounded-md border">
-        {loading ? (
-          <div className="p-8 text-center text-muted-foreground">Loading plans...</div>
-        ) : error ? (
-          <div className="p-8 text-center text-destructive">{error}</div>
-        ) : plans.length === 0 ? (
-          <div className="p-8 text-center text-muted-foreground">
-            No plans found. Click "Add Plan" to create your first plan.
-          </div>
-        ) : (
-          <table className="w-full">
-            <thead>
-              <tr className="border-b bg-muted/50">
-                <th className="px-6 py-3 text-left text-sm font-medium">Name</th>
-                <th className="px-6 py-3 text-left text-sm font-medium">Description</th>
-                <th className="px-6 py-3 text-left text-sm font-medium">Created</th>
-                <th className="px-6 py-3 text-left text-sm font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {plans.map((plan) => (
-                <tr key={plan.id} className="border-b hover:bg-muted/50 transition-colors">
-                  <td className="px-6 py-4 text-sm font-medium">{plan.name || "-"}</td>
-                  <td className="px-6 py-4 text-sm text-muted-foreground">
-                    {plan.description || "-"}
-                  </td>
-                  <td className="px-6 py-4 text-sm text-muted-foreground">
-                    {plan.created_at
-                      ? new Date(plan.created_at).toLocaleDateString()
-                      : "-"}
-                  </td>
-                  <td className="px-6 py-4 text-sm">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleEdit(plan)}
-                      className="h-8"
-                    >
-                      <Edit className="mr-2 h-4 w-4" />
-                      Edit
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+  return (
+    <div className="space-y-6">
+      {/* Breadcrumbs */}
+      <Breadcrumb
+        items={[
+          { label: "Settings", href: "/settings" },
+          { label: "Plans", href: "/settings/plans" },
+          { label: plan.name },
+        ]}
+      />
+
+      {/* Back Button */}
+      <Button variant="tertiary" onClick={() => router.push("/settings/plans")} className="p-0 h-auto">
+        <ArrowLeft className="mr-2 h-4 w-4" />
+        Back to Plans
+      </Button>
+
+      {/* Header */}
+      <div>
+        <h1 className="text-3xl font-bold">Edit Plan</h1>
+        <p className="text-muted-foreground mt-2">Update plan details and assessment types</p>
       </div>
 
-      {/* Add Plan Dialog */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent>
-          <DialogClose onClick={() => setIsDialogOpen(false)} />
-          <DialogHeader>
-            <DialogTitle>Add New Plan</DialogTitle>
-            <DialogDescription>
-              Create a new plan by filling in the information below.
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4">
+      {/* Edit Form */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Plan Information</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2.5">
               <label htmlFor="name" className="text-sm font-medium">
                 Plan Name <span className="text-destructive">*</span>
@@ -355,18 +340,18 @@ export default function PlansPage() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setIsDialogOpen(false)}
+                onClick={() => router.push("/settings/plans")}
                 disabled={submitting}
               >
                 Cancel
               </Button>
               <Button type="submit" disabled={submitting}>
-                {submitting ? "Creating..." : "Create Plan"}
+                {submitting ? "Saving..." : "Save Changes"}
               </Button>
             </div>
           </form>
-        </DialogContent>
-      </Dialog>
+        </CardContent>
+      </Card>
     </div>
   );
 }
