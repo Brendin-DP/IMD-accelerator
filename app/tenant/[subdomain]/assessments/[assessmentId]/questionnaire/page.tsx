@@ -22,6 +22,26 @@ interface ParticipantAssessment {
   created_at: string | null;
 }
 
+interface AssessmentProgress {
+  id: string;
+  participant_assessment_id: string;
+  current_question: number;
+  total_questions: number;
+  answers: Record<string, any> | null;
+  completed_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+interface AssessmentQuestion {
+  id: string;
+  template_version_id: string;
+  question_text: string;
+  question_order: number;
+  category: string | null;
+  created_at: string | null;
+}
+
 export default function Assessment360() {
   const params = useParams();
   const router = useRouter();
@@ -32,20 +52,19 @@ export default function Assessment360() {
   const [current, setCurrent] = useState(0);
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [participantAssessment, setParticipantAssessment] = useState<ParticipantAssessment | null>(null);
+  const [assessmentProgress, setAssessmentProgress] = useState<AssessmentProgress | null>(null);
+  const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState(false);
 
   useEffect(() => {
     const loadData = async () => {
-      // Fetch questions from public/db.json
-      const res = await fetch("/db.json");
-      const data = await res.json();
-      const questionsData = data.assessment_questions_360 || [];
-      setQuestions(questionsData);
+      setLoading(true);
 
       // Get assessmentId (cohort_assessment_id) from URL and user from localStorage
       const storedUser = localStorage.getItem("participant");
       if (!storedUser) {
         console.error("No user found in localStorage");
+        setLoading(false);
         return;
       }
 
@@ -55,12 +74,13 @@ export default function Assessment360() {
         // Get the cohort_assessment to find the cohort_id
         const { data: cohortAssessment, error: caError } = await supabase
           .from("cohort_assessments")
-          .select("cohort_id")
+          .select("cohort_id, template_version_id")
           .eq("id", assessmentId)
           .single();
 
         if (caError || !cohortAssessment) {
           console.error("Error fetching cohort assessment:", caError);
+          setLoading(false);
           return;
         }
 
@@ -74,6 +94,7 @@ export default function Assessment360() {
 
         if (participantsError || !participant) {
           console.warn("No participant found for this user in this cohort");
+          setLoading(false);
           return;
         }
 
@@ -88,32 +109,173 @@ export default function Assessment360() {
 
         if (paError && paError.code !== "PGRST116") {
           console.error("Error fetching participant assessment:", paError);
+          setLoading(false);
           return;
         }
 
-        if (participantAssessmentData) {
-          setParticipantAssessment(participantAssessmentData as ParticipantAssessment);
-        } else {
+        if (!participantAssessmentData) {
           console.warn("Participant assessment not found. It may need to be created.");
+          setLoading(false);
+          return;
+        }
+
+        setParticipantAssessment(participantAssessmentData as ParticipantAssessment);
+
+        // Phase 2: Check if template_version_id exists
+        const templateVersionId = (cohortAssessment as any).template_version_id;
+
+        if (templateVersionId) {
+          // New flow: Load questions from assessment_questions table
+          const { data: assessmentQuestions, error: questionsError } = await supabase
+            .from("assessment_questions")
+            .select("*")
+            .eq("template_version_id", templateVersionId)
+            .order("question_order", { ascending: true });
+
+          if (questionsError) {
+            console.error("Error fetching assessment questions:", questionsError);
+            setLoading(false);
+            return;
+          }
+
+          if (!assessmentQuestions || assessmentQuestions.length === 0) {
+            console.warn("No questions found for template version");
+            setLoading(false);
+            return;
+          }
+
+          // Transform assessment_questions to Question format
+          const transformedQuestions: Question[] = assessmentQuestions.map((q: AssessmentQuestion) => ({
+            id: q.question_order,
+            category: q.category || "",
+            text: q.question_text,
+          }));
+
+          setQuestions(transformedQuestions);
+
+          // Fetch existing progress or initialize
+          const { data: existingProgress, error: progressError } = await supabase
+            .from("assessment_progress")
+            .select("*")
+            .eq("participant_assessment_id", participantAssessmentData.id)
+            .maybeSingle();
+
+          if (progressError && progressError.code !== "PGRST116") {
+            console.error("Error fetching assessment progress:", progressError);
+            setLoading(false);
+            return;
+          }
+
+          // Upsert assessment_progress
+          const progressData = {
+            participant_assessment_id: participantAssessmentData.id,
+            total_questions: transformedQuestions.length,
+            current_question: existingProgress?.current_question ?? 0,
+            answers: existingProgress?.answers ?? {},
+            updated_at: new Date().toISOString(),
+          };
+
+          const { data: upsertedProgress, error: upsertError } = await supabase
+            .from("assessment_progress")
+            .upsert(progressData, {
+              onConflict: "participant_assessment_id",
+            })
+            .select()
+            .single();
+
+          if (upsertError) {
+            console.error("Error upserting assessment progress:", upsertError);
+            setLoading(false);
+            return;
+          }
+
+          if (upsertedProgress) {
+            setAssessmentProgress(upsertedProgress as AssessmentProgress);
+            setCurrent(upsertedProgress.current_question ?? 0);
+            setAnswers((upsertedProgress.answers as Record<number, string>) || {});
+          }
+        } else {
+          // Backward compatibility: Load from db.json
+          const res = await fetch("/db.json");
+          const data = await res.json();
+          const questionsData = data.assessment_questions_360 || [];
+          setQuestions(questionsData);
+
+          // Try to load existing progress even for legacy assessments
+          const { data: existingProgress, error: progressError } = await supabase
+            .from("assessment_progress")
+            .select("*")
+            .eq("participant_assessment_id", participantAssessmentData.id)
+            .maybeSingle();
+
+          if (!progressError && existingProgress) {
+            setAssessmentProgress(existingProgress as AssessmentProgress);
+            setCurrent(existingProgress.current_question ?? 0);
+            setAnswers((existingProgress.answers as Record<number, string>) || {});
+          }
         }
       } catch (error) {
         console.error("Error loading data:", error);
+      } finally {
+        setLoading(false);
       }
     };
 
     loadData();
   }, [assessmentId]);
 
-  const handleAnswerChange = (questionId: number, value: string) => {
-    setAnswers((prev) => ({
-      ...prev,
+  const handleAnswerChange = async (questionId: number, value: string) => {
+    const newAnswers = {
+      ...answers,
       [questionId]: value,
-    }));
+    };
+    setAnswers(newAnswers);
+
+    // Persist to assessment_progress if we have a participant assessment
+    if (participantAssessment && assessmentProgress) {
+      const { error: updateError } = await supabase
+        .from("assessment_progress")
+        .update({
+          answers: newAnswers,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("participant_assessment_id", participantAssessment.id);
+
+      if (updateError) {
+        console.error("Error updating progress answers:", updateError);
+      } else {
+        // Update local progress state
+        setAssessmentProgress((prev) =>
+          prev ? { ...prev, answers: newAnswers as any } : null
+        );
+      }
+    }
   };
 
   const handleNext = async () => {
     if (current < questions.length - 1) {
-      setCurrent(current + 1);
+      const newCurrent = current + 1;
+      setCurrent(newCurrent);
+
+      // Update current_question in assessment_progress
+      if (participantAssessment && assessmentProgress) {
+        const { error: updateError } = await supabase
+          .from("assessment_progress")
+          .update({
+            current_question: newCurrent,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("participant_assessment_id", participantAssessment.id);
+
+        if (updateError) {
+          console.error("Error updating progress current_question:", updateError);
+        } else {
+          // Update local progress state
+          setAssessmentProgress((prev) =>
+            prev ? { ...prev, current_question: newCurrent } : null
+          );
+        }
+      }
     } else {
       await handleCompleteAssessment();
     }
@@ -127,6 +289,7 @@ export default function Assessment360() {
 
     setCompleting(true);
     try {
+      // Update participant_assessments status
       const { error: updateError } = await supabase
         .from("participant_assessments")
         .update({ status: "Completed" })
@@ -137,6 +300,22 @@ export default function Assessment360() {
         alert(`Error: ${updateError.message}`);
         setCompleting(false);
         return;
+      }
+
+      // Update assessment_progress if it exists
+      if (assessmentProgress) {
+        const { error: progressError } = await supabase
+          .from("assessment_progress")
+          .update({
+            completed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("participant_assessment_id", participantAssessment.id);
+
+        if (progressError) {
+          console.error("Error updating progress completion:", progressError);
+          // Don't fail the whole operation if progress update fails
+        }
       }
 
       // Update local state
@@ -153,11 +332,33 @@ export default function Assessment360() {
     }
   };
 
-  const handleSkipToLast = () => {
-    setCurrent(questions.length - 1);
+  const handleSkipToLast = async () => {
+    const lastIndex = questions.length - 1;
+    setCurrent(lastIndex);
+
+    // Update current_question in assessment_progress
+    if (participantAssessment && assessmentProgress) {
+      const { error: updateError } = await supabase
+        .from("assessment_progress")
+        .update({
+          current_question: lastIndex,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("participant_assessment_id", participantAssessment.id);
+
+      if (updateError) {
+        console.error("Error updating progress current_question:", updateError);
+      } else {
+        // Update local progress state
+        setAssessmentProgress((prev) =>
+          prev ? { ...prev, current_question: lastIndex } : null
+        );
+      }
+    }
   };
 
-  if (!questions.length) return <p>Loading questions...</p>;
+  if (loading) return <p>Loading questions...</p>;
+  if (!questions.length) return <p>No questions available.</p>;
 
   const currentQuestion = questions[current];
   const progress = ((current + 1) / questions.length) * 100;
