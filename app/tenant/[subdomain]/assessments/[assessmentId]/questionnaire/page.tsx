@@ -152,6 +152,10 @@ export default function Assessment360() {
             assessmentDefinitionId = systemDef.id;
           }
 
+          if (!assessmentDefinitionId) {
+            throw new Error("Missing assessmentDefinitionId for this assessment");
+          }
+
           setAssessmentDefinitionId(assessmentDefinitionId);
           setUsesNewPlan(true);
           await loadQuestionsFromDB(assessmentDefinitionId, assessmentTypeId, assessmentTypeName);
