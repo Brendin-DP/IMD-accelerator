@@ -35,6 +35,7 @@ export default function ReviewQuestionnaire() {
   const [externalReviewerId, setExternalReviewerId] = useState<string | null>(null);
   const [assessmentDefinitionId, setAssessmentDefinitionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [hasResumed, setHasResumed] = useState(false);
 
   useEffect(() => {
     const loadData = async () => {
@@ -229,6 +230,27 @@ export default function ReviewQuestionnaire() {
     loadData();
   }, [reviewId]);
 
+  // Resume from last question when session and questions are loaded
+  useEffect(() => {
+    const resumeFromLastQuestion = async () => {
+      if (
+        !hasResumed &&
+        responseSessionId &&
+        assessmentDefinitionId &&
+        questions.length > 0
+      ) {
+        console.log("🔵 [DEBUG REVIEWER] Determining resume position...");
+        const resumePos = await determineResumePosition(responseSessionId, questions);
+
+        console.log("✅ [DEBUG REVIEWER] Resume position determined:", resumePos);
+        setCurrent(resumePos.questionIndex);
+        setHasResumed(true);
+      }
+    };
+
+    resumeFromLastQuestion();
+  }, [responseSessionId, questions, assessmentDefinitionId, hasResumed]);
+
   async function loadQuestionsFromDB(assessmentDefinitionId: string) {
     try {
       // Fetch questions
@@ -355,6 +377,83 @@ export default function ReviewQuestionnaire() {
       return null;
     } finally {
       setLoadingSession(false);
+    }
+  }
+
+  // Helper function to determine resume position
+  async function determineResumePosition(
+    sessionId: string,
+    questions: Question[]
+  ): Promise<{ questionIndex: number }> {
+    try {
+      // Fetch session to get last_question_id
+      const { data: session, error: sessionError } = await supabase
+        .from("assessment_response_sessions")
+        .select("last_question_id, status")
+        .eq("id", sessionId)
+        .single();
+
+      if (sessionError || !session) {
+        console.log("🔵 [DEBUG REVIEWER] No session data found, starting from beginning");
+        return { questionIndex: 0 };
+      }
+
+      // Only resume if session is in_progress
+      if (session.status !== "in_progress") {
+        console.log("🔵 [DEBUG REVIEWER] Session not in progress, starting from beginning");
+        return { questionIndex: 0 };
+      }
+
+      // Fetch all responses for this session
+      const { data: responses, error: responsesError } = await supabase
+        .from("assessment_responses")
+        .select("question_id, is_answered")
+        .eq("session_id", sessionId);
+
+      if (responsesError) {
+        console.error("Error fetching responses for resume:", responsesError);
+        return { questionIndex: 0 };
+      }
+
+      const answeredQuestionIds = new Set(
+        responses?.filter((r) => r.is_answered).map((r) => r.question_id) || []
+      );
+
+      // If we have last_question_id, try to resume from there
+      if (session.last_question_id) {
+        const questionIndex = questions.findIndex((q) => q.id === session.last_question_id);
+
+        if (questionIndex >= 0) {
+          console.log("✅ [DEBUG REVIEWER] Resuming from last_question_id:", {
+            questionId: session.last_question_id,
+            questionIndex,
+          });
+          return { questionIndex };
+        }
+
+        // last_question_id exists but question not found (maybe deleted/changed)
+        console.log("⚠️ [DEBUG REVIEWER] last_question_id not found in questions, finding first unanswered");
+      }
+
+      // Find first unanswered question
+      for (let i = 0; i < questions.length; i++) {
+        if (!answeredQuestionIds.has(questions[i].id)) {
+          console.log("✅ [DEBUG REVIEWER] Resuming at first unanswered question:", {
+            questionIndex: i,
+          });
+          return { questionIndex: i };
+        }
+      }
+
+      // All answered, return last question
+      const lastIndex = questions.length - 1;
+      console.log("✅ [DEBUG REVIEWER] All questions answered, resuming at last question:", {
+        questionIndex: lastIndex,
+      });
+      return { questionIndex: lastIndex };
+    } catch (error) {
+      console.error("❌ [DEBUG REVIEWER] Error determining resume position:", error);
+      return { questionIndex: 0 };
     }
   }
 

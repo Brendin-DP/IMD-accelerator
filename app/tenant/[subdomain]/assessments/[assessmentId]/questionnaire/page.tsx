@@ -51,20 +51,21 @@ export default function Assessment360() {
   const [assessmentDefinitionId, setAssessmentDefinitionId] = useState<string | null>(null);
   const [responseSessionId, setResponseSessionId] = useState<string | null>(null);
   const [loadingSession, setLoadingSession] = useState(false);
+  const [hasResumed, setHasResumed] = useState(false);
 
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
       try {
         // Fetch cohort_assessment to get assessment_type_id and cohort_id
-        const { data: cohortAssessment, error: caError } = await supabase
-          .from("cohort_assessments")
+          const { data: cohortAssessment, error: caError } = await supabase
+            .from("cohort_assessments")
           .select("assessment_type_id, cohort_id")
-          .eq("id", assessmentId)
-          .single();
+            .eq("id", assessmentId)
+            .single();
 
-        if (caError || !cohortAssessment) {
-          console.error("Error fetching cohort assessment:", caError);
+          if (caError || !cohortAssessment) {
+            console.error("Error fetching cohort assessment:", caError);
           setLoading(false);
           return;
         }
@@ -144,7 +145,7 @@ export default function Assessment360() {
               console.error("Error fetching assessment definition:", defError);
               alert("Error: Could not find assessment definition. Please try again.");
               setLoading(false);
-              return;
+            return;
             }
 
             assessmentDefinitionId = systemDef.id;
@@ -160,25 +161,25 @@ export default function Assessment360() {
             try {
               const userData = JSON.parse(storedUser);
 
-              // Find the cohort_participant for this user AND this specific cohort
-              const { data: participants, error: participantsError } = await supabase
-                .from("cohort_participants")
-                .select("id")
-                .eq("client_user_id", userData.id)
-                .eq("cohort_id", cohortAssessment.cohort_id);
+          // Find the cohort_participant for this user AND this specific cohort
+          const { data: participants, error: participantsError } = await supabase
+            .from("cohort_participants")
+            .select("id")
+            .eq("client_user_id", userData.id)
+            .eq("cohort_id", cohortAssessment.cohort_id);
 
-              if (participantsError || !participants || participants.length === 0) {
+          if (participantsError || !participants || participants.length === 0) {
                 console.warn("⚠️ [DEBUG] No participants found for this user in this cohort");
               } else {
-                const participantIds = participants.map((p: any) => p.id);
+          const participantIds = participants.map((p: any) => p.id);
 
-                // Fetch participant_assessment
-                const { data: participantAssessmentData, error: paError } = await supabase
-                  .from("participant_assessments")
-                  .select("*")
-                  .eq("cohort_assessment_id", assessmentId)
-                  .in("participant_id", participantIds)
-                  .maybeSingle();
+          // Fetch participant_assessment
+          const { data: participantAssessmentData, error: paError } = await supabase
+            .from("participant_assessments")
+            .select("*")
+            .eq("cohort_assessment_id", assessmentId)
+            .in("participant_id", participantIds)
+            .maybeSingle();
 
                 if (!paError && participantAssessmentData) {
                   setParticipantAssessmentId(participantAssessmentData.id);
@@ -230,7 +231,7 @@ export default function Assessment360() {
                   .maybeSingle();
 
                 if (!paError && participantAssessmentData) {
-                  setParticipantAssessmentId(participantAssessmentData.id);
+            setParticipantAssessmentId(participantAssessmentData.id);
                 }
               }
             } catch (error) {
@@ -269,6 +270,35 @@ export default function Assessment360() {
       }]);
     }
   }, [steps, questions, usesNewPlan]);
+
+  // Resume from last question when session and questions are loaded
+  useEffect(() => {
+    const resumeFromLastQuestion = async () => {
+      if (
+        !hasResumed &&
+        responseSessionId &&
+        usesNewPlan &&
+        questions.length > 0 &&
+        (assessmentType?.toLowerCase() === "pulse" ? questionGroups.length > 0 : true)
+      ) {
+        console.log("🔵 [DEBUG] Determining resume position...");
+        const resumePos = await determineResumePosition(
+          responseSessionId,
+          questions,
+          questionGroups.length > 0 ? questionGroups : undefined
+        );
+
+        console.log("✅ [DEBUG] Resume position determined:", resumePos);
+        setCurrent(resumePos.questionIndex);
+        if (resumePos.stepIndex !== undefined) {
+          setCurrentStep(resumePos.stepIndex);
+        }
+        setHasResumed(true);
+      }
+    };
+
+    resumeFromLastQuestion();
+  }, [responseSessionId, questions, questionGroups, usesNewPlan, assessmentType, hasResumed]);
 
   useEffect(() => {
     // Update currentStep when current question index changes (for Pulse)
@@ -435,6 +465,9 @@ export default function Assessment360() {
         setResponseSessionId(existingSession.id);
         // Load existing responses
         await loadExistingResponses(existingSession.id);
+        
+        // Determine resume position after questions are loaded
+        // This will be called after questions are set in state
         return existingSession.id;
       }
 
@@ -486,6 +519,158 @@ export default function Assessment360() {
       return null;
     } finally {
       setLoadingSession(false);
+    }
+  }
+
+  // Helper function to determine resume position
+  async function determineResumePosition(
+    sessionId: string,
+    questions: Question[],
+    questionGroups?: QuestionGroup[]
+  ): Promise<{ questionIndex: number; stepIndex?: number }> {
+    try {
+      // Fetch session to get last_question_id and last_step_id
+      const { data: session, error: sessionError } = await supabase
+        .from("assessment_response_sessions")
+        .select("last_question_id, last_step_id, status")
+        .eq("id", sessionId)
+        .single();
+
+      if (sessionError || !session) {
+        console.log("🔵 [DEBUG] No session data found, starting from beginning");
+        return { questionIndex: 0, stepIndex: 0 };
+      }
+
+      // Only resume if session is in_progress
+      if (session.status !== "in_progress") {
+        console.log("🔵 [DEBUG] Session not in progress, starting from beginning");
+        return { questionIndex: 0, stepIndex: 0 };
+      }
+
+      // Fetch all responses for this session
+      const { data: responses, error: responsesError } = await supabase
+        .from("assessment_responses")
+        .select("question_id, is_answered")
+        .eq("session_id", sessionId);
+
+      if (responsesError) {
+        console.error("Error fetching responses for resume:", responsesError);
+        return { questionIndex: 0, stepIndex: 0 };
+      }
+
+      const answeredQuestionIds = new Set(
+        responses?.filter((r) => r.is_answered).map((r) => r.question_id) || []
+      );
+
+      // If we have last_question_id, try to resume from there
+      if (session.last_question_id) {
+        let questionIndex = -1;
+        let stepIndex = 0;
+
+        if (questionGroups && questionGroups.length > 0) {
+          // Pulse assessment with steps
+          const allQuestions = questionGroups.flatMap((g) => g.questions);
+          questionIndex = allQuestions.findIndex((q) => q.id === session.last_question_id);
+
+          if (questionIndex >= 0) {
+            // Find which step this question belongs to
+            let currentIndex = 0;
+            for (let i = 0; i < questionGroups.length; i++) {
+              const stepEndIndex = currentIndex + questionGroups[i].questions.length;
+              if (questionIndex >= currentIndex && questionIndex < stepEndIndex) {
+                stepIndex = i;
+                break;
+              }
+              currentIndex = stepEndIndex;
+            }
+
+            console.log("✅ [DEBUG] Resuming from last_question_id:", {
+              questionId: session.last_question_id,
+              questionIndex,
+              stepIndex,
+            });
+            return { questionIndex, stepIndex };
+          }
+        } else {
+          // 360 assessment without steps
+          questionIndex = questions.findIndex((q) => q.id === session.last_question_id);
+
+          if (questionIndex >= 0) {
+            console.log("✅ [DEBUG] Resuming from last_question_id:", {
+              questionId: session.last_question_id,
+              questionIndex,
+            });
+            return { questionIndex };
+          }
+        }
+
+        // last_question_id exists but question not found (maybe deleted/changed)
+        console.log("⚠️ [DEBUG] last_question_id not found in questions, finding first unanswered");
+      }
+
+      // Find first unanswered question
+      if (questionGroups && questionGroups.length > 0) {
+        // Pulse assessment with steps
+        const allQuestions = questionGroups.flatMap((g) => g.questions);
+        for (let i = 0; i < allQuestions.length; i++) {
+          if (!answeredQuestionIds.has(allQuestions[i].id)) {
+            // Find which step this question belongs to
+            let currentIndex = 0;
+            let stepIndex = 0;
+            for (let j = 0; j < questionGroups.length; j++) {
+              const stepEndIndex = currentIndex + questionGroups[j].questions.length;
+              if (i >= currentIndex && i < stepEndIndex) {
+                stepIndex = j;
+                break;
+              }
+              currentIndex = stepEndIndex;
+            }
+
+            console.log("✅ [DEBUG] Resuming at first unanswered question:", {
+              questionIndex: i,
+              stepIndex,
+            });
+            return { questionIndex: i, stepIndex };
+          }
+        }
+
+        // All answered, return last question
+        const lastIndex = allQuestions.length - 1;
+        let stepIndex = 0;
+        let currentIndex = 0;
+        for (let j = 0; j < questionGroups.length; j++) {
+          const stepEndIndex = currentIndex + questionGroups[j].questions.length;
+          if (lastIndex >= currentIndex && lastIndex < stepEndIndex) {
+            stepIndex = j;
+            break;
+          }
+          currentIndex = stepEndIndex;
+        }
+
+        console.log("✅ [DEBUG] All questions answered, resuming at last question:", {
+          questionIndex: lastIndex,
+          stepIndex,
+        });
+        return { questionIndex: lastIndex, stepIndex };
+      } else {
+        // 360 assessment without steps
+        for (let i = 0; i < questions.length; i++) {
+          if (!answeredQuestionIds.has(questions[i].id)) {
+            console.log("✅ [DEBUG] Resuming at first unanswered question:", { questionIndex: i });
+            return { questionIndex: i };
+          }
+        }
+
+        // All answered, return last question
+        const lastIndex = questions.length - 1;
+        console.log("✅ [DEBUG] All questions answered, resuming at last question:", {
+          questionIndex: lastIndex,
+        });
+        return { questionIndex: lastIndex };
+      }
+    } catch (error) {
+      console.error("❌ [DEBUG] Error determining resume position:", error);
+      return { questionIndex: 0, stepIndex: 0 };
     }
   }
 
@@ -761,10 +946,10 @@ export default function Assessment360() {
       }
     } else {
       // 360 or old plan - simple sequential navigation
-      if (current < questions.length - 1) {
-        setCurrent(current + 1);
-      } else {
-        await handleCompleteAssessment();
+    if (current < questions.length - 1) {
+      setCurrent(current + 1);
+    } else {
+      await handleCompleteAssessment();
       }
     }
   };
@@ -897,7 +1082,7 @@ export default function Assessment360() {
       const totalQuestions = questionGroups.reduce((sum, g) => sum + g.questions.length, 0);
       setCurrent(totalQuestions - 1);
     } else {
-      setCurrent(questions.length - 1);
+    setCurrent(questions.length - 1);
     }
   };
 
@@ -1118,9 +1303,9 @@ export default function Assessment360() {
               Previous
             </Button>
           )}
-          <Button onClick={handleNext} disabled={completing}>
-            {completing ? "Completing..." : isLastStep ? "Complete Assessment" : "Next"}
-          </Button>
+        <Button onClick={handleNext} disabled={completing}>
+          {completing ? "Completing..." : isLastStep ? "Complete Assessment" : "Next"}
+        </Button>
         </div>
         {!isLastStep && (
           <Button onClick={handleSkipToLast} variant="tertiary">
