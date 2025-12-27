@@ -898,7 +898,7 @@ export default function TenantAssessmentDetailPage() {
           .insert({
             participant_id: participants.id,
             cohort_assessment_id: assessmentId,
-            status: newStatus,
+            status: newStatus as any,
           })
           .select()
           .single();
@@ -910,6 +910,14 @@ export default function TenantAssessmentDetailPage() {
           return;
         }
 
+        if (!newParticipantAssessment) {
+          console.error("No data returned after creating participant assessment");
+          showToast("Failed to update status: No data returned", "error");
+          setUpdatingStatus(false);
+          return;
+        }
+
+        console.log("Created participant assessment with status:", newParticipantAssessment.status);
         setParticipantAssessment(newParticipantAssessment);
         showToast("Status updated successfully", "success");
       } catch (err) {
@@ -922,10 +930,12 @@ export default function TenantAssessmentDetailPage() {
       // Update existing participant assessment
       setUpdatingStatus(true);
       try {
-        const { error: updateError } = await supabase
+        const { data: updatedData, error: updateError } = await supabase
           .from("participant_assessments")
-          .update({ status: newStatus })
-          .eq("id", participantAssessment.id);
+          .update({ status: newStatus as any })
+          .eq("id", participantAssessment.id)
+          .select()
+          .single();
 
         if (updateError) {
           console.error("Error updating status:", updateError);
@@ -934,7 +944,19 @@ export default function TenantAssessmentDetailPage() {
           return;
         }
 
-        // Refresh participant assessment
+        if (!updatedData) {
+          console.error("No data returned after updating participant assessment");
+          showToast("Failed to update status: No data returned", "error");
+          setUpdatingStatus(false);
+          return;
+        }
+
+        console.log("Updated participant assessment with status:", updatedData.status);
+        
+        // Update local state immediately with the returned data
+        setParticipantAssessment(updatedData);
+
+        // Also refresh to ensure we have the latest data
         await fetchParticipantAssessment(user.id);
         showToast("Status updated successfully", "success");
       } catch (err) {
