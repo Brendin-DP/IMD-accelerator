@@ -80,7 +80,12 @@ export default function PlanDetailPage() {
         // Continue even if this fails - just won't have selected types
       }
 
-      const selectedAssessmentTypeIds = planAssessments?.map((pa) => pa.assessment_type_id) || [];
+      type PlanAssessmentRow = { assessment_type_id: string | null };
+
+      const selectedAssessmentTypeIds =
+        (planAssessments as PlanAssessmentRow[] | null | undefined)
+          ?.map((pa) => pa.assessment_type_id)
+          .filter((id): id is string => !!id) ?? [];
 
       // Populate form with current plan data
       setFormData({
