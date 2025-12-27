@@ -444,16 +444,10 @@ export default function PlansPage() {
           <h1 className="text-3xl font-bold">Plan Management</h1>
           <p className="text-muted-foreground mt-2">Manage subscription plans and pricing tiers</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setIsDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Plan
-          </Button>
-          <Button onClick={() => setIsNewPlanDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add New Plan
-          </Button>
-        </div>
+        <Button onClick={() => setIsNewPlanDialogOpen(true)}>
+          <Plus className="mr-2 h-4 w-4" />
+          Add Plan
+        </Button>
       </div>
 
       {/* Plans Table */}

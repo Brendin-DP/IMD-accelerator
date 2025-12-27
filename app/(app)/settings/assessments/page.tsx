@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Edit } from "lucide-react";
+import { Plus, Edit, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -40,6 +40,9 @@ export default function AssessmentsPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [deletingAssessmentId, setDeletingAssessmentId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     description: "",
@@ -134,6 +137,75 @@ export default function AssessmentsPage() {
   function handleEdit(assessment: AssessmentDefinition, e: React.MouseEvent) {
     e.stopPropagation();
     router.push(`/settings/assessments/${assessment.id}`);
+  }
+
+  function handleDeleteClick(assessmentId: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    setDeletingAssessmentId(assessmentId);
+    setIsDeleteDialogOpen(true);
+  }
+
+  async function handleDeleteConfirm() {
+    if (!deletingAssessmentId) return;
+
+    try {
+      setDeleting(true);
+
+      // Delete questions first (foreign key constraint)
+      const { error: questionsError } = await supabase
+        .from("assessment_questions_v2")
+        .delete()
+        .eq("assessment_definition_id", deletingAssessmentId);
+
+      if (questionsError) {
+        console.error("Error deleting assessment questions:", questionsError);
+        setSubmitError(`Failed to delete assessment: ${questionsError.message}`);
+        setDeleting(false);
+        setIsDeleteDialogOpen(false);
+        setDeletingAssessmentId(null);
+        return;
+      }
+
+      // Delete steps
+      const { error: stepsError } = await supabase
+        .from("assessment_steps_v2")
+        .delete()
+        .eq("assessment_definition_id", deletingAssessmentId);
+
+      if (stepsError) {
+        console.error("Error deleting assessment steps:", stepsError);
+        setSubmitError(`Failed to delete assessment: ${stepsError.message}`);
+        setDeleting(false);
+        setIsDeleteDialogOpen(false);
+        setDeletingAssessmentId(null);
+        return;
+      }
+
+      // Delete the assessment definition
+      const { error: deleteError } = await supabase
+        .from("assessment_definitions_v2")
+        .delete()
+        .eq("id", deletingAssessmentId);
+
+      if (deleteError) {
+        console.error("Error deleting assessment:", deleteError);
+        setSubmitError(`Failed to delete assessment: ${deleteError.message}`);
+        setDeleting(false);
+        setIsDeleteDialogOpen(false);
+        setDeletingAssessmentId(null);
+        return;
+      }
+
+      // Success - close dialog and refresh list
+      setIsDeleteDialogOpen(false);
+      setDeletingAssessmentId(null);
+      await fetchAssessments();
+    } catch (err) {
+      console.error("Unexpected error:", err);
+      setSubmitError(err instanceof Error ? err.message : "An unexpected error occurred");
+    } finally {
+      setDeleting(false);
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -351,15 +423,26 @@ export default function AssessmentsPage() {
                   </td>
                   <td className="px-6 py-4 text-sm" onClick={(e) => e.stopPropagation()}>
                     {!assessment.is_system && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={(e) => handleEdit(assessment, e)}
-                        className="h-8"
-                      >
-                        <Edit className="mr-2 h-4 w-4" />
-                        Edit
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => handleEdit(assessment, e)}
+                          className="h-8"
+                        >
+                          <Edit className="mr-2 h-4 w-4" />
+                          Edit
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => handleDeleteClick(assessment.id, e)}
+                          className="h-8 text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Delete
+                        </Button>
+                      </div>
                     )}
                   </td>
                 </tr>
@@ -447,6 +530,40 @@ export default function AssessmentsPage() {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Assessment</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this custom assessment? This action cannot be undone.
+              All associated steps and questions will also be deleted.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setIsDeleteDialogOpen(false);
+                setDeletingAssessmentId(null);
+              }}
+              disabled={deleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleDeleteConfirm}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? "Deleting..." : "Delete Assessment"}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
