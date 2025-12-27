@@ -11,6 +11,17 @@ interface Question {
   text: string;
 }
 
+interface ParticipantAssessment {
+  id: string;
+  participant_id: string;
+  cohort_assessment_id: string;
+  score: number | null;
+  status: string | null;
+  submitted_at: string | null;
+  allow_reviewer_nominations: boolean | null;
+  created_at: string | null;
+}
+
 export default function Assessment360() {
   const params = useParams();
   const router = useRouter();
@@ -20,7 +31,7 @@ export default function Assessment360() {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [current, setCurrent] = useState(0);
   const [answers, setAnswers] = useState<Record<number, string>>({});
-  const [participantAssessmentId, setParticipantAssessmentId] = useState<string | null>(null);
+  const [participantAssessment, setParticipantAssessment] = useState<ParticipantAssessment | null>(null);
   const [completing, setCompleting] = useState(false);
 
   useEffect(() => {
@@ -31,57 +42,62 @@ export default function Assessment360() {
       const questionsData = data.assessment_questions_360 || [];
       setQuestions(questionsData);
 
-      // Fetch participant_assessment_id
+      // Get assessmentId (cohort_assessment_id) from URL and user from localStorage
       const storedUser = localStorage.getItem("participant");
-      if (storedUser) {
-        try {
-          const userData = JSON.parse(storedUser);
+      if (!storedUser) {
+        console.error("No user found in localStorage");
+        return;
+      }
 
-          // Get the cohort_assessment to find the cohort_id
-          const { data: cohortAssessment, error: caError } = await supabase
-            .from("cohort_assessments")
-            .select("cohort_id")
-            .eq("id", assessmentId)
-            .single();
+      try {
+        const userData = JSON.parse(storedUser);
 
-          if (caError || !cohortAssessment) {
-            console.error("Error fetching cohort assessment:", caError);
-            return;
-          }
+        // Get the cohort_assessment to find the cohort_id
+        const { data: cohortAssessment, error: caError } = await supabase
+          .from("cohort_assessments")
+          .select("cohort_id")
+          .eq("id", assessmentId)
+          .single();
 
-          // Find the cohort_participant for this user AND this specific cohort
-          const { data: participants, error: participantsError } = await supabase
-            .from("cohort_participants")
-            .select("id")
-            .eq("client_user_id", userData.id)
-            .eq("cohort_id", cohortAssessment.cohort_id);
-
-          if (participantsError || !participants || participants.length === 0) {
-            console.warn("No participants found for this user in this cohort");
-            return;
-          }
-
-          const participantIds = participants.map((p: any) => p.id);
-
-          // Fetch participant_assessment
-          const { data: participantAssessmentData, error: paError } = await supabase
-            .from("participant_assessments")
-            .select("*")
-            .eq("cohort_assessment_id", assessmentId)
-            .in("participant_id", participantIds)
-            .maybeSingle();
-
-          if (paError && paError.code !== "PGRST116") {
-            console.error("Error fetching participant assessment:", paError);
-            return;
-          }
-
-          if (participantAssessmentData) {
-            setParticipantAssessmentId(participantAssessmentData.id);
-          }
-        } catch (error) {
-          console.error("Error loading data:", error);
+        if (caError || !cohortAssessment) {
+          console.error("Error fetching cohort assessment:", caError);
+          return;
         }
+
+        // Find the cohort_participant for this user AND this specific cohort
+        const { data: participant, error: participantsError } = await supabase
+          .from("cohort_participants")
+          .select("id")
+          .eq("client_user_id", userData.id)
+          .eq("cohort_id", cohortAssessment.cohort_id)
+          .maybeSingle();
+
+        if (participantsError || !participant) {
+          console.warn("No participant found for this user in this cohort");
+          return;
+        }
+
+        // Direct query: select * from participant_assessments
+        // where cohort_assessment_id = ? and participant_id = ?
+        const { data: participantAssessmentData, error: paError } = await supabase
+          .from("participant_assessments")
+          .select("*")
+          .eq("cohort_assessment_id", assessmentId)
+          .eq("participant_id", participant.id)
+          .maybeSingle();
+
+        if (paError && paError.code !== "PGRST116") {
+          console.error("Error fetching participant assessment:", paError);
+          return;
+        }
+
+        if (participantAssessmentData) {
+          setParticipantAssessment(participantAssessmentData as ParticipantAssessment);
+        } else {
+          console.warn("Participant assessment not found. It may need to be created.");
+        }
+      } catch (error) {
+        console.error("Error loading data:", error);
       }
     };
 
@@ -104,7 +120,7 @@ export default function Assessment360() {
   };
 
   const handleCompleteAssessment = async () => {
-    if (!participantAssessmentId) {
+    if (!participantAssessment) {
       alert("Error: Could not find assessment. Please try again.");
       return;
     }
@@ -114,7 +130,7 @@ export default function Assessment360() {
       const { error: updateError } = await supabase
         .from("participant_assessments")
         .update({ status: "Completed" })
-        .eq("id", participantAssessmentId);
+        .eq("id", participantAssessment.id);
 
       if (updateError) {
         console.error("Error completing assessment:", updateError);
@@ -122,6 +138,11 @@ export default function Assessment360() {
         setCompleting(false);
         return;
       }
+
+      // Update local state
+      setParticipantAssessment((prev) => 
+        prev ? { ...prev, status: "Completed" } : null
+      );
 
       // Redirect to assessment overview
       router.push(`/tenant/${subdomain}/assessments/${assessmentId}`);
