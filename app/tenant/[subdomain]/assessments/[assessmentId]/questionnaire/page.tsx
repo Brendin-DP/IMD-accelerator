@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Stepper, StepperStep } from "@/components/ui/stepper";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabaseClient";
+import { MicTextarea } from "@/components/mictextarea";
 
 interface Question {
   id: number | string;
@@ -1193,18 +1194,10 @@ export default function Assessment360() {
                 <label htmlFor={`answer-${currentQuestion.id}`} className="text-sm font-medium">
                   Your response {currentQuestion.required ? "" : "(optional)"}
                 </label>
-                <textarea
-                  id={`answer-${currentQuestion.id}`}
+                <MicTextarea
                   value={answers[currentQuestion.id] || ""}
-                  onChange={(e) => handleAnswerChange(currentQuestion.id, e.target.value)}
-                  placeholder="Enter your response here..."
-                  rows={6}
-                  className={cn(
-                    "flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background",
-                    "placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2",
-                    "focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
-                    "resize-none"
-                  )}
+                  onChange={(next) => handleAnswerChange(currentQuestion.id, next)}
+                  placeholder="Type your answer… or hold the mic to speak"
                 />
               </div>
             </div>
@@ -1292,18 +1285,10 @@ export default function Assessment360() {
           <label htmlFor={`answer-${currentQuestion.id}`} className="text-sm font-medium">
             Your response (optional)
           </label>
-          <textarea
-            id={`answer-${currentQuestion.id}`}
+          <MicTextarea
             value={answers[currentQuestion.id] || ""}
-            onChange={(e) => handleAnswerChange(currentQuestion.id, e.target.value)}
-            placeholder="Enter your response here..."
-            rows={6}
-            className={cn(
-              "flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background",
-              "placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2",
-              "focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
-              "resize-none"
-            )}
+            onChange={(next) => handleAnswerChange(currentQuestion.id, next)}
+            placeholder="Type your answer… or hold the mic to speak"
           />
         </div>
       </div>
