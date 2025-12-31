@@ -16,6 +16,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-select": "^2.2.6",
+    "@react-pdf/renderer": "^4.3.2",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.78.0",
     "@vercel/analytics": "^1.6.1",
