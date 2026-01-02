@@ -272,8 +272,15 @@ export default function TenantAssessmentDetailPage() {
 
       setParticipantAssessment(pa as ParticipantAssessment | null);
       
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:273',message:'fetchParticipantAssessment found participant assessment',data:{participantAssessmentId:pa?.id,status:pa?.status,assessmentId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+      // #endregion
+      
       // Fetch response session if participant assessment exists
       if (pa?.id) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:276',message:'About to call fetchResponseSession',data:{participantAssessmentId:pa.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+        // #endregion
         await fetchResponseSession(pa.id);
         fetchNominations(pa.id, userId);
         // Check if report is available for pulse assessments
@@ -396,6 +403,10 @@ export default function TenantAssessmentDetailPage() {
         .eq("respondent_type", "participant")
         .maybeSingle();
 
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:391',message:'fetchResponseSession QUERY',data:{participantAssessmentId,assessmentDefinitionId,sessionFound:!!session,sessionId:session?.id,error:sessionError?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+      // #endregion
+
       if (sessionError && sessionError.code !== "PGRST116") {
         console.error("Error fetching response session:", sessionError);
         setResponseSession(null);
@@ -413,9 +424,16 @@ export default function TenantAssessmentDetailPage() {
           .select("*", { count: "exact", head: true })
           .eq("session_id", session.id)
           .eq("is_answered", true);
+        
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:415',message:'fetchResponseSession COUNT QUERY',data:{sessionId:session.id,answeredCount,error:countError?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+        // #endregion
 
         if (!countError) {
           setResponseCount(answeredCount || 0);
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:426',message:'fetchResponseSession SET responseCount',data:{sessionId:session.id,answeredCount,totalQuestions:null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+          // #endregion
         }
 
         // Fetch total questions count
@@ -424,8 +442,15 @@ export default function TenantAssessmentDetailPage() {
           .select("*", { count: "exact", head: true })
           .eq("assessment_definition_id", assessmentDefinitionId);
 
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:430',message:'fetchResponseSession TOTAL QUESTIONS QUERY',data:{assessmentDefinitionId,totalCount,error:totalError?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+        // #endregion
+
         if (!totalError) {
           setTotalQuestions(totalCount || 0);
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:436',message:'fetchResponseSession SET totalQuestions',data:{sessionId:session.id,answeredCount,totalQuestions:totalCount},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+          // #endregion
         }
 
         // Auto-update status based on progress
