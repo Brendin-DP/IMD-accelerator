@@ -156,6 +156,10 @@ export default function Assessment360() {
             throw new Error("Missing assessmentDefinitionId for this assessment");
           }
 
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:159',message:'Assessment definition ID resolved',data:{assessmentDefinitionId,assessmentTypeId,assessmentTypeName},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+          // #endregion
+
           setAssessmentDefinitionId(assessmentDefinitionId);
           setUsesNewPlan(true);
           await loadQuestionsFromDB(assessmentDefinitionId, assessmentTypeId, assessmentTypeName);
@@ -179,6 +183,9 @@ export default function Assessment360() {
           const participantIds = participants.map((p: any) => p.id);
 
           // Fetch participant_assessment
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:182',message:'Looking up participant_assessment',data:{assessmentId,participantIds},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
           const { data: participantAssessmentData, error: paError } = await supabase
             .from("participant_assessments")
             .select("*")
@@ -186,24 +193,65 @@ export default function Assessment360() {
             .in("participant_id", participantIds)
             .maybeSingle();
 
-                if (!paError && participantAssessmentData) {
-                  setParticipantAssessmentId(participantAssessmentData.id);
-                  
-                  // Create or get response session - use local variable, not state
-                  console.log("🔵 [DEBUG] Creating/getting response session for participant");
-                  console.log("🔵 [DEBUG] Using assessmentDefinitionId:", assessmentDefinitionId);
-                  const sessionId = await createOrGetResponseSession(
-                    participantAssessmentData.id,
-                    assessmentDefinitionId, // Use local variable, not state
-                    "participant",
-                    undefined,
-                    undefined,
-                    userData.id
-                  );
-                  console.log("🔵 [DEBUG] Session ID result:", sessionId);
-                } else {
-                  console.warn("⚠️ [DEBUG] No participant assessment found:", paError);
-                }
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:189',message:'Participant assessment lookup result',data:{found:!!participantAssessmentData,error:paError?.message,participantAssessmentId:participantAssessmentData?.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
+
+          let finalParticipantAssessmentId: string | null = null;
+
+          if (!paError && participantAssessmentData) {
+            finalParticipantAssessmentId = participantAssessmentData.id;
+            setParticipantAssessmentId(participantAssessmentData.id);
+          } else {
+            // Create participant_assessment if it doesn't exist (fallback)
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:197',message:'Creating participant_assessment (fallback)',data:{assessmentId,participantId:participantIds[0]},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+            // #endregion
+            const { data: newPA, error: createError } = await supabase
+              .from("participant_assessments")
+              .insert({
+                participant_id: participantIds[0],
+                cohort_assessment_id: assessmentId,
+                status: "In Progress",
+              })
+              .select()
+              .single();
+
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:210',message:'Participant assessment creation result',data:{success:!!newPA,error:createError?.message,participantAssessmentId:newPA?.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+            // #endregion
+
+            if (createError) {
+              console.error("❌ [DEBUG] Error creating participant assessment:", createError);
+            } else if (newPA) {
+              finalParticipantAssessmentId = newPA.id;
+              setParticipantAssessmentId(newPA.id);
+            }
+          }
+
+          // Create or get response session if we have participant_assessment_id
+          if (finalParticipantAssessmentId && assessmentDefinitionId) {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:222',message:'Creating/getting response session',data:{participantAssessmentId:finalParticipantAssessmentId,assessmentDefinitionId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+            // #endregion
+            const sessionId = await createOrGetResponseSession(
+              finalParticipantAssessmentId,
+              assessmentDefinitionId,
+              "participant",
+              undefined,
+              undefined,
+              userData.id
+            );
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:232',message:'Session creation result',data:{sessionId,responseSessionIdState:responseSessionId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+            // #endregion
+            console.log("🔵 [DEBUG] Session ID result:", sessionId);
+          } else {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:237',message:'Cannot create session - missing requirements',data:{hasParticipantAssessment:!!finalParticipantAssessmentId,hasAssessmentDefinitionId:!!assessmentDefinitionId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+            // #endregion
+            console.warn("⚠️ [DEBUG] Cannot create session - missing participant_assessment or assessmentDefinitionId");
+          }
               }
             } catch (error) {
               console.error("❌ [DEBUG] Error loading participant data:", error);
@@ -467,6 +515,9 @@ export default function Assessment360() {
 
       if (existingSession) {
         console.log("✅ [DEBUG] Found existing session:", existingSession.id);
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:470',message:'Setting responseSessionId from existing session',data:{sessionId:existingSession.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+        // #endregion
         setResponseSessionId(existingSession.id);
         // Load existing responses
         await loadExistingResponses(existingSession.id);
@@ -499,6 +550,9 @@ export default function Assessment360() {
       }
 
       console.log("🔵 [DEBUG] Creating new session with data:", sessionData);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:503',message:'About to insert session',data:{sessionData},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
 
       const { data: newSession, error: createError } = await supabase
         .from("assessment_response_sessions")
@@ -506,13 +560,26 @@ export default function Assessment360() {
         .select()
         .single();
 
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:510',message:'Session insert result',data:{success:!!newSession,error:createError?{message:createError.message,code:createError.code,details:createError.details,hint:createError.hint}:null,sessionId:newSession?.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
+
       if (createError) {
         console.error("❌ [DEBUG] Error creating response session:", createError);
+        console.error("❌ [DEBUG] Error message:", createError.message);
+        console.error("❌ [DEBUG] Error code:", createError.code);
+        console.error("❌ [DEBUG] Error details:", createError.details);
+        console.error("❌ [DEBUG] Error hint:", createError.hint);
+        console.error("❌ [DEBUG] Full error object:", JSON.stringify(createError, Object.getOwnPropertyNames(createError)));
+        console.error("❌ [DEBUG] Session data that failed:", JSON.stringify(sessionData, null, 2));
         return null;
       }
 
       if (newSession) {
         console.log("✅ [DEBUG] Created new session:", newSession.id);
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:516',message:'Setting responseSessionId state',data:{sessionId:newSession.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+        // #endregion
         setResponseSessionId(newSession.id);
         return newSession.id;
       }
@@ -872,17 +939,15 @@ export default function Assessment360() {
 
   const handleNext = async () => {
     console.log("➡️ [DEBUG] handleNext called");
-    console.log("🔵 [DEBUG] Current state:", {
-      responseSessionId,
-      usesNewPlan,
-      assessmentDefinitionId,
-      current,
-      currentStep,
-      answersCount: Object.keys(answers).length,
-    });
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:873',message:'handleNext called',data:{responseSessionId,usesNewPlan,assessmentDefinitionId,current,currentStep,answersCount:Object.keys(answers).length,assessmentType,questionGroupsLength:questionGroups.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
 
     // Save current question response before navigating
     if (responseSessionId && usesNewPlan && assessmentDefinitionId) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:886',message:'Conditions met for saving',data:{responseSessionId,usesNewPlan,assessmentDefinitionId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
       console.log("✅ [DEBUG] Conditions met for saving response");
       let currentQuestion: Question;
       let currentStepId: string | null = null;
@@ -946,13 +1011,33 @@ export default function Assessment360() {
           }
         }
       }
+    } else {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:950',message:'Conditions NOT met for saving',data:{responseSessionId,usesNewPlan,assessmentDefinitionId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
     }
 
     // Navigate to next question
     if (assessmentType && assessmentType.toLowerCase() === "pulse" && usesNewPlan && questionGroups.length > 0) {
       // Pulse with steps - navigate to next question in current step or next step
       const allQuestions = questionGroups.flatMap(g => g.questions);
+      
+      // Safety check: ensure current index is valid
+      if (current < 0 || current >= allQuestions.length) {
+        console.error("Invalid current index for pulse assessment:", current);
+        await handleCompleteAssessment();
+        return;
+      }
+      
       const currentQuestion = allQuestions[current];
+      
+      // Safety check: ensure currentStep is valid
+      if (currentStep < 0 || currentStep >= questionGroups.length) {
+        console.error("Invalid currentStep for pulse assessment:", currentStep);
+        await handleCompleteAssessment();
+        return;
+      }
+      
       const currentGroup = questionGroups[currentStep];
       const questionIndexInStep = currentGroup.questions.indexOf(currentQuestion);
       
@@ -975,10 +1060,10 @@ export default function Assessment360() {
       }
     } else {
       // 360 or old plan - simple sequential navigation
-    if (current < questions.length - 1) {
-      setCurrent(current + 1);
-    } else {
-      await handleCompleteAssessment();
+      if (current < questions.length - 1) {
+        setCurrent(current + 1);
+      } else {
+        await handleCompleteAssessment();
       }
     }
   };
@@ -1038,18 +1123,27 @@ export default function Assessment360() {
     try {
       // Save final question response if using new plan
       if (responseSessionId && usesNewPlan && assessmentDefinitionId) {
-        let currentQuestion: Question;
+        let currentQuestion: Question | undefined;
         let currentStepId: string | null = null;
 
         if (assessmentType && assessmentType.toLowerCase() === "pulse" && questionGroups.length > 0) {
           const allQuestions = questionGroups.flatMap(g => g.questions);
-          currentQuestion = allQuestions[current];
-          const currentGroup = questionGroups[currentStep];
-          if (currentGroup.step) {
-            currentStepId = currentGroup.step.id;
+          // Add safety check for current index
+          if (current >= 0 && current < allQuestions.length) {
+            currentQuestion = allQuestions[current];
+            // Add safety check for currentStep
+            if (currentStep >= 0 && currentStep < questionGroups.length) {
+              const currentGroup = questionGroups[currentStep];
+              if (currentGroup?.step) {
+                currentStepId = currentGroup.step.id;
+              }
+            }
           }
         } else {
-          currentQuestion = questions[current];
+          // Add safety check for 360 assessments too
+          if (current >= 0 && current < questions.length) {
+            currentQuestion = questions[current];
+          }
         }
 
         if (currentQuestion && typeof currentQuestion.id === "string") {
@@ -1078,6 +1172,29 @@ export default function Assessment360() {
               updated_at: new Date().toISOString(),
             })
             .eq("id", responseSessionId);
+        } else {
+          // If currentQuestion is undefined, still mark session as completed
+          // This can happen if we're completing from an invalid state
+          console.warn("⚠️ [DEBUG] Completing assessment without currentQuestion, updating session status only");
+          const allQuestions = assessmentType && assessmentType.toLowerCase() === "pulse" && questionGroups.length > 0
+            ? questionGroups.flatMap(g => g.questions)
+            : questions;
+          
+          const totalQuestions = allQuestions.length;
+          const answeredCount = allQuestions.filter((q: Question) => {
+            const answer = answers[q.id];
+            return answer && answer.trim() !== "";
+          }).length;
+
+          await supabase
+            .from("assessment_response_sessions")
+            .update({
+              status: "completed",
+              submitted_at: new Date().toISOString(),
+              completion_percent: Math.round((answeredCount / totalQuestions) * 100),
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", responseSessionId);
         }
       }
 
@@ -1094,11 +1211,37 @@ export default function Assessment360() {
         return;
       }
 
+      // Create PDF report for pulse assessments
+      const isPulse = assessmentType && assessmentType.toLowerCase() === "pulse";
+      if (isPulse && participantAssessmentId) {
+        try {
+          const response = await fetch("/api/reports/pulse/regenerate", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              participant_assessment_id: participantAssessmentId,
+            }),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            console.error("Error creating PDF report:", errorData.error || "Unknown error");
+            // Don't block completion if report creation fails
+          }
+        } catch (err) {
+          console.error("Error creating PDF report:", err);
+          // Don't block completion if report creation fails
+        }
+      }
+
       // Redirect to assessment overview
       router.push(`/tenant/${subdomain}/assessments/${assessmentId}`);
     } catch (err) {
       console.error("Error completing assessment:", err);
       alert("An unexpected error occurred. Please try again.");
+    } finally {
       setCompleting(false);
     }
   };

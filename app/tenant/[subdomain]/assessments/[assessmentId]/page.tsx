@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, MoreVertical, Trash2 } from "lucide-react";
+import { ArrowLeft, MoreVertical, Trash2, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
@@ -107,6 +107,10 @@ export default function TenantAssessmentDetailPage() {
   const [retakingAssessment, setRetakingAssessment] = useState(false);
   const [startingAssessment, setStartingAssessment] = useState(false);
   const [completingAssessment, setCompletingAssessment] = useState(false);
+  const [downloadingReport, setDownloadingReport] = useState(false);
+  const [reportAvailable, setReportAvailable] = useState(false);
+  const [generatingReport, setGeneratingReport] = useState(false);
+  const [reportGenerated, setReportGenerated] = useState(false);
 
   useEffect(() => {
     const storedUser = localStorage.getItem("participant");
@@ -137,8 +141,18 @@ export default function TenantAssessmentDetailPage() {
       }
     };
 
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && user?.id && assessmentId) {
+        fetchParticipantAssessment(user.id);
+      }
+    };
+
     window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [user?.id, assessmentId]);
 
   async function fetchAssessmentDetails() {
@@ -262,6 +276,8 @@ export default function TenantAssessmentDetailPage() {
       if (pa?.id) {
         await fetchResponseSession(pa.id);
         fetchNominations(pa.id, userId);
+        // Check if report is available for pulse assessments
+        await checkReportAvailability(pa.id, pa.status);
       } else {
         // Check if there are any nominations for this assessment that might exist
         // by checking all participant_assessments for this assessment
@@ -1179,6 +1195,163 @@ export default function TenantAssessmentDetailPage() {
     }
   }
 
+  async function checkReportAvailability(participantAssessmentId: string, status?: string | null) {
+    try {
+      // Only check for pulse assessments
+      const assessmentTypeName = assessment?.assessment_type?.name?.toLowerCase();
+      const isPulse = assessmentTypeName === "pulse";
+      const isCompleted = (status || participantAssessment?.status)?.toLowerCase() === "completed";
+
+      if (!isPulse || !isCompleted) {
+        setReportAvailable(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("assessment_reports")
+        .select("id")
+        .eq("participant_assessment_id", participantAssessmentId)
+        .eq("report_type", "pulse")
+        .maybeSingle();
+
+      if (error) {
+        console.error("Error checking report availability:", error);
+        setReportAvailable(false);
+        return;
+      }
+
+      setReportAvailable(!!data);
+    } catch (err) {
+      console.error("Error checking report availability:", err);
+      setReportAvailable(false);
+    }
+  }
+
+  async function handleGenerateReport() {
+    if (!user?.id) {
+      showToast("User not found. Please try again.", "error");
+      return;
+    }
+
+    setGeneratingReport(true);
+    try {
+      // Ensure participant_assessment exists (similar to handleStartAssessment)
+      let participantAssessmentId = participantAssessment?.id;
+
+      if (!participantAssessmentId) {
+        // Find or create participant_assessment
+        const { data: participants, error: participantsError } = await supabase
+          .from("cohort_participants")
+          .select("id")
+          .eq("client_user_id", user.id);
+
+        if (participantsError || !participants || participants.length === 0) {
+          showToast("Error: Participant not found.", "error");
+          setGeneratingReport(false);
+          return;
+        }
+
+        const participantIds = participants.map((p: any) => p.id);
+
+        // Create participant_assessment if it doesn't exist
+        const { data: newPA, error: createError } = await supabase
+          .from("participant_assessments")
+          .insert({
+            participant_id: participantIds[0],
+            cohort_assessment_id: assessmentId,
+            status: "Not started",
+          })
+          .select()
+          .single();
+
+        if (createError) {
+          console.error("Error creating participant assessment:", createError);
+          showToast(`Error: ${createError.message}`, "error");
+          setGeneratingReport(false);
+          return;
+        }
+
+        participantAssessmentId = newPA.id;
+        setParticipantAssessment(newPA as ParticipantAssessment);
+      }
+
+      // Call regenerate API to create the report
+      const response = await fetch("/api/reports/pulse/regenerate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          participant_assessment_id: participantAssessmentId,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to generate report");
+      }
+
+      const data = await response.json();
+      if (!data.ok) {
+        throw new Error("Report generation failed");
+      }
+
+      // Mark as generated for simulation
+      setReportGenerated(true);
+      setReportAvailable(true);
+      showToast("Report generated successfully!", "success");
+    } catch (err) {
+      console.error("Error generating report:", err);
+      showToast(
+        err instanceof Error ? err.message : "Failed to generate report. Please try again.",
+        "error"
+      );
+    } finally {
+      setGeneratingReport(false);
+    }
+  }
+
+  async function handleDownloadReport() {
+    if (!participantAssessment?.id) {
+      showToast("Assessment not found. Please try again.", "error");
+      return;
+    }
+
+    setDownloadingReport(true);
+    try {
+      const response = await fetch(
+        `/api/reports/pulse/download?participant_assessment_id=${participantAssessment.id}`
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to download report");
+      }
+
+      const data = await response.json();
+      if (!data.signed_url) {
+        throw new Error("No download URL received");
+      }
+
+      // Trigger browser download
+      const link = document.createElement("a");
+      link.href = data.signed_url;
+      link.download = `pulse-report-${participantAssessment.id}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      showToast("Report downloaded successfully!", "success");
+    } catch (err) {
+      console.error("Error downloading report:", err);
+      showToast(
+        err instanceof Error ? err.message : "Failed to download report. Please try again.",
+        "error"
+      );
+    } finally {
+      setDownloadingReport(false);
+    }
+  }
 
   const getReviewStatusColor = (status: string | null) => {
     if (!status) return "bg-gray-100 text-gray-800";
@@ -1337,29 +1510,61 @@ export default function TenantAssessmentDetailPage() {
             </div>
           </div>
           {/* Assessment Action Buttons */}
-          <div className="mt-6 pt-6 border-t flex justify-end items-center gap-4">
+          <div className="mt-6 pt-6 border-t flex justify-between items-center gap-4">
             {(() => {
               const buttonConfig = getButtonConfig();
+              const isPulse = assessment?.assessment_type?.name?.toLowerCase() === "pulse";
+              // Show download button when report is generated (simulation) OR available (real)
+              const showDownload = isPulse && (reportGenerated || reportAvailable);
+              
               return (
                 <>
-                  {buttonConfig.showRetake && (
+                  {/* Left side - Report simulation buttons (pulse only) */}
+                  {isPulse && (
+                    <div className="flex items-center gap-4">
+                      <Button
+                        onClick={handleGenerateReport}
+                        variant="outline"
+                        disabled={!user?.id || generatingReport}
+                        className="w-full sm:w-auto"
+                      >
+                        {generatingReport ? "Generating..." : "Generate Report"}
+                      </Button>
+                      {showDownload && (
+                        <Button
+                          onClick={handleDownloadReport}
+                          variant="outline"
+                          disabled={!user?.id || downloadingReport}
+                          className="w-full sm:w-auto"
+                        >
+                          <Download className="h-4 w-4 mr-2" />
+                          {downloadingReport ? "Downloading..." : "Download Report"}
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                  
+                  {/* Right side - Assessment action buttons */}
+                  <div className="flex items-center gap-4 ml-auto">
+                    {buttonConfig.showRetake && (
+                      <Button
+                        onClick={handleRetakeAssessment}
+                        variant="tertiary"
+                        disabled={!user?.id || retakingAssessment}
+                        className="w-full sm:w-auto"
+                      >
+                        {retakingAssessment ? "Resetting..." : "Retake Assessment"}
+                      </Button>
+                    )}
                     <Button
-                      onClick={handleRetakeAssessment}
-                      variant="tertiary"
-                      disabled={!user?.id || retakingAssessment}
+                      onClick={() => router.push(`/tenant/${subdomain}/assessments/${assessmentId}/questionnaire?source=db`)}
+                      variant={buttonConfig.variant}
+                      disabled={!user?.id || buttonConfig.disabled}
                       className="w-full sm:w-auto"
                     >
-                      {retakingAssessment ? "Resetting..." : "Retake Assessment"}
+                      {buttonConfig.text}
                     </Button>
-                  )}
-                  <Button
-                    onClick={() => router.push(`/tenant/${subdomain}/assessments/${assessmentId}/questionnaire?source=db`)}
-                    variant={buttonConfig.variant}
-                    disabled={!user?.id || buttonConfig.disabled}
-                    className="w-full sm:w-auto"
-                  >
-                    {buttonConfig.text}
-                  </Button>
+                  </div>
                 </>
               );
             })()}

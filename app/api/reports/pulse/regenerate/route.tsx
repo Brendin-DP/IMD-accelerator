@@ -1,7 +1,6 @@
-// app/api/reports/pulse/regenerate/route.ts
+// app/api/reports/pulse/regenerate/route.tsx
 import { NextResponse } from "next/server";
 import { renderToBuffer } from "@react-pdf/renderer";
-import React from "react";
 import { PulseReportPDF, type PulseReportData } from "../_pdf";
 import { createServerClient } from "@/lib/supabaseServer";
 
@@ -29,40 +28,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: paErr?.message || "Participant assessment not found" }, { status: 404 });
     }
 
-    // Example: pull cohort name, participant name etc (optional)
-    // Replace with your joins if you have them handy.
-    const cohortName = "Cohort";
-    const participantName = "Participant";
-
-    // 2) Fetch reviewer nominations + their responses
-    // You’ll likely have:
-    // - reviewer_nominations (one row per reviewer)
-    // - review sessions/responses table (one row per question answer)
-    //
-    // Replace this block with your real query and mapping.
-    const { data: nominations } = await supabase
-      .from("reviewer_nominations")
-      .select("id, reviewer_id, external_reviewer_id, request_status, review_submitted_at")
-      .eq("participant_assessment_id", participant_assessment_id);
-
-    // Placeholder: produce empty reviewer blocks if you don’t have responses yet
-    const reviewers =
-      (nominations || []).map((n) => ({
-        reviewerName: n.reviewer_id ? "Internal Reviewer" : "External Reviewer",
-        reviewerEmail: n.reviewer_id ? "internal@example.com" : "external@example.com",
-        responses: [], // fill this from your responses table
-      })) || [];
-
+    // Minimal empty data for testing create/download vertical
     const data: PulseReportData = {
       title: "Pulse Survey Report",
-      participantName,
-      cohortName,
+      participantName: "Participant",
+      cohortName: "Cohort",
       generatedAt: new Date().toISOString(),
-      reviewers,
+      reviewers: [], // Empty reviewers array for blank report
     };
 
     // 3) Render PDF bytes
-    const pdfBuffer = await renderToBuffer(React.createElement(PulseReportPDF, { data }));
+    const pdfBuffer = await renderToBuffer(<PulseReportPDF data={data} />);
 
     // 4) Upload to Supabase Storage
     const storagePath = `pulse/${participant_assessment_id}.pdf`;
