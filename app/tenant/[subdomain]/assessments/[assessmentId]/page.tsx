@@ -325,15 +325,28 @@ export default function TenantAssessmentDetailPage() {
 
   async function fetchResponseSession(participantAssessmentId: string) {
     try {
+      console.log("🔍 [CUSTOM PULSE] fetchResponseSession started:", {
+        participantAssessmentId,
+        assessmentId,
+      });
+
       // First, check if this assessment uses the new plan (has assessment_definition_id)
       // We need to get the assessment_definition_id from the cohort -> plan mapping
-      const { data: cohortAssessment } = await supabase
+      const { data: cohortAssessment, error: caError } = await supabase
         .from("cohort_assessments")
         .select("cohort_id, assessment_type_id")
         .eq("id", assessmentId)
         .single();
 
+      console.log("🔍 [CUSTOM PULSE] Cohort assessment lookup:", {
+        found: !!cohortAssessment,
+        error: caError?.message,
+        cohortId: cohortAssessment?.cohort_id,
+        assessmentTypeId: cohortAssessment?.assessment_type_id,
+      });
+
       if (!cohortAssessment) {
+        console.warn("⚠️ [CUSTOM PULSE] No cohort assessment found");
         setResponseSession(null);
         setResponseCount(0);
         setTotalQuestions(0);
@@ -341,13 +354,20 @@ export default function TenantAssessmentDetailPage() {
       }
 
       // Get the cohort to find the plan
-      const { data: cohort } = await supabase
+      const { data: cohort, error: cohortError } = await supabase
         .from("cohorts")
         .select("plan_id")
         .eq("id", cohortAssessment.cohort_id)
         .single();
 
+      console.log("🔍 [CUSTOM PULSE] Cohort lookup:", {
+        found: !!cohort,
+        error: cohortError?.message,
+        planId: cohort?.plan_id,
+      });
+
       if (!cohort?.plan_id) {
+        console.warn("⚠️ [CUSTOM PULSE] No plan_id found in cohort");
         setResponseSession(null);
         setResponseCount(0);
         setTotalQuestions(0);
@@ -355,57 +375,94 @@ export default function TenantAssessmentDetailPage() {
       }
 
       // Fetch the plan's description to get the assessment definition mapping
-      const { data: planData } = await supabase
+      const { data: planData, error: planError } = await supabase
         .from("plans")
         .select("description")
         .eq("id", cohort.plan_id)
         .single();
 
+      console.log("🔍 [CUSTOM PULSE] Plan lookup:", {
+        found: !!planData,
+        error: planError?.message,
+        hasDescription: !!planData?.description,
+      });
+
       let assessmentDefinitionId: string | null = null;
+      let assessmentDefinitionSource: string = "none";
 
       if (planData?.description) {
         const planMappingMatch = planData.description.match(/<!--PLAN_ASSESSMENT_DEFINITIONS:(.*?)-->/);
+        console.log("🔍 [CUSTOM PULSE] Plan mapping extraction:", {
+          hasMatch: !!planMappingMatch,
+          mappingLength: planMappingMatch?.[1]?.length || 0,
+        });
+
         if (planMappingMatch) {
           try {
             const mapping = JSON.parse(planMappingMatch[1]);
             const selectedDefId = mapping[cohortAssessment.assessment_type_id];
+            console.log("🔍 [CUSTOM PULSE] Plan mapping lookup:", {
+              assessmentTypeId: cohortAssessment.assessment_type_id,
+              selectedDefId,
+              mappingKeys: Object.keys(mapping),
+            });
+
             if (selectedDefId) {
-              const { data: selectedDef } = await supabase
+              const { data: selectedDef, error: defError } = await supabase
                 .from("assessment_definitions_v2")
                 .select("id, assessment_type_id")
                 .eq("id", selectedDefId)
                 .eq("assessment_type_id", cohortAssessment.assessment_type_id)
                 .maybeSingle();
 
+              console.log("🔍 [CUSTOM PULSE] Custom assessment definition lookup:", {
+                found: !!selectedDef,
+                error: defError?.message,
+                defId: selectedDef?.id,
+              });
+
               if (selectedDef) {
                 assessmentDefinitionId = selectedDef.id;
+                assessmentDefinitionSource = "custom";
               }
             }
           } catch (e) {
-            console.error("Error parsing plan assessment mapping:", e);
+            console.error("❌ [CUSTOM PULSE] Error parsing plan assessment mapping:", e);
           }
         }
       }
 
       // Fall back to system assessment if no custom found
       if (!assessmentDefinitionId) {
-        const { data: systemDef } = await supabase
+        const { data: systemDef, error: systemError } = await supabase
           .from("assessment_definitions_v2")
           .select("id")
           .eq("assessment_type_id", cohortAssessment.assessment_type_id)
           .eq("is_system", true)
           .maybeSingle();
 
+        console.log("🔍 [CUSTOM PULSE] System assessment definition lookup:", {
+          found: !!systemDef,
+          error: systemError?.message,
+          defId: systemDef?.id,
+        });
+
         if (systemDef) {
           assessmentDefinitionId = systemDef.id;
+          assessmentDefinitionSource = "system";
         }
       }
 
+      console.log("✅ [CUSTOM PULSE] Assessment definition ID resolved:", {
+        assessmentDefinitionId,
+        source: assessmentDefinitionSource,
+        assessmentTypeId: cohortAssessment.assessment_type_id,
+      });
+
       if (!assessmentDefinitionId) {
-        // Old plan - no response sessions
-        setResponseSession(null);
-        setResponseCount(0);
-        setTotalQuestions(0);
+        console.warn("⚠️ [CUSTOM PULSE] No assessment definition ID found - old plan");
+        // Old plan - no response sessions, but check for responses anyway
+        await checkForResponsesWithoutSession(participantAssessmentId);
         return;
       }
 
@@ -418,16 +475,19 @@ export default function TenantAssessmentDetailPage() {
         .eq("respondent_type", "participant")
         .maybeSingle();
 
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:391',message:'fetchResponseSession QUERY',data:{participantAssessmentId,assessmentDefinitionId,sessionFound:!!session,sessionId:session?.id,error:sessionError?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-      // #endregion
+      console.log("🔍 [CUSTOM PULSE] Session lookup:", {
+        participantAssessmentId,
+        assessmentDefinitionId,
+        sessionFound: !!session,
+        sessionId: session?.id,
+        sessionStatus: session?.status,
+        error: sessionError?.message,
+        errorCode: sessionError?.code,
+      });
 
       if (sessionError && sessionError.code !== "PGRST116") {
-        console.error("Error fetching response session:", sessionError);
-        setResponseSession(null);
-        setResponseCount(0);
-        setTotalQuestions(0);
-        return;
+        console.error("❌ [CUSTOM PULSE] Error fetching response session:", sessionError);
+        // Don't return - check for responses anyway
       }
 
       if (session) {
@@ -441,6 +501,13 @@ export default function TenantAssessmentDetailPage() {
           .limit(1);
 
         const hasSteps = !stepsError && stepsData && stepsData.length > 0;
+        
+        console.log("🔍 [CUSTOM PULSE] Steps check:", {
+          assessmentDefinitionId,
+          hasSteps,
+          stepsCount: stepsData?.length || 0,
+          error: stepsError?.message,
+        });
 
         // Fetch all responses for this session (for debugging)
         const { data: allResponses, error: responsesError } = await supabase
@@ -470,11 +537,18 @@ export default function TenantAssessmentDetailPage() {
 
         if (hasSteps) {
           // Pulse assessment with steps - count questions per step
+          console.log("🔍 [CUSTOM PULSE] Counting questions with steps");
           const { data: steps, error: stepsFetchError } = await supabase
             .from("assessment_steps_v2")
-            .select("id")
+            .select("id, step_order")
             .eq("assessment_definition_id", assessmentDefinitionId)
             .order("step_order", { ascending: true });
+
+          console.log("🔍 [CUSTOM PULSE] Steps fetched:", {
+            stepsCount: steps?.length || 0,
+            error: stepsFetchError?.message,
+            stepIds: steps?.map((s: any) => ({ id: s.id, order: s.step_order })),
+          });
 
           if (!stepsFetchError && steps) {
             // Count total questions across all steps
@@ -485,6 +559,13 @@ export default function TenantAssessmentDetailPage() {
                 .eq("assessment_definition_id", assessmentDefinitionId)
                 .eq("step_id", step.id);
 
+              console.log("🔍 [CUSTOM PULSE] Step question count:", {
+                stepId: step.id,
+                stepOrder: step.step_order,
+                questionCount: stepQuestionCount || 0,
+                error: stepQError?.message,
+              });
+
               if (!stepQError) {
                 totalQuestions += stepQuestionCount || 0;
               }
@@ -492,6 +573,12 @@ export default function TenantAssessmentDetailPage() {
 
             // Count answered questions (already filtered by session_id and is_answered)
             answeredCount = allResponses?.filter((r: any) => r.is_answered).length || 0;
+            
+            console.log("✅ [CUSTOM PULSE] Step-based progress calculated:", {
+              totalQuestions,
+              answeredCount,
+              progressPercent: totalQuestions > 0 ? Math.round((answeredCount / totalQuestions) * 100) : 0,
+            });
           }
         } else {
           // 360 assessment without steps - use simple count
@@ -534,12 +621,183 @@ export default function TenantAssessmentDetailPage() {
         // Auto-update status based on progress
         await updateStatusFromProgress(session, participantAssessmentId);
       } else {
+        // No session found - check for responses anyway (fallback)
+        console.log("⚠️ [CUSTOM PULSE] No session found, checking for responses directly");
+        await checkForResponsesWithoutSession(participantAssessmentId, assessmentDefinitionId);
+      }
+    } catch (error) {
+      console.error("❌ [CUSTOM PULSE] Error fetching response session:", error);
+      setResponseSession(null);
+      setResponseCount(0);
+      setTotalQuestions(0);
+    }
+  }
+
+  // Fallback function to check for responses when session is not found
+  async function checkForResponsesWithoutSession(
+    participantAssessmentId: string,
+    assessmentDefinitionId?: string | null
+  ) {
+    try {
+      console.log("🔍 [CUSTOM PULSE] Checking for responses without session:", {
+        participantAssessmentId,
+        assessmentDefinitionId,
+      });
+
+      // If we don't have assessment_definition_id, try to resolve it
+      if (!assessmentDefinitionId) {
+        const { data: cohortAssessment } = await supabase
+          .from("cohort_assessments")
+          .select("cohort_id, assessment_type_id")
+          .eq("id", assessmentId)
+          .single();
+
+        if (cohortAssessment) {
+          const { data: cohort } = await supabase
+            .from("cohorts")
+            .select("plan_id")
+            .eq("id", cohortAssessment.cohort_id)
+            .single();
+
+          if (cohort?.plan_id) {
+            const { data: planData } = await supabase
+              .from("plans")
+              .select("description")
+              .eq("id", cohort.plan_id)
+              .single();
+
+            if (planData?.description) {
+              const planMappingMatch = planData.description.match(/<!--PLAN_ASSESSMENT_DEFINITIONS:(.*?)-->/);
+              if (planMappingMatch) {
+                try {
+                  const mapping = JSON.parse(planMappingMatch[1]);
+                  const selectedDefId = mapping[cohortAssessment.assessment_type_id];
+                  if (selectedDefId) {
+                    const { data: selectedDef } = await supabase
+                      .from("assessment_definitions_v2")
+                      .select("id")
+                      .eq("id", selectedDefId)
+                      .eq("assessment_type_id", cohortAssessment.assessment_type_id)
+                      .maybeSingle();
+                    if (selectedDef) {
+                      assessmentDefinitionId = selectedDef.id;
+                    }
+                  }
+                } catch (e) {
+                  console.error("Error parsing plan mapping:", e);
+                }
+              }
+            }
+
+            if (!assessmentDefinitionId) {
+              const { data: systemDef } = await supabase
+                .from("assessment_definitions_v2")
+                .select("id")
+                .eq("assessment_type_id", cohortAssessment.assessment_type_id)
+                .eq("is_system", true)
+                .maybeSingle();
+              if (systemDef) {
+                assessmentDefinitionId = systemDef.id;
+              }
+            }
+          }
+        }
+      }
+
+      if (!assessmentDefinitionId) {
+        console.warn("⚠️ [CUSTOM PULSE] Cannot check responses - no assessment_definition_id");
         setResponseSession(null);
         setResponseCount(0);
         setTotalQuestions(0);
+        return;
+      }
+
+      // Find any session for this participant_assessment and assessment_definition_id
+      const { data: existingSessions } = await supabase
+        .from("assessment_response_sessions")
+        .select("id")
+        .eq("participant_assessment_id", participantAssessmentId)
+        .eq("assessment_definition_id", assessmentDefinitionId)
+        .eq("respondent_type", "participant")
+        .limit(1);
+
+      if (existingSessions && existingSessions.length > 0) {
+        // Session exists but wasn't found in main query - refetch it
+        console.log("✅ [CUSTOM PULSE] Found existing session, refetching:", {
+          sessionId: existingSessions[0].id,
+        });
+        await fetchResponseSession(participantAssessmentId);
+        return;
+      }
+
+      // Check for responses directly using participant_assessment_id
+      // We need to find responses that belong to any session for this participant_assessment
+      const { data: allSessions } = await supabase
+        .from("assessment_response_sessions")
+        .select("id")
+        .eq("participant_assessment_id", participantAssessmentId)
+        .eq("respondent_type", "participant");
+
+      const sessionIds = allSessions?.map((s: any) => s.id) || [];
+
+      if (sessionIds.length > 0) {
+        // Check if any responses exist
+        const { data: responses, error: responsesError } = await supabase
+          .from("assessment_responses")
+          .select("id, question_id, is_answered, question:assessment_questions_v2(step_id, assessment_definition_id)")
+          .in("session_id", sessionIds)
+          .eq("is_answered", true);
+
+        console.log("🔍 [CUSTOM PULSE] Direct response check:", {
+          sessionIds,
+          responseCount: responses?.length || 0,
+          error: responsesError?.message,
+        });
+
+        if (responses && responses.length > 0) {
+          // Filter responses that match our assessment_definition_id
+          const matchingResponses = responses.filter((r: any) => 
+            r.question?.assessment_definition_id === assessmentDefinitionId
+          );
+
+          if (matchingResponses.length > 0) {
+            console.log("✅ [CUSTOM PULSE] Found responses without session, creating session");
+            // Create a session if responses exist but no session found
+            const { data: newSession, error: createError } = await supabase
+              .from("assessment_response_sessions")
+              .insert({
+                participant_assessment_id: participantAssessmentId,
+                assessment_definition_id: assessmentDefinitionId,
+                respondent_type: "participant",
+                status: "in_progress",
+                started_at: new Date().toISOString(),
+                completion_percent: 0,
+              })
+              .select()
+              .single();
+
+            if (!createError && newSession) {
+              console.log("✅ [CUSTOM PULSE] Created new session from existing responses:", newSession.id);
+              // Refetch to get full session data
+              await fetchResponseSession(participantAssessmentId);
+              return;
+            }
+          }
+        }
+      }
+
+      // No responses found
+      console.log("ℹ️ [CUSTOM PULSE] No responses found without session");
+      setResponseSession(null);
+      setResponseCount(0);
+      setTotalQuestions(0);
+      
+      // Still update status to "Not started" if needed
+      if (participantAssessment?.status?.toLowerCase() !== "not started") {
+        await updateStatusFromProgress(null, participantAssessmentId);
       }
     } catch (error) {
-      console.error("Error fetching response session:", error);
+      console.error("❌ [CUSTOM PULSE] Error checking responses without session:", error);
       setResponseSession(null);
       setResponseCount(0);
       setTotalQuestions(0);
@@ -548,27 +806,63 @@ export default function TenantAssessmentDetailPage() {
 
   async function updateStatusFromProgress(session: any, participantAssessmentId: string) {
     try {
-      if (!session || !participantAssessmentId) return;
+      if (!participantAssessmentId) return;
 
       // Get current status from participant assessment
       const currentStatus = participantAssessment?.status?.toLowerCase() || "not started";
       let newStatus: string | null = null;
 
-      // Determine status based on session data
-      if (session.status === "completed" || session.completion_percent === 100) {
-        newStatus = "Completed";
-      } else if (session.completion_percent > 0 && session.completion_percent < 100) {
-        newStatus = "In Progress";
-      } else {
-        // Check if there are any answered responses
-        const { count: answeredCount } = await supabase
-          .from("assessment_responses")
-          .select("*", { count: "exact", head: true })
-          .eq("session_id", session.id)
-          .eq("is_answered", true);
-
-        if (answeredCount && answeredCount > 0) {
+      if (session) {
+        // Determine status based on session data
+        if (session.status === "completed" || session.completion_percent === 100) {
+          newStatus = "Completed";
+        } else if (session.completion_percent > 0 && session.completion_percent < 100) {
           newStatus = "In Progress";
+        } else {
+          // Check if there are any answered responses
+          const { count: answeredCount } = await supabase
+            .from("assessment_responses")
+            .select("*", { count: "exact", head: true })
+            .eq("session_id", session.id)
+            .eq("is_answered", true);
+
+          if (answeredCount && answeredCount > 0) {
+            newStatus = "In Progress";
+          } else {
+            newStatus = "Not started";
+          }
+        }
+      } else {
+        // No session - check for responses directly using participant_assessment_id
+        console.log("🔍 [CUSTOM PULSE] updateStatusFromProgress: No session, checking responses directly");
+        
+        // Find all sessions for this participant_assessment
+        const { data: allSessions } = await supabase
+          .from("assessment_response_sessions")
+          .select("id")
+          .eq("participant_assessment_id", participantAssessmentId)
+          .eq("respondent_type", "participant");
+
+        const sessionIds = allSessions?.map((s: any) => s.id) || [];
+
+        if (sessionIds.length > 0) {
+          // Check for answered responses in any session
+          const { count: answeredCount } = await supabase
+            .from("assessment_responses")
+            .select("*", { count: "exact", head: true })
+            .in("session_id", sessionIds)
+            .eq("is_answered", true);
+
+          console.log("🔍 [CUSTOM PULSE] Direct response count:", {
+            sessionIds,
+            answeredCount,
+          });
+
+          if (answeredCount && answeredCount > 0) {
+            newStatus = "In Progress";
+          } else {
+            newStatus = "Not started";
+          }
         } else {
           newStatus = "Not started";
         }
@@ -601,6 +895,7 @@ export default function TenantAssessmentDetailPage() {
       participantAssessment?.status?.toLowerCase() === "completed";
     
     // Check if there are any responses
+    // Also check participant assessment status as fallback
     const hasResponses = 
       responseCount > 0 || 
       (responseSession && responseSession.completion_percent > 0) ||
@@ -630,6 +925,36 @@ export default function TenantAssessmentDetailPage() {
       variant: "default" as const,
       showRetake: false,
     };
+  }
+
+  // Helper function to check for responses directly (used by button config if needed)
+  async function checkForResponsesDirectly(): Promise<boolean> {
+    if (!participantAssessment?.id) return false;
+
+    try {
+      // Find all sessions for this participant_assessment
+      const { data: allSessions } = await supabase
+        .from("assessment_response_sessions")
+        .select("id")
+        .eq("participant_assessment_id", participantAssessment.id)
+        .eq("respondent_type", "participant");
+
+      const sessionIds = allSessions?.map((s: any) => s.id) || [];
+
+      if (sessionIds.length === 0) return false;
+
+      // Check for answered responses
+      const { count: answeredCount } = await supabase
+        .from("assessment_responses")
+        .select("*", { count: "exact", head: true })
+        .in("session_id", sessionIds)
+        .eq("is_answered", true);
+
+      return (answeredCount || 0) > 0;
+    } catch (error) {
+      console.error("Error checking for responses directly:", error);
+      return false;
+    }
   }
 
   async function handleRetakeAssessment() {

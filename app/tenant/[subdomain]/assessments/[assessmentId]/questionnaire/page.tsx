@@ -496,13 +496,14 @@ export default function Assessment360() {
   ): Promise<string | null> {
     try {
       setLoadingSession(true);
-      console.log("🔵 [DEBUG] createOrGetResponseSession called with:", {
+      console.log("🔵 [CUSTOM PULSE] createOrGetResponseSession called with:", {
         participantAssessmentId,
         assessmentDefinitionId,
         respondentType,
         reviewerNominationId,
         externalReviewerId,
         clientUserId,
+        assessmentId, // Add assessmentId for context
       });
 
       // Check if session already exists
@@ -519,7 +520,12 @@ export default function Assessment360() {
 
       const { data: existingSession, error: checkError } = await query.maybeSingle();
 
-      console.log("🔵 [DEBUG] Session check result:", { existingSession, checkError });
+      console.log("🔵 [CUSTOM PULSE] Session check result:", { 
+        existingSession, 
+        checkError,
+        assessmentDefinitionId,
+        participantAssessmentId,
+      });
 
       if (checkError && checkError.code !== "PGRST116") {
         console.error("❌ [DEBUG] Error checking for existing session:", checkError);
@@ -565,7 +571,10 @@ export default function Assessment360() {
         sessionData.respondent_client_user_id = clientUserId;
       }
 
-      console.log("🔵 [DEBUG] Creating new session with data:", sessionData);
+      console.log("🔵 [CUSTOM PULSE] Creating new session with data:", {
+        ...sessionData,
+        assessmentDefinitionId, // Explicitly log this
+      });
       // #region agent log
       fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:503',message:'About to insert session',data:{sessionData},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
       // #endregion
