@@ -110,8 +110,6 @@ export default function TenantAssessmentDetailPage() {
   const [isCustomPulse, setIsCustomPulse] = useState<boolean>(false);
   const [downloadingReport, setDownloadingReport] = useState(false);
   const [reportAvailable, setReportAvailable] = useState(false);
-  const [generatingReport, setGeneratingReport] = useState(false);
-  const [reportGenerated, setReportGenerated] = useState(false);
 
   useEffect(() => {
     const storedUser = localStorage.getItem("participant");
@@ -1748,121 +1746,146 @@ export default function TenantAssessmentDetailPage() {
 
   async function checkReportAvailability(participantAssessmentId: string, status?: string | null) {
     try {
-      // Only check for pulse assessments
-      const assessmentTypeName = assessment?.assessment_type?.name?.toLowerCase();
+      console.log("🔍 [REPORT CHECK] ===== STARTING REPORT CHECK =====");
+      console.log("🔍 [REPORT CHECK] Input parameters:", {
+        participantAssessmentId,
+        status,
+        assessmentId,
+      });
+
+      // Get assessment type - always fetch directly from cohort_assessment to ensure we have it
+      let assessmentTypeName: string | undefined = undefined;
+      let assessmentTypeId: string | null = null;
+
+      // First try from state
+      if (assessment?.assessment_type?.name) {
+        assessmentTypeName = assessment.assessment_type.name.toLowerCase();
+        assessmentTypeId = assessment.assessment_type_id;
+        console.log("✅ [REPORT CHECK] Got assessment type from state:", assessmentTypeName);
+      } else {
+        // Fetch assessment_type_id from cohort_assessment, then fetch type name
+        console.log("⚠️ [REPORT CHECK] Assessment type not in state, fetching from cohort_assessment...");
+        const { data: cohortAssessmentData, error: caError } = await supabase
+          .from("cohort_assessments")
+          .select("assessment_type_id, assessment_type:assessment_types(name)")
+          .eq("id", assessmentId)
+          .single();
+
+        if (caError) {
+          console.error("❌ [REPORT CHECK] Error fetching cohort_assessment:", caError);
+        } else if (cohortAssessmentData) {
+          assessmentTypeId = cohortAssessmentData.assessment_type_id;
+          
+          // Try to get name from relationship first
+          const typeFromRelation = (cohortAssessmentData as any).assessment_type;
+          if (typeFromRelation?.name) {
+            assessmentTypeName = typeFromRelation.name.toLowerCase();
+            console.log("✅ [REPORT CHECK] Got assessment type from relationship:", assessmentTypeName);
+          } else if (assessmentTypeId) {
+            // Fallback: fetch directly from assessment_types table
+            const { data: typeData, error: typeError } = await supabase
+              .from("assessment_types")
+              .select("name")
+              .eq("id", assessmentTypeId)
+              .single();
+            
+            if (!typeError && typeData) {
+              assessmentTypeName = typeData.name?.toLowerCase();
+              console.log("✅ [REPORT CHECK] Fetched assessment type directly:", assessmentTypeName);
+            } else {
+              console.error("❌ [REPORT CHECK] Failed to fetch assessment type:", typeError);
+            }
+          }
+        }
+      }
+
       const isPulse = assessmentTypeName === "pulse";
-      const isCompleted = (status || participantAssessment?.status)?.toLowerCase() === "completed";
+      const currentStatus = (status || participantAssessment?.status)?.toLowerCase();
+      const isCompleted = currentStatus === "completed";
+
+      console.log("🔍 [REPORT CHECK] Assessment details:", {
+        assessmentTypeName,
+        isPulse,
+        currentStatus,
+        isCompleted,
+        participantAssessmentStatus: participantAssessment?.status,
+        assessmentObject: assessment,
+        assessmentTypeId: assessment?.assessment_type_id,
+        assessmentTypeObject: assessment?.assessment_type,
+        assessmentTypeNameRaw: assessment?.assessment_type?.name,
+      });
 
       if (!isPulse || !isCompleted) {
+        console.log("⚠️ [REPORT CHECK] Skipping - not pulse or not completed:", { 
+          isPulse, 
+          isCompleted,
+          reason: !isPulse ? "Not a pulse assessment" : "Assessment not completed"
+        });
         setReportAvailable(false);
         return;
       }
 
       // Use dynamic assessment type name for report lookup (supports custom plans)
       const reportTypeName = assessmentTypeName.toLowerCase();
+      console.log("🔍 [REPORT CHECK] Querying database:", {
+        participantAssessmentId,
+        reportTypeName,
+        table: "assessment_reports",
+      });
+
       const { data, error } = await supabase
         .from("assessment_reports")
-        .select("id")
+        .select("id, created_at, updated_at, participant_assessment_id, report_type, storage_path")
         .eq("participant_assessment_id", participantAssessmentId)
         .eq("report_type", reportTypeName)
+        .order("created_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
 
+      console.log("🔍 [REPORT CHECK] Database query result:", {
+        hasData: !!data,
+        data,
+        error,
+        errorCode: error?.code,
+        errorMessage: error?.message,
+      });
+
       if (error) {
-        console.error("Error checking report availability:", error);
+        console.error("❌ [REPORT CHECK] Error checking report availability:", {
+          error,
+          errorCode: error.code,
+          errorMessage: error.message,
+          errorDetails: error.details,
+          errorHint: error.hint,
+        });
         setReportAvailable(false);
         return;
       }
 
-      setReportAvailable(!!data);
+      const reportExists = !!data;
+      console.log("✅ [REPORT CHECK] Final result:", {
+        reportExists,
+        reportId: data?.id,
+        participantAssessmentId: data?.participant_assessment_id,
+        reportType: data?.report_type,
+        storagePath: data?.storage_path,
+        created_at: data?.created_at,
+        updated_at: data?.updated_at,
+      });
+
+      console.log("🔍 [REPORT CHECK] Setting reportAvailable state to:", reportExists);
+      setReportAvailable(reportExists);
+      console.log("✅ [REPORT CHECK] ===== REPORT CHECK COMPLETE =====");
     } catch (err) {
-      console.error("Error checking report availability:", err);
+      console.error("❌ [REPORT CHECK] Exception in checkReportAvailability:", {
+        error: err,
+        message: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+      });
       setReportAvailable(false);
     }
   }
 
-  async function handleGenerateReport() {
-    if (!user?.id) {
-      showToast("User not found. Please try again.", "error");
-      return;
-    }
-
-    setGeneratingReport(true);
-    try {
-      // Ensure participant_assessment exists (similar to handleStartAssessment)
-      let participantAssessmentId = participantAssessment?.id;
-
-      if (!participantAssessmentId) {
-        // Find or create participant_assessment
-        const { data: participants, error: participantsError } = await supabase
-          .from("cohort_participants")
-          .select("id")
-          .eq("client_user_id", user.id);
-
-        if (participantsError || !participants || participants.length === 0) {
-          showToast("Error: Participant not found.", "error");
-          setGeneratingReport(false);
-          return;
-        }
-
-        const participantIds = participants.map((p: any) => p.id);
-
-        // Create participant_assessment if it doesn't exist
-        const { data: newPA, error: createError } = await supabase
-          .from("participant_assessments")
-          .insert({
-            participant_id: participantIds[0],
-            cohort_assessment_id: assessmentId,
-            status: "Not started",
-          })
-          .select()
-          .single();
-
-        if (createError) {
-          console.error("Error creating participant assessment:", createError);
-          showToast(`Error: ${createError.message}`, "error");
-          setGeneratingReport(false);
-          return;
-        }
-
-        participantAssessmentId = newPA.id;
-        setParticipantAssessment(newPA as ParticipantAssessment);
-      }
-
-      // Call regenerate API to create the report
-      const response = await fetch("/api/reports/pulse/regenerate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          participant_assessment_id: participantAssessmentId,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || "Failed to generate report");
-      }
-
-      const data = await response.json();
-      if (!data.ok) {
-        throw new Error("Report generation failed");
-      }
-
-      // Mark as generated for simulation
-      setReportGenerated(true);
-      setReportAvailable(true);
-      showToast("Report generated successfully!", "success");
-    } catch (err) {
-      console.error("Error generating report:", err);
-      showToast(
-        err instanceof Error ? err.message : "Failed to generate report. Please try again.",
-        "error"
-      );
-    } finally {
-      setGeneratingReport(false);
-    }
-  }
 
   async function handleDownloadReport() {
     if (!participantAssessment?.id) {
@@ -1886,13 +1909,25 @@ export default function TenantAssessmentDetailPage() {
         throw new Error("No download URL received");
       }
 
-      // Trigger browser download
+      // Fetch the PDF as a blob
+      const pdfResponse = await fetch(data.signed_url);
+      if (!pdfResponse.ok) {
+        throw new Error("Failed to fetch PDF");
+      }
+
+      const blob = await pdfResponse.blob();
+      const blobUrl = URL.createObjectURL(blob);
+
+      // Create download link
       const link = document.createElement("a");
-      link.href = data.signed_url;
+      link.href = blobUrl;
       link.download = `pulse-report-${participantAssessment.id}.pdf`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+
+      // Clean up blob URL
+      URL.revokeObjectURL(blobUrl);
 
       showToast("Report downloaded successfully!", "success");
     } catch (err) {
@@ -2067,34 +2102,31 @@ export default function TenantAssessmentDetailPage() {
             {(() => {
               const buttonConfig = getButtonConfig();
               const isPulse = assessment?.assessment_type?.name?.toLowerCase() === "pulse";
-              // Show download button when report is generated (simulation) OR available (real)
-              const showDownload = isPulse && (reportGenerated || reportAvailable);
+              
+              // Debug logging for button visibility
+              console.log("🔍 [BUTTON DEBUG] Assessment overview button visibility:", {
+                isPulse,
+                reportAvailable,
+                participantAssessmentStatus: participantAssessment?.status,
+                assessmentTypeName: assessment?.assessment_type?.name,
+                participantAssessmentId: participantAssessment?.id,
+                showDownloadButton: isPulse && reportAvailable,
+                buttonConfig,
+              });
               
               return (
                 <>
-                  {/* Left side - Report simulation buttons (pulse only) */}
-                  {isPulse && (
-                    <div className="flex items-center gap-4">
-                      <Button
-                        onClick={handleGenerateReport}
-                        variant="outline"
-                        disabled={!user?.id || generatingReport}
-                        className="w-full sm:w-auto"
-                      >
-                        {generatingReport ? "Generating..." : "Generate Report"}
-                      </Button>
-                      {showDownload && (
-                        <Button
-                          onClick={handleDownloadReport}
-                          variant="outline"
-                          disabled={!user?.id || downloadingReport}
-                          className="w-full sm:w-auto"
-                        >
-                          <Download className="h-4 w-4 mr-2" />
-                          {downloadingReport ? "Downloading..." : "Download Report"}
-                        </Button>
-                      )}
-                    </div>
+                  {/* Left side - Download Report button (pulse only, when report available) */}
+                  {isPulse && reportAvailable && (
+                    <Button
+                      onClick={handleDownloadReport}
+                      variant="outline"
+                      disabled={!user?.id || downloadingReport}
+                      className="w-full sm:w-auto"
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      {downloadingReport ? "Downloading..." : "Download Report"}
+                    </Button>
                   )}
                   
                   {/* Right side - Assessment action buttons */}

@@ -1542,8 +1542,6 @@ export default function Assessment360() {
       }
 
       // Create PDF report for pulse assessments
-      // TEMPORARILY DISABLED - Re-enable when ready
-      /*
       const isPulse = assessmentType && assessmentType.toLowerCase() === "pulse";
       if (isPulse && participantAssessmentId) {
         try {
@@ -1567,7 +1565,6 @@ export default function Assessment360() {
           // Don't block completion if report creation fails
         }
       }
-      */
 
       // Redirect to assessment overview
       router.push(`/tenant/${subdomain}/assessments/${assessmentId}`);
