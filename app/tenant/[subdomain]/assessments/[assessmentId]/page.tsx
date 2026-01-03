@@ -1310,11 +1310,13 @@ export default function TenantAssessmentDetailPage() {
         return;
       }
 
+      // Use dynamic assessment type name for report lookup (supports custom plans)
+      const reportTypeName = assessmentTypeName.toLowerCase();
       const { data, error } = await supabase
         .from("assessment_reports")
         .select("id")
         .eq("participant_assessment_id", participantAssessmentId)
-        .eq("report_type", "pulse")
+        .eq("report_type", reportTypeName)
         .maybeSingle();
 
       if (error) {

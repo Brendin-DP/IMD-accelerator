@@ -72,13 +72,24 @@ export async function POST(req: Request) {
       }, { status: 500 });
     }
 
-    // 1) Fetch whatever you need to build the report
-    // TODO: Replace these queries with YOUR schema for reviewers + responses.
-    // Below is intentionally "shape-based" rather than exact.
-    console.log("🔍 [REPORT] Step 1: Fetching participant assessment...");
+    // 1) Fetch participant assessment with cohort_assessment and assessment_type
+    console.log("🔍 [REPORT] Step 1: Fetching participant assessment with assessment type...");
     const { data: participantAssessment, error: paErr } = await supabase
       .from("participant_assessments")
-      .select("id, participant_id, cohort_assessment_id")
+      .select(`
+        id,
+        participant_id,
+        cohort_assessment_id,
+        cohort_assessment:cohort_assessments(
+          id,
+          assessment_type_id,
+          assessment_type:assessment_types(
+            id,
+            name,
+            description
+          )
+        )
+      `)
       .eq("id", participant_assessment_id)
       .single();
 
@@ -97,12 +108,24 @@ export async function POST(req: Request) {
         hint: paErr?.hint,
       }, { status: 404 });
     }
+
+    // Extract assessment type information
+    const cohortAssessment = (participantAssessment as any).cohort_assessment;
+    const assessmentType = cohortAssessment?.assessment_type;
+    const assessmentTypeName = assessmentType?.name?.toLowerCase() || "pulse"; // Default to "pulse" for backward compatibility
     
     console.log("✅ [REPORT] Participant assessment found:", {
       id: participantAssessment.id,
       participant_id: participantAssessment.participant_id,
       cohort_assessment_id: participantAssessment.cohort_assessment_id,
+      assessment_type_id: cohortAssessment?.assessment_type_id,
+      assessment_type_name: assessmentTypeName,
     });
+
+    // Validate that we have assessment type information
+    if (!cohortAssessment || !assessmentType) {
+      console.warn("⚠️ [REPORT] Assessment type information not found, defaulting to 'pulse'");
+    }
     
     // Validation: Ensure participant_assessment_id is a valid UUID format
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -160,8 +183,13 @@ export async function POST(req: Request) {
     }
 
     // 4) Upload to Supabase Storage
-    const storagePath = `pulse/${participant_assessment_id}.pdf`;
-    console.log("🔍 [REPORT] Step 4: Uploading to storage...", { storagePath });
+    // Use assessment type name for storage path (supports custom plans that inherit from pulse)
+    const storagePath = `${assessmentTypeName}/${participant_assessment_id}.pdf`;
+    console.log("🔍 [REPORT] Step 4: Uploading to storage...", { 
+      storagePath,
+      assessmentTypeName,
+      reportType: assessmentTypeName,
+    });
     const upload = await supabase.storage
       .from("reports")
       .upload(storagePath, pdfBuffer, {
@@ -209,13 +237,16 @@ export async function POST(req: Request) {
       }, { status: 500 });
     }
     
-    // First, check if record exists
-    console.log("🔍 [REPORT] Step 5: Checking for existing report record...");
+    // First, check if record exists (use dynamic report_type)
+    console.log("🔍 [REPORT] Step 5: Checking for existing report record...", {
+      participant_assessment_id,
+      report_type: assessmentTypeName,
+    });
     const { data: existingReport, error: checkError } = await supabaseAdmin
       .from("assessment_reports")
       .select("id, participant_assessment_id, report_type, storage_path")
       .eq("participant_assessment_id", participant_assessment_id)
-      .eq("report_type", "pulse")
+      .eq("report_type", assessmentTypeName)
       .maybeSingle();
 
     if (checkError) {
@@ -231,7 +262,7 @@ export async function POST(req: Request) {
 
     const upsertPayload = {
       participant_assessment_id,
-      report_type: "pulse",
+      report_type: assessmentTypeName, // Use dynamic assessment type name
       storage_path: storagePath,
       updated_at: new Date().toISOString(),
       source_updated_at: new Date().toISOString(),

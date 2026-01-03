@@ -13,12 +13,30 @@ export async function GET(req: Request) {
 
   const supabase = createServerClient();
 
-  // Lookup current report row
+  // Fetch participant assessment to determine assessment type
+  const { data: participantAssessment, error: paErr } = await supabase
+    .from("participant_assessments")
+    .select(`
+      id,
+      cohort_assessment:cohort_assessments(
+        assessment_type:assessment_types(
+          name
+        )
+      )
+    `)
+    .eq("id", participant_assessment_id)
+    .single();
+
+  // Determine assessment type name (default to "pulse" for backward compatibility)
+  const assessmentTypeName = 
+    (participantAssessment as any)?.cohort_assessment?.assessment_type?.name?.toLowerCase() || "pulse";
+
+  // Lookup current report row (use dynamic report_type)
   const { data: reportRow } = await supabase
     .from("assessment_reports")
     .select("storage_path")
     .eq("participant_assessment_id", participant_assessment_id)
-    .eq("report_type", "pulse")
+    .eq("report_type", assessmentTypeName)
     .maybeSingle();
 
   // If none exists, you can call regenerate route (or inline generate here)
