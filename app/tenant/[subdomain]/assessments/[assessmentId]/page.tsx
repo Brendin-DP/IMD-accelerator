@@ -107,6 +107,7 @@ export default function TenantAssessmentDetailPage() {
   const [retakingAssessment, setRetakingAssessment] = useState(false);
   const [startingAssessment, setStartingAssessment] = useState(false);
   const [completingAssessment, setCompletingAssessment] = useState(false);
+  const [isCustomPulse, setIsCustomPulse] = useState<boolean>(false);
   const [downloadingReport, setDownloadingReport] = useState(false);
   const [reportAvailable, setReportAvailable] = useState(false);
   const [generatingReport, setGeneratingReport] = useState(false);
@@ -212,15 +213,20 @@ export default function TenantAssessmentDetailPage() {
           cohort = cohortData;
         }
 
-        setAssessment({
+        const assessmentDataWithRelations = {
           ...assessmentData,
           assessment_type: assessmentType,
           cohort: cohort,
-        } as CohortAssessment);
+        } as CohortAssessment;
+        setAssessment(assessmentDataWithRelations);
+        // Check if this is a custom pulse assessment
+        await checkIfCustomPulse(assessmentDataWithRelations);
       } else if (dbError) {
         throw dbError;
       } else if (data) {
         setAssessment(data as CohortAssessment);
+        // Check if this is a custom pulse assessment
+        await checkIfCustomPulse(data);
       } else {
         throw new Error("Assessment not found");
       }
@@ -230,6 +236,85 @@ export default function TenantAssessmentDetailPage() {
       setAssessment(null);
     } finally {
       setLoading(false);
+    }
+  }
+
+  // Function to detect if this is a custom assessment that inherits from pulse
+  async function checkIfCustomPulse(cohortAssessment: any) {
+    try {
+      const assessmentTypeId = cohortAssessment.assessment_type_id;
+      const assessmentTypeName = cohortAssessment.assessment_type?.name?.toLowerCase() || "";
+      
+      // Only check if assessment type is pulse
+      if (assessmentTypeName !== "pulse") {
+        setIsCustomPulse(false);
+        return;
+      }
+
+      // Get cohort to find plan
+      const { data: cohort } = await supabase
+        .from("cohorts")
+        .select("plan_id")
+        .eq("id", cohortAssessment.cohort_id)
+        .single();
+
+      if (!cohort?.plan_id) {
+        setIsCustomPulse(false);
+        return;
+      }
+
+      // Fetch plan to get assessment definition mapping
+      const { data: planData } = await supabase
+        .from("plans")
+        .select("description")
+        .eq("id", cohort.plan_id)
+        .single();
+
+      if (!planData?.description) {
+        setIsCustomPulse(false);
+        return;
+      }
+
+      // Extract assessment definition mapping
+      const planMappingMatch = planData.description.match(/<!--PLAN_ASSESSMENT_DEFINITIONS:(.*?)-->/);
+      if (!planMappingMatch) {
+        setIsCustomPulse(false);
+        return;
+      }
+
+      try {
+        const mapping = JSON.parse(planMappingMatch[1]);
+        const selectedDefId = mapping[assessmentTypeId];
+        
+        if (!selectedDefId) {
+          setIsCustomPulse(false);
+          return;
+        }
+
+        // Check if the assessment definition is custom (is_system = false)
+        const { data: assessmentDef } = await supabase
+          .from("assessment_definitions_v2")
+          .select("id, is_system, assessment_type_id")
+          .eq("id", selectedDefId)
+          .eq("assessment_type_id", assessmentTypeId)
+          .maybeSingle();
+
+        if (assessmentDef && !assessmentDef.is_system) {
+          setIsCustomPulse(true);
+          console.log("✅ [CUSTOM PULSE] Detected custom pulse assessment:", {
+            assessmentDefinitionId: assessmentDef.id,
+            isSystem: assessmentDef.is_system,
+          });
+        } else {
+          setIsCustomPulse(false);
+        }
+      } catch (e) {
+        console.error("Error parsing plan assessment mapping:", e);
+        setIsCustomPulse(false);
+      }
+    } catch (error) {
+      console.error("Error checking if custom pulse:", error);
+      setIsCustomPulse(false);
     }
   }
 
@@ -1158,6 +1243,11 @@ export default function TenantAssessmentDetailPage() {
     setNewReviewerEmail("");
     setEmailValid(null);
     setEmailValidationMessage("");
+    
+    // For custom pulse, ensure we start with empty external reviewers
+    if (isCustomPulse) {
+      setSelectedReviewers((prev) => prev.filter((item) => !item.includes("@")));
+    }
   }
 
   function handleToggleReviewer(reviewerId: string) {
@@ -1165,12 +1255,18 @@ export default function TenantAssessmentDetailPage() {
       if (prev.includes(reviewerId)) {
         return prev.filter((id) => id !== reviewerId);
       } else {
-        // Limit to 10 total active nominations (existing active + new selections)
+        // Limit to 3 for custom pulse, 10 for default (existing active + new selections)
         // Only count active nominations (pending or accepted), not rejected ones
         const activeNominationsCount = nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length;
-        const maxNewSelections = 10 - activeNominationsCount;
+        const maxNominations = isCustomPulse ? 3 : 10;
+        const maxNewSelections = maxNominations - activeNominationsCount;
         if (prev.length >= maxNewSelections) {
-          showToast(`You can only select up to ${maxNewSelections} more reviewer(s). You already have ${activeNominationsCount} active nomination(s).`, "info");
+          showToast(
+            isCustomPulse
+              ? `Custom pulse surveys are limited to 3 nominations. You can only select up to ${maxNewSelections} more reviewer(s). You already have ${activeNominationsCount} active nomination(s).`
+              : `You can only select up to ${maxNewSelections} more reviewer(s). You already have ${activeNominationsCount} active nomination(s).`,
+            "info"
+          );
           return prev;
         }
         return [...prev, reviewerId];
@@ -1211,15 +1307,16 @@ export default function TenantAssessmentDetailPage() {
       };
     }
 
-    // Check if we've reached the limit
-    const activeNominationsCount = nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length;
-    const maxNewSelections = 10 - activeNominationsCount;
-    if (selectedReviewers.length >= maxNewSelections) {
-      return { 
-        valid: false, 
-        message: `You can only select up to ${maxNewSelections} more reviewer(s)` 
-      };
-    }
+      // Check if we've reached the limit (3 for custom pulse, 10 for default)
+      const activeNominationsCount = nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length;
+      const maxNominations = isCustomPulse ? 3 : 10;
+      const maxNewSelections = maxNominations - activeNominationsCount;
+      if (selectedReviewers.length >= maxNewSelections) {
+        return { 
+          valid: false, 
+          message: `You can only select up to ${maxNewSelections} more reviewer(s)` 
+        };
+      }
 
     return { valid: true, message: `✓ Valid email from ${allowedDomain}` };
   }
@@ -1337,13 +1434,39 @@ export default function TenantAssessmentDetailPage() {
         return;
       }
 
-      // Create sets of existing IDs (both internal and external)
-      const existingReviewerIds = new Set(existingNominations?.map((n: any) => n.reviewer_id).filter(Boolean) || []);
-      const existingExternalIds = new Set(existingNominations?.map((n: any) => n.external_reviewer_id).filter(Boolean) || []);
+      // Check nomination limit for custom pulse (3) vs default (10)
+      const maxNominations = isCustomPulse ? 3 : 10;
+      const activeNominationsCount = existingNominations?.filter(
+        (n: any) => n.request_status === "pending" || n.request_status === "accepted"
+      ).length || 0;
 
       // Separate internal and external reviewers
       const internalReviewers = selectedReviewers.filter((item) => !item.includes("@"));
-      const externalReviewers = selectedReviewers.filter((item) => item.includes("@"));
+      const externalReviewers = isCustomPulse ? [] : selectedReviewers.filter((item) => item.includes("@"));
+
+      // For custom pulse, reject external reviewers
+      if (isCustomPulse && externalReviewers.length > 0) {
+        showToast("External nominations are not allowed for custom pulse surveys.", "error");
+        setSubmittingNominations(false);
+        return;
+      }
+
+      // Check if adding new nominations would exceed the limit
+      const totalNewNominations = internalReviewers.length + externalReviewers.length;
+      if (activeNominationsCount + totalNewNominations > maxNominations) {
+        showToast(
+          isCustomPulse 
+            ? "Custom pulse surveys are limited to 3 nominations." 
+            : "Maximum 10 nominations allowed.",
+          "error"
+        );
+        setSubmittingNominations(false);
+        return;
+      }
+
+      // Create sets of existing IDs (both internal and external)
+      const existingReviewerIds = new Set(existingNominations?.map((n: any) => n.reviewer_id).filter(Boolean) || []);
+      const existingExternalIds = new Set(existingNominations?.map((n: any) => n.external_reviewer_id).filter(Boolean) || []);
 
       // Filter out already nominated internal reviewers
       const newInternalReviewers = internalReviewers.filter((id) => !existingReviewerIds.has(id));
@@ -2082,48 +2205,60 @@ export default function TenantAssessmentDetailPage() {
                   onChange={(e) => setNominationSearch(e.target.value)}
                   className="w-64"
                 />
-                <Button
-                  onClick={handleOpenNominationModal}
-                  disabled={
-                    (!participantAssessment?.id && !assessment) || 
-                    nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length >= 10
-                  }
-                >
-                  Request Nomination
-                </Button>
+                  <Button
+                    onClick={handleOpenNominationModal}
+                    disabled={
+                      (!participantAssessment?.id && !assessment) || 
+                      nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length >= (isCustomPulse ? 3 : 10)
+                    }
+                    title={
+                      isCustomPulse && nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length >= 3
+                        ? "Maximum 3 nominations allowed for custom pulse surveys"
+                        : nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length >= 10
+                        ? "Maximum 10 nominations allowed"
+                        : undefined
+                    }
+                  >
+                    Request Nomination
+                  </Button>
+                </div>
               </div>
-            </div>
-            {nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length >= 10 && (
+            {nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length >= (isCustomPulse ? 3 : 10) && (
               <p className="text-sm text-muted-foreground mt-2">
-                You have reached the maximum of 10 active nominations (internal + external).
+                {isCustomPulse 
+                  ? "You have reached the maximum of 3 active nominations for custom pulse surveys."
+                  : "You have reached the maximum of 10 active nominations (internal + external)."}
               </p>
             )}
           </CardHeader>
           <CardContent>
-            {/* Tabs */}
-            <div className="flex space-x-1 border-b mb-4">
-              <button
-                onClick={() => setActiveTab("internal")}
-                className={`px-4 py-2 text-sm font-medium transition-colors ${
-                  activeTab === "internal"
-                    ? "border-b-2 border-primary text-primary"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Internal Nominations
-              </button>
-              <button
-                onClick={() => setActiveTab("external")}
-                className={`px-4 py-2 text-sm font-medium transition-colors ${
-                  activeTab === "external"
-                    ? "border-b-2 border-primary text-primary"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                External Nominations
-              </button>
-            </div>
-            {activeTab === "internal" ? (
+            {/* Tabs - Only show if not custom pulse (custom pulse only has internal) */}
+            {!isCustomPulse && (
+              <div className="flex space-x-1 border-b mb-4">
+                <button
+                  onClick={() => setActiveTab("internal")}
+                  className={`px-4 py-2 text-sm font-medium transition-colors ${
+                    activeTab === "internal"
+                      ? "border-b-2 border-primary text-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Internal Nominations
+                </button>
+                <button
+                  onClick={() => setActiveTab("external")}
+                  className={`px-4 py-2 text-sm font-medium transition-colors ${
+                    activeTab === "external"
+                      ? "border-b-2 border-primary text-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  External Nominations
+                </button>
+              </div>
+            )}
+            {/* For custom pulse, always show internal. For others, use tab selection */}
+            {(isCustomPulse || activeTab === "internal") ? (
               (() => {
                 let internalNominations = nominations.filter((n) => !n.is_external);
                 
@@ -2340,88 +2475,96 @@ export default function TenantAssessmentDetailPage() {
           <DialogHeader>
             <DialogTitle>Request Nomination</DialogTitle>
             <DialogDescription>
-              Select up to {10 - nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length} reviewers from your client roster or add external reviewers by email. You have {nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length} active nomination(s).
+              {isCustomPulse ? (
+                <>Select up to {3 - nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length} reviewers from your client roster. Custom pulse surveys are limited to 3 nominations. You have {nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length} active nomination(s).</>
+              ) : (
+                <>Select up to {10 - nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length} reviewers from your client roster or add external reviewers by email. You have {nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length} active nomination(s).</>
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogClose onClick={() => setIsNominationModalOpen(false)} />
 
           <div className="space-y-4">
-            {/* Add External Reviewer Section */}
-            <div className="space-y-2">
-              <div className="flex gap-2 items-end">
-                <div className="flex-1">
-                  <Input
-                    type="email"
-                    placeholder={`Add reviewer email (e.g., name@${subdomain}.com)`}
-                    value={newReviewerEmail}
-                    onChange={handleEmailInputChange}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && emailValid === true) {
-                        e.preventDefault();
-                        addReviewer(newReviewerEmail);
-                      }
-                    }}
-                    className={
-                      emailValid === false && newReviewerEmail
-                        ? "border-red-500"
-                        : emailValid === true && newReviewerEmail
-                        ? "border-green-500"
-                        : ""
-                    }
-                  />
+            {/* Add External Reviewer Section - Hidden for custom pulse */}
+            {!isCustomPulse && (
+              <>
+                <div className="space-y-2">
+                  <div className="flex gap-2 items-end">
+                    <div className="flex-1">
+                      <Input
+                        type="email"
+                        placeholder={`Add reviewer email (e.g., name@${subdomain}.com)`}
+                        value={newReviewerEmail}
+                        onChange={handleEmailInputChange}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && emailValid === true) {
+                            e.preventDefault();
+                            addReviewer(newReviewerEmail);
+                          }
+                        }}
+                        className={
+                          emailValid === false && newReviewerEmail
+                            ? "border-red-500"
+                            : emailValid === true && newReviewerEmail
+                            ? "border-green-500"
+                            : ""
+                        }
+                      />
+                    </div>
+                    <Button 
+                      onClick={() => addReviewer(newReviewerEmail)}
+                      disabled={emailValid !== true}
+                    >
+                      Add
+                    </Button>
+                  </div>
+                  {emailValidationMessage && (
+                    <p
+                      className={`text-xs ${
+                        emailValid === true
+                          ? "text-green-600"
+                          : emailValid === false
+                          ? "text-red-600"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      {emailValidationMessage}
+                    </p>
+                  )}
+                  {!emailValidationMessage && newReviewerEmail && (
+                    <p className="text-xs text-muted-foreground">
+                      Email must be from {subdomain}.com domain
+                    </p>
+                  )}
                 </div>
-                <Button 
-                  onClick={() => addReviewer(newReviewerEmail)}
-                  disabled={emailValid !== true}
-                >
-                  Add
-                </Button>
-              </div>
-              {emailValidationMessage && (
-                <p
-                  className={`text-xs ${
-                    emailValid === true
-                      ? "text-green-600"
-                      : emailValid === false
-                      ? "text-red-600"
-                      : "text-muted-foreground"
-                  }`}
-                >
-                  {emailValidationMessage}
-                </p>
-              )}
-              {!emailValidationMessage && newReviewerEmail && (
-                <p className="text-xs text-muted-foreground">
-                  Email must be from {subdomain}.com domain
-                </p>
-              )}
-            </div>
 
-            {/* Selected External Reviewers Display */}
-            {selectedReviewers.filter(email => email.includes("@")).length > 0 && (
-              <div className="p-3 bg-muted rounded-md">
-                <p className="text-sm font-medium mb-2">External Reviewers Added:</p>
-                <div className="flex flex-wrap gap-2">
-                  {selectedReviewers
-                    .filter(email => email.includes("@"))
-                    .map((email) => (
-                      <span
-                        key={email}
-                        className="inline-flex items-center gap-1 px-2 py-1 bg-background rounded-md text-sm"
-                      >
-                        {email}
-                        <button
-                          onClick={() => {
-                            setSelectedReviewers((prev) => prev.filter((e) => e !== email));
-                          }}
-                          className="ml-1 hover:text-destructive"
-                        >
-                          ×
-                        </button>
-                      </span>
-                    ))}
-                </div>
-              </div>
+                {/* Selected External Reviewers Display */}
+                {selectedReviewers.filter(email => email.includes("@")).length > 0 && (
+                  <div className="p-3 bg-muted rounded-md">
+                    <p className="text-sm font-medium mb-2">External Reviewers Added:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedReviewers
+                        .filter(email => email.includes("@"))
+                        .map((email) => (
+                          <span
+                            key={email}
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-background rounded-md text-sm"
+                          >
+                            {email}
+                            <button
+                              onClick={() => {
+                                setSelectedReviewers((prev) => prev.filter((e) => e !== email));
+                              }}
+                              className="ml-1 hover:text-destructive"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
 
             {loadingRoster ? (
@@ -2448,6 +2591,7 @@ export default function TenantAssessmentDetailPage() {
                         const isAlreadyNominated = nominations.some(
                           (n) => n.reviewer_id === user.id && (n.request_status === "pending" || n.request_status === "accepted")
                         );
+                        const maxNominations = isCustomPulse ? 3 : 10;
                         
                         return (
                           <tr
@@ -2462,7 +2606,7 @@ export default function TenantAssessmentDetailPage() {
                                 checked={isSelected}
                                 disabled={
                                   isAlreadyNominated ||
-                                  (!isSelected && selectedReviewers.length >= (10 - activeNominationsCount))
+                                  (!isSelected && selectedReviewers.length >= (maxNominations - activeNominationsCount))
                                 }
                                 onChange={() => handleToggleReviewer(user.id)}
                                 className="h-4 w-4 rounded border-gray-300"
@@ -2484,8 +2628,8 @@ export default function TenantAssessmentDetailPage() {
 
                 <div className="flex items-center justify-between pt-4 border-t">
                   <p className="text-sm text-muted-foreground">
-                    {selectedReviewers.length} of {10 - nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length} selected
-                    {selectedReviewers.filter(email => email.includes("@")).length > 0 && (
+                    {selectedReviewers.length} of {(isCustomPulse ? 3 : 10) - nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length} selected
+                    {!isCustomPulse && selectedReviewers.filter(email => email.includes("@")).length > 0 && (
                       <span className="ml-2">
                         ({selectedReviewers.filter(email => email.includes("@")).length} external)
                       </span>
