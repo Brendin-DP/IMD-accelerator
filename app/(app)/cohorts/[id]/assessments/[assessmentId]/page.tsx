@@ -399,8 +399,16 @@ export default function AssessmentDetailPage() {
   }
 
   async function fetchParticipantProgress() {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'cohorts/[id]/assessments/[assessmentId]/page.tsx:401',message:'fetchParticipantProgress ENTRY',data:{hasAssessment:!!assessment,assessmentId:assessment?.id,participantAssessmentsCount:participantAssessments?.length||0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     try {
-      if (!assessment) return;
+      if (!assessment) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'cohorts/[id]/assessments/[assessmentId]/page.tsx:404',message:'fetchParticipantProgress EARLY RETURN - no assessment',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
+        return;
+      }
 
       // Get assessment_definition_id
       let assessmentDefinitionId: string | null = null;
@@ -459,12 +467,20 @@ export default function AssessmentDetailPage() {
       }
 
       // Count total questions for this assessment
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'cohorts/[id]/assessments/[assessmentId]/page.tsx:461',message:'fetchParticipantProgress - calculating total',data:{assessmentDefinitionId,assessmentId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+      
       const { count: totalQuestionsCount, error: countError } = await supabase
         .from("assessment_questions_v2")
         .select("*", { count: "exact", head: true })
         .eq("assessment_definition_id", assessmentDefinitionId);
 
       const total = totalQuestionsCount || 0;
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'cohorts/[id]/assessments/[assessmentId]/page.tsx:467',message:'fetchParticipantProgress - total calculated',data:{total,totalQuestionsCount,countError:countError?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
 
       // Get all participant assessment IDs
       const participantAssessmentIds = participantAssessments
@@ -500,33 +516,86 @@ export default function AssessmentDetailPage() {
 
       // Get all session IDs
       const sessionIds = responseSessions.map((s: any) => s.id);
+      
+      console.log("🔍 [ADMIN] fetchParticipantProgress - Session Info:", {
+        sessionIdsCount: sessionIds.length,
+        sessionIds,
+        responseSessionsCount: responseSessions?.length || 0,
+        responseSessions: responseSessions?.map((s: any) => ({
+          sessionId: s.id,
+          participantAssessmentId: s.participant_assessment_id,
+        })),
+        participantAssessmentIds,
+      });
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'cohorts/[id]/assessments/[assessmentId]/page.tsx:502',message:'fetchParticipantProgress - before query',data:{sessionIdsCount:sessionIds.length,sessionIds,responseSessionsCount:responseSessions?.length||0,participantAssessmentIds},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
 
       // Count answered questions per session - use is_answered flag for accurate tracking
-      // Join with questions to get step_id for step-aware progress
+      // Fetch responses first, then join question data separately to avoid join limitations
       const { data: responses, error: responsesError } = await supabase
         .from("assessment_responses")
-        .select(`
-          id,
-          session_id,
-          question_id,
-          is_answered,
-          answer_text,
-          created_at,
-          updated_at,
-          question:assessment_questions_v2 (
-            id,
-            step_id,
-            question_order
-          )
-        `)
+        .select("id, session_id, question_id, is_answered, answer_text, created_at, updated_at")
         .in("session_id", sessionIds)
         .eq("is_answered", true)
         .order("created_at", { ascending: true });
-
+      
       if (responsesError) {
         console.error("Error fetching responses:", responsesError);
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'cohorts/[id]/assessments/[assessmentId]/page.tsx:526',message:'fetchParticipantProgress - responses query error',data:{responsesError:responsesError.message,code:responsesError.code},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
         return;
       }
+      
+      // Fetch question data for all unique question IDs
+      const questionIds = [...new Set(responses?.map((r: any) => r.question_id) || [])];
+      const { data: questionsData } = await supabase
+        .from("assessment_questions_v2")
+        .select("id, step_id, question_order")
+        .in("id", questionIds);
+      
+      // Create a map of question_id -> question data
+      const questionMap = new Map<string, { id: string; step_id: string | null; question_order: number | null }>();
+      (questionsData || []).forEach((q: any) => {
+        questionMap.set(q.id, { id: q.id, step_id: q.step_id, question_order: q.question_order });
+      });
+      
+      // Attach question data to responses
+      const responsesWithQuestions = (responses || []).map((r: any) => ({
+        ...r,
+        question: questionMap.get(r.question_id) || null,
+      }));
+
+      console.log("🔍 [ADMIN] fetchParticipantProgress - Responses Fetched:", {
+        responseCount: responses?.length || 0,
+        responsesWithQuestionsCount: responsesWithQuestions?.length || 0,
+        questionIdsCount: questionIds.length,
+        uniqueQuestionIds: questionIds.slice(0, 20),
+        sampleResponses: responses?.slice(0, 5).map((r: any) => ({
+          id: r.id,
+          sessionId: r.session_id,
+          questionId: r.question_id,
+          isAnswered: r.is_answered,
+          hasAnswer: !!r.answer_text,
+        })),
+        allSessionIds: [...new Set(responses?.map((r: any) => r.session_id) || [])],
+      });
+      
+      console.log("🔍 [ADMIN] fetchParticipantProgress - Questions Data:", {
+        questionsDataCount: questionsData?.length || 0,
+        questionMapSize: questionMap.size,
+        sampleQuestions: Array.from(questionMap.entries()).slice(0, 5).map(([id, q]) => ({
+          questionId: id,
+          stepId: q.step_id,
+          questionOrder: q.question_order,
+        })),
+      });
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'cohorts/[id]/assessments/[assessmentId]/page.tsx:556',message:'fetchParticipantProgress - responses fetched',data:{responseCount:responses?.length||0,responsesWithQuestionsCount:responsesWithQuestions?.length||0,questionIdsCount:questionIds.length,uniqueQuestionIds:questionIds.slice(0,10)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
 
       // Create a map of session_id -> participant_assessment_id
       const sessionToParticipantMap = new Map<string, string>();
@@ -538,9 +607,9 @@ export default function AssessmentDetailPage() {
         assessmentId,
         assessmentDefinitionId,
         totalQuestions: total,
-        totalResponses: responses?.length || 0,
+        totalResponses: responsesWithQuestions?.length || 0,
         sessionIds: sessionIds.length,
-        responses: responses?.map((r: any) => ({
+        responses: responsesWithQuestions?.map((r: any) => ({
           responseId: r.id,
           sessionId: r.session_id,
           questionId: r.question_id,
@@ -568,7 +637,16 @@ export default function AssessmentDetailPage() {
       const participantAnsweredMap = new Map<string, Set<string>>();
       const participantAnsweredByStep = new Map<string, Map<string, Set<string>>>();
       
-      (responses || []).forEach((r: any) => {
+      console.log("🔍 [ADMIN] fetchParticipantProgress - Processing Responses:", {
+        totalResponsesToProcess: responsesWithQuestions?.length || 0,
+        sessionToParticipantMapSize: sessionToParticipantMap.size,
+        sessionToParticipantMapping: Array.from(sessionToParticipantMap.entries()).map(([sessionId, paId]) => ({
+          sessionId,
+          participantAssessmentId: paId,
+        })),
+      });
+      
+      (responsesWithQuestions || []).forEach((r: any) => {
         // Only count if is_answered is true
         if (r.is_answered) {
           const participantAssessmentId = sessionToParticipantMap.get(r.session_id);
@@ -585,18 +663,78 @@ export default function AssessmentDetailPage() {
             }
             const stepMap = participantAnsweredByStep.get(participantAssessmentId)!;
             const stepId = r.question?.step_id ?? "__no_step__";
+            
+            if (!r.question) {
+              console.warn("⚠️ [ADMIN] Response without question data:", {
+                questionId: r.question_id,
+                sessionId: r.session_id,
+                participantAssessmentId,
+              });
+            }
+            
             if (!stepMap.has(stepId)) {
               stepMap.set(stepId, new Set());
             }
             stepMap.get(stepId)!.add(String(r.question_id));
+          } else {
+            console.warn("⚠️ [ADMIN] Response without matching participant assessment:", {
+              sessionId: r.session_id,
+              questionId: r.question_id,
+              availableSessions: Array.from(sessionToParticipantMap.keys()),
+            });
           }
         }
       });
+      
+      console.log("🔍 [ADMIN] fetchParticipantProgress - After Building Maps:", {
+        participantCount: participantAnsweredMap.size,
+        totalAnsweredQuestions: Array.from(participantAnsweredMap.values()).reduce((sum, set) => sum + set.size, 0),
+        participantProgress: Array.from(participantAnsweredMap.entries()).map(([paId, answeredSet]) => ({
+          participantAssessmentId: paId,
+          answeredCount: answeredSet.size,
+          answeredQuestionIds: Array.from(answeredSet).slice(0, 10),
+          answeredByStep: participantAnsweredByStep.get(paId)
+            ? Object.fromEntries(
+                Array.from(participantAnsweredByStep.get(paId)!.entries()).map(([stepId, qIds]) => [
+                  stepId,
+                  Array.from(qIds).slice(0, 5),
+                ])
+              )
+            : {},
+        })),
+      });
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'cohorts/[id]/assessments/[assessmentId]/page.tsx:594',message:'fetchParticipantProgress - after building maps',data:{participantCount:participantAnsweredMap.size,totalAnsweredQuestions:Array.from(participantAnsweredMap.values()).reduce((sum,set)=>sum+set.size,0),sampleParticipant:Array.from(participantAnsweredMap.entries())[0]?[Array.from(participantAnsweredMap.entries())[0][0],Array.from(participantAnsweredMap.entries())[0][1].size]:null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
 
       // Calculate percentages
       participantAnsweredMap.forEach((answeredSet, participantAssessmentId) => {
         const answered = answeredSet.size;
         const percentage = total > 0 ? Math.round((answered / total) * 100) : 0;
+        
+        console.log("🔍 [ADMIN] fetchParticipantProgress - Calculating Percentage:", {
+          participantAssessmentId,
+          answered,
+          total,
+          percentage,
+          answeredQuestionIds: Array.from(answeredSet),
+          answeredByStep: participantAnsweredByStep.get(participantAssessmentId)
+            ? Object.fromEntries(
+                Array.from(participantAnsweredByStep.get(participantAssessmentId)!.entries()).map(([stepId, qIds]) => [
+                  stepId,
+                  {
+                    count: qIds.size,
+                    questionIds: Array.from(qIds),
+                  },
+                ])
+              )
+            : {},
+        });
+        
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'cohorts/[id]/assessments/[assessmentId]/page.tsx:597',message:'fetchParticipantProgress - calculating percentage',data:{participantAssessmentId,answered,total,percentage},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
         progressMap.set(participantAssessmentId, { answered, total, percentage });
       });
 
@@ -728,23 +866,10 @@ export default function AssessmentDetailPage() {
       const sessionIds = responseSessions.map((s: any) => s.id);
 
       // Count answered questions per session - use is_answered flag
-      // Join with questions to get step_id for step-aware progress
+      // Fetch responses first, then join question data separately to avoid join limitations
       const { data: responses, error: responsesError } = await supabase
         .from("assessment_responses")
-        .select(`
-          id,
-          session_id,
-          question_id,
-          is_answered,
-          answer_text,
-          created_at,
-          updated_at,
-          question:assessment_questions_v2 (
-            id,
-            step_id,
-            question_order
-          )
-        `)
+        .select("id, session_id, question_id, is_answered, answer_text, created_at, updated_at")
         .in("session_id", sessionIds)
         .eq("is_answered", true)
         .order("created_at", { ascending: true });
@@ -753,6 +878,25 @@ export default function AssessmentDetailPage() {
         console.error("Error fetching reviewer responses:", responsesError);
         return;
       }
+      
+      // Fetch question data for all unique question IDs
+      const questionIds = [...new Set(responses?.map((r: any) => r.question_id) || [])];
+      const { data: questionsData } = await supabase
+        .from("assessment_questions_v2")
+        .select("id, step_id, question_order")
+        .in("id", questionIds);
+      
+      // Create a map of question_id -> question data
+      const questionMap = new Map<string, { id: string; step_id: string | null; question_order: number | null }>();
+      (questionsData || []).forEach((q: any) => {
+        questionMap.set(q.id, { id: q.id, step_id: q.step_id, question_order: q.question_order });
+      });
+      
+      // Attach question data to responses
+      const responsesWithQuestions = (responses || []).map((r: any) => ({
+        ...r,
+        question: questionMap.get(r.question_id) || null,
+      }));
 
       // Create a map of session_id -> reviewer_nomination_id
       const sessionToNominationMap = new Map<string, string>();
@@ -764,9 +908,9 @@ export default function AssessmentDetailPage() {
         assessmentId,
         assessmentDefinitionId,
         totalQuestions: total,
-        totalResponses: responses?.length || 0,
+        totalResponses: responsesWithQuestions?.length || 0,
         sessionIds: sessionIds.length,
-        responses: responses?.map((r: any) => ({
+        responses: responsesWithQuestions?.map((r: any) => ({
           responseId: r.id,
           sessionId: r.session_id,
           questionId: r.question_id,
@@ -794,7 +938,7 @@ export default function AssessmentDetailPage() {
       const nominationAnsweredMap = new Map<string, Set<string>>();
       const nominationAnsweredByStep = new Map<string, Map<string, Set<string>>>();
       
-      (responses || []).forEach((r: any) => {
+      (responsesWithQuestions || []).forEach((r: any) => {
         if (r.is_answered) {
           const nominationId = sessionToNominationMap.get(r.session_id);
           if (nominationId) {

@@ -110,6 +110,41 @@ export type Database = {
           },
         ]
       }
+      assessment_reports: {
+        Row: {
+          id: string
+          participant_assessment_id: string
+          report_type: string
+          source_updated_at: string
+          storage_path: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          participant_assessment_id: string
+          report_type?: string
+          source_updated_at?: string
+          storage_path: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          participant_assessment_id?: string
+          report_type?: string
+          source_updated_at?: string
+          storage_path?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assessment_reports_participant_assessment_id_fkey"
+            columns: ["participant_assessment_id"]
+            isOneToOne: false
+            referencedRelation: "participant_assessments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       assessment_response_sessions: {
         Row: {
           assessment_definition_id: string
