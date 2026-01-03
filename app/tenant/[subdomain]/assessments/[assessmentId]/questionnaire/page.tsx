@@ -332,6 +332,10 @@ export default function Assessment360() {
   // Resume from last question when session and questions are loaded
   useEffect(() => {
     const resumeFromLastQuestion = async () => {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:334',message:'resumeFromLastQuestion CHECK',data:{hasResumed,responseSessionId,usesNewPlan,questionsLength:questions.length,questionGroupsLength:questionGroups.length,assessmentType,willResume:!hasResumed&&!!responseSessionId&&usesNewPlan&&questions.length>0&&(assessmentType?.toLowerCase()==='pulse'?questionGroups.length>0:true)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+      // #endregion
+      
       if (
         !hasResumed &&
         responseSessionId &&
@@ -346,6 +350,10 @@ export default function Assessment360() {
           questionGroups.length > 0 ? questionGroups : undefined
         );
 
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:349',message:'resumeFromLastQuestion RESULT',data:{questionIndex:resumePos.questionIndex,stepIndex:resumePos.stepIndex},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+        // #endregion
+        
         console.log("✅ [DEBUG] Resume position determined:", resumePos);
         setCurrent(resumePos.questionIndex);
         if (resumePos.stepIndex !== undefined) {
@@ -627,14 +635,22 @@ export default function Assessment360() {
         return { questionIndex: 0, stepIndex: 0 };
       }
 
-      // Fetch all responses for this session
+      // Fetch all responses for this session with joined question data
       const { data: responses, error: responsesError } = await supabase
         .from("assessment_responses")
-        .select("question_id, is_answered")
+        .select(`
+          question_id,
+          is_answered,
+          question:assessment_questions_v2 (
+            id,
+            step_id,
+            question_order
+          )
+        `)
         .eq("session_id", sessionId);
 
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:623',message:'determineResumePosition fetched responses',data:{sessionId,responseCount:responses?.length||0,responses:responses?.map((r:any)=>({qId:r.question_id,answered:r.is_answered})),error:responsesError?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:639',message:'determineResumePosition fetched responses',data:{sessionId,responseCount:responses?.length||0,responses:responses?.map((r:any)=>({qId:r.question_id,answered:r.is_answered,stepId:r.question?.step_id})),error:responsesError?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
       // #endregion
 
       if (responsesError) {
@@ -645,16 +661,33 @@ export default function Assessment360() {
       type AssessmentResponseRow = {
         question_id: string | number;
         is_answered: boolean;
+        question?: {
+          id: string;
+          step_id: string | null;
+          question_order: number | null;
+        } | null;
       };
 
-      const answeredQuestionIds = new Set(
-        ((responses ?? []) as AssessmentResponseRow[])
-          .filter((r) => r.is_answered)
-          .map((r) => String(r.question_id))
-      );
+      // Build answered ids per step
+      const answeredByStep = new Map<string, Set<string>>();
+      const answeredQuestionIds = new Set<string>();
+
+      ((responses ?? []) as AssessmentResponseRow[]).forEach((r) => {
+        if (r.is_answered) {
+          const questionId = String(r.question_id);
+          answeredQuestionIds.add(questionId);
+          
+          // Organize by step
+          const stepId = r.question?.step_id ?? "__no_step__";
+          if (!answeredByStep.has(stepId)) {
+            answeredByStep.set(stepId, new Set());
+          }
+          answeredByStep.get(stepId)!.add(questionId);
+        }
+      });
       
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:638',message:'determineResumePosition answeredQuestionIds',data:{answeredCount:answeredQuestionIds.size,answeredIds:Array.from(answeredQuestionIds)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:658',message:'determineResumePosition answeredQuestionIds',data:{answeredCount:answeredQuestionIds.size,answeredIds:Array.from(answeredQuestionIds),answeredByStep:Object.fromEntries(Array.from(answeredByStep.entries()).map(([stepId,qIds])=>[stepId,Array.from(qIds)]))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
       // #endregion
 
       // If we have last_question_id, try to resume from there
@@ -777,15 +810,48 @@ export default function Assessment360() {
       // #endregion
       
       type ResponseRow = {
+        id: string;
         question_id: string | number;
         answer_text: string | null;
         is_answered: boolean;
+        question?: {
+          id: string;
+          step_id: string | null;
+          question_order: number | null;
+        } | null;
       };
 
       const { data: responses, error } = await supabase
         .from("assessment_responses")
-        .select("question_id, answer_text, is_answered")
-        .eq("session_id", sessionId);
+        .select(`
+          id,
+          session_id,
+          question_id,
+          answer_text,
+          is_answered,
+          created_at,
+          updated_at,
+          question:assessment_questions_v2 (
+            id,
+            step_id,
+            question_order
+          )
+        `)
+        .eq("session_id", sessionId)
+        .order("created_at", { ascending: true });
+
+      console.log("🔍 [DEBUG] All responses for assessment (360/Pulse):", {
+        sessionId,
+        assessmentType,
+        totalResponses: responses?.length || 0,
+        answeredResponses: responses?.filter((r: any) => r.is_answered).length || 0,
+        responses: responses?.map((r: any) => ({
+          questionId: r.question_id,
+          hasAnswer: !!r.answer_text,
+          isAnswered: r.is_answered,
+          answerPreview: r.answer_text ? r.answer_text.substring(0, 50) : null,
+        })),
+      });
 
       // #region agent log
       fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:772',message:'loadExistingResponses QUERY RESULT',data:{sessionId,responseCount:responses?.length||0,responses:responses?.map((r:any)=>({qId:r.question_id,hasText:!!r.answer_text,isAnswered:r.is_answered})),error:error?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
@@ -801,15 +867,24 @@ export default function Assessment360() {
 
       if (responses && responses.length > 0) {
         const existingAnswers: Record<string | number, string> = {};
+        const answeredByStep = new Map<string, Set<string>>();
+        
         (responses as ResponseRow[]).forEach((response) => {
           // Only load answered responses with text
           if (response.is_answered && response.answer_text) {
             existingAnswers[response.question_id] = response.answer_text;
+            
+            // Build answered ids per step
+            const stepId = response.question?.step_id ?? "__no_step__";
+            if (!answeredByStep.has(stepId)) {
+              answeredByStep.set(stepId, new Set());
+            }
+            answeredByStep.get(stepId)!.add(String(response.question_id));
           }
         });
         
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:785',message:'loadExistingResponses LOADED ANSWERS',data:{sessionId,loadedCount:Object.keys(existingAnswers).length,loadedQuestionIds:Object.keys(existingAnswers)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:825',message:'loadExistingResponses LOADED ANSWERS',data:{sessionId,loadedCount:Object.keys(existingAnswers).length,loadedQuestionIds:Object.keys(existingAnswers),answeredByStep:Object.fromEntries(Array.from(answeredByStep.entries()).map(([stepId, qIds])=>[stepId,Array.from(qIds)]))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
         // #endregion
         
         setAnswers((prev) => ({ ...prev, ...existingAnswers }));
@@ -893,67 +968,36 @@ export default function Assessment360() {
         return;
       }
 
-      // Check if response exists
-      const { data: existingResponse, error: checkError } = await supabase
+      // Use upsert to handle insert/update in one operation
+      // This assumes unique constraint on (session_id, question_id) exists
+      console.log("💾 [DEBUG] Upserting response");
+      const upsertData = {
+        session_id: sessionId,
+        question_id: questionId,
+        answer_text: answerText,
+        is_answered: true,
+        updated_at: new Date().toISOString(),
+      };
+      console.log("🔵 [DEBUG] Upsert data:", upsertData);
+
+      const { data: upsertedData, error: upsertError } = await supabase
         .from("assessment_responses")
-        .select("id")
-        .eq("session_id", sessionId)
-        .eq("question_id", questionId)
-        .maybeSingle();
+        .upsert(upsertData, {
+          onConflict: "session_id,question_id",
+        })
+        .select();
 
-      console.log("🔵 [DEBUG] Response existence check:", { existingResponse, checkError });
-
-      if (existingResponse) {
-        // Update existing response
-        console.log("🔄 [DEBUG] Updating existing response:", existingResponse.id);
-        const { error: updateError } = await supabase
-          .from("assessment_responses")
-          .update({
-            answer_text: answerText,
-            is_answered: true,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", existingResponse.id);
-
-        if (updateError) {
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:865',message:'saveQuestionResponse UPDATE ERROR',data:{questionId,error:updateError.message,code:updateError.code},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-          // #endregion
-          console.error("❌ [DEBUG] Error updating response:", updateError);
-        } else {
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:868',message:'saveQuestionResponse UPDATE SUCCESS',data:{questionId,responseId:existingResponse.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-          // #endregion
-          console.log("✅ [DEBUG] Successfully updated response");
-        }
+      if (upsertError) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:971',message:'saveQuestionResponse UPSERT ERROR',data:{questionId,error:upsertError.message,code:upsertError.code,details:upsertError.details},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
+        console.error("❌ [DEBUG] Error upserting response:", upsertError);
+        console.error("❌ [DEBUG] Upsert error details:", JSON.stringify(upsertError, null, 2));
       } else {
-        // Insert new response
-        console.log("➕ [DEBUG] Inserting new response");
-        const insertData = {
-          session_id: sessionId,
-          question_id: questionId,
-          answer_text: answerText,
-          is_answered: true,
-        };
-        console.log("🔵 [DEBUG] Insert data:", insertData);
-
-        const { data: insertedData, error: insertError } = await supabase
-          .from("assessment_responses")
-          .insert(insertData)
-          .select();
-
-        if (insertError) {
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:886',message:'saveQuestionResponse INSERT ERROR',data:{questionId,error:insertError.message,code:insertError.code,details:insertError.details},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-          // #endregion
-          console.error("❌ [DEBUG] Error inserting response:", insertError);
-          console.error("❌ [DEBUG] Insert error details:", JSON.stringify(insertError, null, 2));
-        } else {
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:890',message:'saveQuestionResponse INSERT SUCCESS',data:{questionId,responseId:insertedData?.[0]?.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-          // #endregion
-          console.log("✅ [DEBUG] Successfully inserted response:", insertedData);
-        }
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:976',message:'saveQuestionResponse UPSERT SUCCESS',data:{questionId,responseId:upsertedData?.[0]?.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
+        console.log("✅ [DEBUG] Successfully upserted response:", upsertedData);
       }
     } catch (error) {
       // #region agent log
@@ -1052,22 +1096,67 @@ export default function Assessment360() {
         await saveQuestionResponse(responseSessionId, currentQuestion.id, answerText);
 
         // Calculate progress - use database counts for accuracy
-        const { count: dbAnsweredCount, error: dbCountError } = await supabase
-          .from("assessment_responses")
-          .select("*", { count: "exact", head: true })
-          .eq("session_id", responseSessionId)
-          .eq("is_answered", true);
+        // Check if assessment has steps
+        const { data: stepsCheck, error: stepsCheckError } = await supabase
+          .from("assessment_steps_v2")
+          .select("id")
+          .eq("assessment_definition_id", assessmentDefinitionId)
+          .limit(1);
 
-        const { count: dbTotalQuestions, error: dbTotalError } = await supabase
-          .from("assessment_questions_v2")
-          .select("*", { count: "exact", head: true })
-          .eq("assessment_definition_id", assessmentDefinitionId);
+        const hasSteps = !stepsCheckError && stepsCheck && stepsCheck.length > 0;
+        let answeredCount = 0;
+        let totalQuestions = 0;
 
-        const answeredCount = dbAnsweredCount || 0;
-        const totalQuestions = dbTotalQuestions || 0;
+        if (hasSteps) {
+          // Pulse assessment with steps - count questions per step
+          const { data: stepsData, error: stepsError } = await supabase
+            .from("assessment_steps_v2")
+            .select("id")
+            .eq("assessment_definition_id", assessmentDefinitionId)
+            .order("step_order", { ascending: true });
+
+          if (!stepsError && stepsData) {
+            // Count total questions across all steps
+            for (const step of stepsData) {
+              const { count: stepQuestionCount, error: stepQError } = await supabase
+                .from("assessment_questions_v2")
+                .select("*", { count: "exact", head: true })
+                .eq("assessment_definition_id", assessmentDefinitionId)
+                .eq("step_id", step.id);
+
+              if (!stepQError) {
+                totalQuestions += stepQuestionCount || 0;
+              }
+            }
+          }
+
+          // Count answered questions
+          const { count: dbAnsweredCount, error: dbCountError } = await supabase
+            .from("assessment_responses")
+            .select("*", { count: "exact", head: true })
+            .eq("session_id", responseSessionId)
+            .eq("is_answered", true);
+
+          answeredCount = dbAnsweredCount || 0;
+        } else {
+          // 360 assessment without steps - use simple count
+          const { count: dbAnsweredCount, error: dbCountError } = await supabase
+            .from("assessment_responses")
+            .select("*", { count: "exact", head: true })
+            .eq("session_id", responseSessionId)
+            .eq("is_answered", true);
+
+          const { count: dbTotalQuestions, error: dbTotalError } = await supabase
+            .from("assessment_questions_v2")
+            .select("*", { count: "exact", head: true })
+            .eq("assessment_definition_id", assessmentDefinitionId);
+
+          answeredCount = dbAnsweredCount || 0;
+          totalQuestions = dbTotalQuestions || 0;
+        }
         
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:983',message:'handleNext progress calculation',data:{dbAnsweredCount,dbTotalQuestions,answeredCount,totalQuestions,currentQuestionId:currentQuestion.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:1076',message:'handleNext progress calculation',data:{hasSteps,answeredCount,totalQuestions,currentQuestionId:currentQuestion.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
         // #endregion
 
         await updateSessionProgress(
@@ -1145,22 +1234,67 @@ export default function Assessment360() {
           await saveQuestionResponse(responseSessionId, currentQuestion.id, answerText);
           
           // Update progress - use database counts for accuracy
-          const { count: dbAnsweredCount, error: dbCountError } = await supabase
-            .from("assessment_responses")
-            .select("*", { count: "exact", head: true })
-            .eq("session_id", responseSessionId)
-            .eq("is_answered", true);
+          // Check if assessment has steps
+          const { data: stepsCheck, error: stepsCheckError } = await supabase
+            .from("assessment_steps_v2")
+            .select("id")
+            .eq("assessment_definition_id", assessmentDefinitionId)
+            .limit(1);
 
-          const { count: dbTotalQuestions, error: dbTotalError } = await supabase
-            .from("assessment_questions_v2")
-            .select("*", { count: "exact", head: true })
-            .eq("assessment_definition_id", assessmentDefinitionId);
+          const hasSteps = !stepsCheckError && stepsCheck && stepsCheck.length > 0;
+          let answeredCount = 0;
+          let totalQuestions = 0;
 
-          const answeredCount = dbAnsweredCount || 0;
-          const totalQuestions = dbTotalQuestions || 0;
+          if (hasSteps) {
+            // Pulse assessment with steps - count questions per step
+            const { data: stepsData, error: stepsError } = await supabase
+              .from("assessment_steps_v2")
+              .select("id")
+              .eq("assessment_definition_id", assessmentDefinitionId)
+              .order("step_order", { ascending: true });
+
+            if (!stepsError && stepsData) {
+              // Count total questions across all steps
+              for (const step of stepsData) {
+                const { count: stepQuestionCount, error: stepQError } = await supabase
+                  .from("assessment_questions_v2")
+                  .select("*", { count: "exact", head: true })
+                  .eq("assessment_definition_id", assessmentDefinitionId)
+                  .eq("step_id", step.id);
+
+                if (!stepQError) {
+                  totalQuestions += stepQuestionCount || 0;
+                }
+              }
+            }
+
+            // Count answered questions
+            const { count: dbAnsweredCount, error: dbCountError } = await supabase
+              .from("assessment_responses")
+              .select("*", { count: "exact", head: true })
+              .eq("session_id", responseSessionId)
+              .eq("is_answered", true);
+
+            answeredCount = dbAnsweredCount || 0;
+          } else {
+            // 360 assessment without steps - use simple count
+            const { count: dbAnsweredCount, error: dbCountError } = await supabase
+              .from("assessment_responses")
+              .select("*", { count: "exact", head: true })
+              .eq("session_id", responseSessionId)
+              .eq("is_answered", true);
+
+            const { count: dbTotalQuestions, error: dbTotalError } = await supabase
+              .from("assessment_questions_v2")
+              .select("*", { count: "exact", head: true })
+              .eq("assessment_definition_id", assessmentDefinitionId);
+
+            answeredCount = dbAnsweredCount || 0;
+            totalQuestions = dbTotalQuestions || 0;
+          }
           
           // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:1062',message:'handleNext next step progress calculation',data:{dbAnsweredCount,dbTotalQuestions,answeredCount,totalQuestions,currentQuestionId:currentQuestion.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+          fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:1200',message:'handleNext next step progress calculation',data:{hasSteps,answeredCount,totalQuestions,currentQuestionId:currentQuestion.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
           // #endregion
           
           await updateSessionProgress(
@@ -1279,20 +1413,65 @@ export default function Assessment360() {
 
           // Update session to completed
           // Count answered questions from database for accuracy
-          const { count: answeredCount, error: countError } = await supabase
-            .from("assessment_responses")
-            .select("*", { count: "exact", head: true })
-            .eq("session_id", responseSessionId)
-            .eq("is_answered", true);
+          // Check if assessment has steps
+          const { data: stepsCheck, error: stepsCheckError } = await supabase
+            .from("assessment_steps_v2")
+            .select("id")
+            .eq("assessment_definition_id", assessmentDefinitionId)
+            .limit(1);
 
-          // Get total questions count from database
-          const { count: totalQuestions, error: totalError } = await supabase
-            .from("assessment_questions_v2")
-            .select("*", { count: "exact", head: true })
-            .eq("assessment_definition_id", assessmentDefinitionId);
+          const hasSteps = !stepsCheckError && stepsCheck && stepsCheck.length > 0;
+          let answered = 0;
+          let total = 0;
 
-          const answered = answeredCount || 0;
-          const total = totalQuestions || 0;
+          if (hasSteps) {
+            // Pulse assessment with steps - count questions per step
+            const { data: stepsData, error: stepsError } = await supabase
+              .from("assessment_steps_v2")
+              .select("id")
+              .eq("assessment_definition_id", assessmentDefinitionId)
+              .order("step_order", { ascending: true });
+
+            if (!stepsError && stepsData) {
+              // Count total questions across all steps
+              for (const step of stepsData) {
+                const { count: stepQuestionCount, error: stepQError } = await supabase
+                  .from("assessment_questions_v2")
+                  .select("*", { count: "exact", head: true })
+                  .eq("assessment_definition_id", assessmentDefinitionId)
+                  .eq("step_id", step.id);
+
+                if (!stepQError) {
+                  total += stepQuestionCount || 0;
+                }
+              }
+            }
+
+            // Count answered questions
+            const { count: answeredCount, error: countError } = await supabase
+              .from("assessment_responses")
+              .select("*", { count: "exact", head: true })
+              .eq("session_id", responseSessionId)
+              .eq("is_answered", true);
+
+            answered = answeredCount || 0;
+          } else {
+            // 360 assessment without steps - use simple count
+            const { count: answeredCount, error: countError } = await supabase
+              .from("assessment_responses")
+              .select("*", { count: "exact", head: true })
+              .eq("session_id", responseSessionId)
+              .eq("is_answered", true);
+
+            const { count: totalQuestions, error: totalError } = await supabase
+              .from("assessment_questions_v2")
+              .select("*", { count: "exact", head: true })
+              .eq("assessment_definition_id", assessmentDefinitionId);
+
+            answered = answeredCount || 0;
+            total = totalQuestions || 0;
+          }
+
           // Ensure completion_percent is 100% when status is Completed
           const completionPercent = 100;
 

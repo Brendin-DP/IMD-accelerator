@@ -235,14 +235,29 @@ export default function TenantAssessmentDetailPage() {
 
   async function fetchParticipantAssessment(userId: string) {
     try {
-      // First, find the cohort_participant for this user
+      // First, get the cohort_id for this assessment (same as questionnaire page)
+      const { data: cohortAssessment, error: caError } = await supabase
+        .from("cohort_assessments")
+        .select("cohort_id")
+        .eq("id", assessmentId)
+        .single();
+
+      if (caError || !cohortAssessment) {
+        console.error("Error fetching cohort assessment:", caError);
+        setParticipantAssessment(null);
+        setNominations([]);
+        return;
+      }
+
+      // Find the cohort_participant for this user AND this specific cohort (same as questionnaire page)
       const { data: participants, error: participantsError } = await supabase
         .from("cohort_participants")
         .select("id")
-        .eq("client_user_id", userId);
+        .eq("client_user_id", userId)
+        .eq("cohort_id", cohortAssessment.cohort_id);
 
       if (participantsError || !participants || participants.length === 0) {
-        console.warn("No participants found for this user");
+        console.warn("No participants found for this user in this cohort");
         setParticipantAssessment(null);
         setNominations([]);
         return;
@@ -418,40 +433,103 @@ export default function TenantAssessmentDetailPage() {
       if (session) {
         setResponseSession(session);
 
-        // Fetch count of answered questions
-        const { count: answeredCount, error: countError } = await supabase
+        // Check if assessment has steps
+        const { data: stepsData, error: stepsError } = await supabase
+          .from("assessment_steps_v2")
+          .select("id")
+          .eq("assessment_definition_id", assessmentDefinitionId)
+          .limit(1);
+
+        const hasSteps = !stepsError && stepsData && stepsData.length > 0;
+
+        // Fetch all responses for this session (for debugging)
+        const { data: allResponses, error: responsesError } = await supabase
           .from("assessment_responses")
-          .select("*", { count: "exact", head: true })
+          .select("id, question_id, answer_text, is_answered, created_at, updated_at")
           .eq("session_id", session.id)
-          .eq("is_answered", true);
-        
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:415',message:'fetchResponseSession COUNT QUERY',data:{sessionId:session.id,answeredCount,error:countError?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
-        // #endregion
+          .order("created_at", { ascending: true });
 
-        if (!countError) {
-          setResponseCount(answeredCount || 0);
+        console.log("🔍 [DEBUG] All responses for assessment:", {
+          sessionId: session.id,
+          participantAssessmentId,
+          assessmentId,
+          assessmentDefinitionId,
+          hasSteps,
+          totalResponses: allResponses?.length || 0,
+          answeredResponses: allResponses?.filter((r: any) => r.is_answered).length || 0,
+          responses: allResponses?.map((r: any) => ({
+            questionId: r.question_id,
+            hasAnswer: !!r.answer_text,
+            isAnswered: r.is_answered,
+            answerPreview: r.answer_text ? r.answer_text.substring(0, 50) : null,
+          })),
+        });
+
+        let answeredCount = 0;
+        let totalQuestions = 0;
+
+        if (hasSteps) {
+          // Pulse assessment with steps - count questions per step
+          const { data: steps, error: stepsFetchError } = await supabase
+            .from("assessment_steps_v2")
+            .select("id")
+            .eq("assessment_definition_id", assessmentDefinitionId)
+            .order("step_order", { ascending: true });
+
+          if (!stepsFetchError && steps) {
+            // Count total questions across all steps
+            for (const step of steps) {
+              const { count: stepQuestionCount, error: stepQError } = await supabase
+                .from("assessment_questions_v2")
+                .select("*", { count: "exact", head: true })
+                .eq("assessment_definition_id", assessmentDefinitionId)
+                .eq("step_id", step.id);
+
+              if (!stepQError) {
+                totalQuestions += stepQuestionCount || 0;
+              }
+            }
+
+            // Count answered questions (already filtered by session_id and is_answered)
+            answeredCount = allResponses?.filter((r: any) => r.is_answered).length || 0;
+          }
+        } else {
+          // 360 assessment without steps - use simple count
+          const { count: answeredCountResult, error: countError } = await supabase
+            .from("assessment_responses")
+            .select("*", { count: "exact", head: true })
+            .eq("session_id", session.id)
+            .eq("is_answered", true);
+          
           // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:426',message:'fetchResponseSession SET responseCount',data:{sessionId:session.id,answeredCount,totalQuestions:null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+          fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:437',message:'fetchResponseSession COUNT QUERY (no steps)',data:{sessionId:session.id,answeredCount:answeredCountResult,error:countError?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
           // #endregion
+
+          if (!countError) {
+            answeredCount = answeredCountResult || 0;
+          }
+
+          // Fetch total questions count
+          const { count: totalCount, error: totalError } = await supabase
+            .from("assessment_questions_v2")
+            .select("*", { count: "exact", head: true })
+            .eq("assessment_definition_id", assessmentDefinitionId);
+
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:430',message:'fetchResponseSession TOTAL QUESTIONS QUERY',data:{assessmentDefinitionId,totalCount,error:totalError?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+          // #endregion
+
+          if (!totalError) {
+            totalQuestions = totalCount || 0;
+          }
         }
 
-        // Fetch total questions count
-        const { count: totalCount, error: totalError } = await supabase
-          .from("assessment_questions_v2")
-          .select("*", { count: "exact", head: true })
-          .eq("assessment_definition_id", assessmentDefinitionId);
-
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:430',message:'fetchResponseSession TOTAL QUESTIONS QUERY',data:{assessmentDefinitionId,totalCount,error:totalError?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:460',message:'fetchResponseSession FINAL COUNTS',data:{sessionId:session.id,hasSteps,answeredCount,totalQuestions},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
         // #endregion
 
-        if (!totalError) {
-          setTotalQuestions(totalCount || 0);
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:436',message:'fetchResponseSession SET totalQuestions',data:{sessionId:session.id,answeredCount,totalQuestions:totalCount},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
-          // #endregion
-        }
+        setResponseCount(answeredCount);
+        setTotalQuestions(totalQuestions);
 
         // Auto-update status based on progress
         await updateStatusFromProgress(session, participantAssessmentId);

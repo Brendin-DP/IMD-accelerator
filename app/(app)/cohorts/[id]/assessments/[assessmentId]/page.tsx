@@ -502,11 +502,26 @@ export default function AssessmentDetailPage() {
       const sessionIds = responseSessions.map((s: any) => s.id);
 
       // Count answered questions per session - use is_answered flag for accurate tracking
+      // Join with questions to get step_id for step-aware progress
       const { data: responses, error: responsesError } = await supabase
         .from("assessment_responses")
-        .select("session_id, question_id, is_answered")
+        .select(`
+          id,
+          session_id,
+          question_id,
+          is_answered,
+          answer_text,
+          created_at,
+          updated_at,
+          question:assessment_questions_v2 (
+            id,
+            step_id,
+            question_order
+          )
+        `)
         .in("session_id", sessionIds)
-        .eq("is_answered", true);
+        .eq("is_answered", true)
+        .order("created_at", { ascending: true });
 
       if (responsesError) {
         console.error("Error fetching responses:", responsesError);
@@ -517,6 +532,25 @@ export default function AssessmentDetailPage() {
       const sessionToParticipantMap = new Map<string, string>();
       responseSessions.forEach((s: any) => {
         sessionToParticipantMap.set(s.id, s.participant_assessment_id);
+      });
+
+      console.log("🔍 [ADMIN] Participant Progress - All Responses:", {
+        assessmentId,
+        assessmentDefinitionId,
+        totalQuestions: total,
+        totalResponses: responses?.length || 0,
+        sessionIds: sessionIds.length,
+        responses: responses?.map((r: any) => ({
+          responseId: r.id,
+          sessionId: r.session_id,
+          questionId: r.question_id,
+          isAnswered: r.is_answered,
+          hasAnswer: !!r.answer_text,
+          answerPreview: r.answer_text ? r.answer_text.substring(0, 50) : null,
+          stepId: r.question?.step_id ?? null,
+          questionOrder: r.question?.question_order ?? null,
+          participantAssessmentId: sessionToParticipantMap.get(r.session_id),
+        })),
       });
 
       // Count answered questions per participant assessment
@@ -530,16 +564,31 @@ export default function AssessmentDetailPage() {
       });
 
       // Count unique answered questions per participant (using is_answered = true)
+      // Build answered ids per step for better tracking
       const participantAnsweredMap = new Map<string, Set<string>>();
+      const participantAnsweredByStep = new Map<string, Map<string, Set<string>>>();
+      
       (responses || []).forEach((r: any) => {
         // Only count if is_answered is true
         if (r.is_answered) {
           const participantAssessmentId = sessionToParticipantMap.get(r.session_id);
           if (participantAssessmentId) {
+            // Add to overall answered set
             if (!participantAnsweredMap.has(participantAssessmentId)) {
               participantAnsweredMap.set(participantAssessmentId, new Set());
             }
             participantAnsweredMap.get(participantAssessmentId)!.add(String(r.question_id));
+            
+            // Organize by step
+            if (!participantAnsweredByStep.has(participantAssessmentId)) {
+              participantAnsweredByStep.set(participantAssessmentId, new Map());
+            }
+            const stepMap = participantAnsweredByStep.get(participantAssessmentId)!;
+            const stepId = r.question?.step_id ?? "__no_step__";
+            if (!stepMap.has(stepId)) {
+              stepMap.set(stepId, new Set());
+            }
+            stepMap.get(stepId)!.add(String(r.question_id));
           }
         }
       });
@@ -549,6 +598,26 @@ export default function AssessmentDetailPage() {
         const answered = answeredSet.size;
         const percentage = total > 0 ? Math.round((answered / total) * 100) : 0;
         progressMap.set(participantAssessmentId, { answered, total, percentage });
+      });
+
+      console.log("🔍 [ADMIN] Participant Progress - Final Calculation:", {
+        assessmentId,
+        totalQuestions: total,
+        participantProgress: Array.from(progressMap.entries()).map(([paId, progress]) => ({
+          participantAssessmentId: paId,
+          answered: progress.answered,
+          total: progress.total,
+          percentage: progress.percentage,
+          answeredQuestionIds: Array.from(participantAnsweredMap.get(paId) || []),
+          answeredByStep: participantAnsweredByStep.get(paId) 
+            ? Object.fromEntries(
+                Array.from(participantAnsweredByStep.get(paId)!.entries()).map(([stepId, qIds]) => [
+                  stepId,
+                  Array.from(qIds),
+                ])
+              )
+            : {},
+        })),
       });
 
       setParticipantProgress(progressMap);
@@ -659,11 +728,26 @@ export default function AssessmentDetailPage() {
       const sessionIds = responseSessions.map((s: any) => s.id);
 
       // Count answered questions per session - use is_answered flag
+      // Join with questions to get step_id for step-aware progress
       const { data: responses, error: responsesError } = await supabase
         .from("assessment_responses")
-        .select("session_id, question_id, is_answered")
+        .select(`
+          id,
+          session_id,
+          question_id,
+          is_answered,
+          answer_text,
+          created_at,
+          updated_at,
+          question:assessment_questions_v2 (
+            id,
+            step_id,
+            question_order
+          )
+        `)
         .in("session_id", sessionIds)
-        .eq("is_answered", true);
+        .eq("is_answered", true)
+        .order("created_at", { ascending: true });
 
       if (responsesError) {
         console.error("Error fetching reviewer responses:", responsesError);
@@ -674,6 +758,25 @@ export default function AssessmentDetailPage() {
       const sessionToNominationMap = new Map<string, string>();
       responseSessions.forEach((s: any) => {
         sessionToNominationMap.set(s.id, s.reviewer_nomination_id);
+      });
+
+      console.log("🔍 [ADMIN] Reviewer Progress - All Responses:", {
+        assessmentId,
+        assessmentDefinitionId,
+        totalQuestions: total,
+        totalResponses: responses?.length || 0,
+        sessionIds: sessionIds.length,
+        responses: responses?.map((r: any) => ({
+          responseId: r.id,
+          sessionId: r.session_id,
+          questionId: r.question_id,
+          isAnswered: r.is_answered,
+          hasAnswer: !!r.answer_text,
+          answerPreview: r.answer_text ? r.answer_text.substring(0, 50) : null,
+          stepId: r.question?.step_id ?? null,
+          questionOrder: r.question?.question_order ?? null,
+          reviewerNominationId: sessionToNominationMap.get(r.session_id),
+        })),
       });
 
       // Count answered questions per reviewer nomination
@@ -687,15 +790,30 @@ export default function AssessmentDetailPage() {
       });
 
       // Count unique answered questions per reviewer nomination
+      // Build answered ids per step for better tracking
       const nominationAnsweredMap = new Map<string, Set<string>>();
+      const nominationAnsweredByStep = new Map<string, Map<string, Set<string>>>();
+      
       (responses || []).forEach((r: any) => {
         if (r.is_answered) {
           const nominationId = sessionToNominationMap.get(r.session_id);
           if (nominationId) {
+            // Add to overall answered set
             if (!nominationAnsweredMap.has(nominationId)) {
               nominationAnsweredMap.set(nominationId, new Set());
             }
             nominationAnsweredMap.get(nominationId)!.add(String(r.question_id));
+            
+            // Organize by step
+            if (!nominationAnsweredByStep.has(nominationId)) {
+              nominationAnsweredByStep.set(nominationId, new Map());
+            }
+            const stepMap = nominationAnsweredByStep.get(nominationId)!;
+            const stepId = r.question?.step_id ?? "__no_step__";
+            if (!stepMap.has(stepId)) {
+              stepMap.set(stepId, new Set());
+            }
+            stepMap.get(stepId)!.add(String(r.question_id));
           }
         }
       });
@@ -705,6 +823,26 @@ export default function AssessmentDetailPage() {
         const answered = answeredSet.size;
         const percentage = total > 0 ? Math.round((answered / total) * 100) : 0;
         progressMap.set(nominationId, { answered, total, percentage });
+      });
+
+      console.log("🔍 [ADMIN] Reviewer Progress - Final Calculation:", {
+        assessmentId,
+        totalQuestions: total,
+        reviewerProgress: Array.from(progressMap.entries()).map(([nominationId, progress]) => ({
+          reviewerNominationId: nominationId,
+          answered: progress.answered,
+          total: progress.total,
+          percentage: progress.percentage,
+          answeredQuestionIds: Array.from(nominationAnsweredMap.get(nominationId) || []),
+          answeredByStep: nominationAnsweredByStep.get(nominationId)
+            ? Object.fromEntries(
+                Array.from(nominationAnsweredByStep.get(nominationId)!.entries()).map(([stepId, qIds]) => [
+                  stepId,
+                  Array.from(qIds),
+                ])
+              )
+            : {},
+        })),
       });
 
       setReviewerProgress(progressMap);
