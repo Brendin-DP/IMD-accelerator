@@ -66,7 +66,7 @@ export default function Assessment360() {
             .single();
 
           if (caError || !cohortAssessment) {
-            console.error("Error fetching cohort assessment:", caError);
+
           setLoading(false);
             return;
           }
@@ -127,7 +127,7 @@ export default function Assessment360() {
                       }
                     }
                 } catch (e) {
-                  console.error("Error parsing plan assessment mapping:", e);
+
                 }
               }
             }
@@ -143,7 +143,7 @@ export default function Assessment360() {
               .maybeSingle();
 
             if (defError || !systemDef) {
-              console.error("Error fetching assessment definition:", defError);
+
               alert("Error: Could not find assessment definition. Please try again.");
               setLoading(false);
             return;
@@ -178,7 +178,7 @@ export default function Assessment360() {
             .eq("cohort_id", cohortAssessment.cohort_id);
 
           if (participantsError || !participants || participants.length === 0) {
-                console.warn("⚠️ [DEBUG] No participants found for this user in this cohort");
+
               } else {
           const participantIds = participants.map((p: any) => p.id);
 
@@ -227,7 +227,7 @@ export default function Assessment360() {
             // #endregion
 
             if (createError) {
-              console.error("❌ [DEBUG] Error creating participant assessment:", createError);
+
             } else if (newPA) {
               finalParticipantAssessmentId = newPA.id;
               setParticipantAssessmentId(newPA.id);
@@ -250,16 +250,16 @@ export default function Assessment360() {
             // #region agent log
             fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:232',message:'Session creation result',data:{sessionId,responseSessionIdState:responseSessionId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
             // #endregion
-            console.log("🔵 [DEBUG] Session ID result:", sessionId);
+
           } else {
             // #region agent log
             fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:237',message:'Cannot create session - missing requirements',data:{hasParticipantAssessment:!!finalParticipantAssessmentId,hasAssessmentDefinitionId:!!assessmentDefinitionId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
             // #endregion
-            console.warn("⚠️ [DEBUG] Cannot create session - missing participant_assessment or assessmentDefinitionId");
+
           }
               }
             } catch (error) {
-              console.error("❌ [DEBUG] Error loading participant data:", error);
+
             }
           }
         } else {
@@ -293,12 +293,12 @@ export default function Assessment360() {
                 }
           }
         } catch (error) {
-              console.error("Error loading participant data:", error);
+
             }
           }
         }
       } catch (error) {
-        console.error("Error loading data:", error);
+
         // Fallback to old plan
         await loadQuestionsFromJSON();
       } finally {
@@ -343,7 +343,7 @@ export default function Assessment360() {
         questions.length > 0 &&
         (assessmentType?.toLowerCase() === "pulse" ? questionGroups.length > 0 : true)
       ) {
-        console.log("🔵 [DEBUG] Determining resume position...");
+
         const resumePos = await determineResumePosition(
           responseSessionId,
           questions,
@@ -353,8 +353,7 @@ export default function Assessment360() {
         // #region agent log
         fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:349',message:'resumeFromLastQuestion RESULT',data:{questionIndex:resumePos.questionIndex,stepIndex:resumePos.stepIndex},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
         // #endregion
-        
-        console.log("✅ [DEBUG] Resume position determined:", resumePos);
+
         setCurrent(resumePos.questionIndex);
         if (resumePos.stepIndex !== undefined) {
           setCurrentStep(resumePos.stepIndex);
@@ -401,11 +400,11 @@ export default function Assessment360() {
           .order("step_order", { ascending: true });
 
         if (stepsError) {
-          console.error("Error fetching steps:", stepsError);
+
         } else if (stepsData && stepsData.length > 0) {
           setSteps(stepsData);
         } else {
-          console.warn("No steps found for Pulse assessment");
+
           // Still set empty array so we know it's Pulse but has no steps
           setSteps([]);
         }
@@ -422,7 +421,7 @@ export default function Assessment360() {
         .order("question_order", { ascending: true });
 
       if (questionsError) {
-        console.error("Error fetching questions from DB:", questionsError);
+
         // Fallback to JSON
         await loadQuestionsFromJSON();
         return;
@@ -441,7 +440,7 @@ export default function Assessment360() {
 
       setQuestions(transformedQuestions);
     } catch (error) {
-      console.error("Error loading questions from DB:", error);
+
       // Fallback to JSON
       await loadQuestionsFromJSON();
     }
@@ -455,7 +454,7 @@ export default function Assessment360() {
       setQuestions(questionsData);
       setUsesNewPlan(false);
     } catch (error) {
-      console.error("Error loading questions from JSON:", error);
+
     }
   }
 
@@ -496,15 +495,6 @@ export default function Assessment360() {
   ): Promise<string | null> {
     try {
       setLoadingSession(true);
-      console.log("🔵 [CUSTOM PULSE] createOrGetResponseSession called with:", {
-        participantAssessmentId,
-        assessmentDefinitionId,
-        respondentType,
-        reviewerNominationId,
-        externalReviewerId,
-        clientUserId,
-        assessmentId, // Add assessmentId for context
-      });
 
       // Check if session already exists
       let query = supabase
@@ -520,20 +510,13 @@ export default function Assessment360() {
 
       const { data: existingSession, error: checkError } = await query.maybeSingle();
 
-      console.log("🔵 [CUSTOM PULSE] Session check result:", { 
-        existingSession, 
-        checkError,
-        assessmentDefinitionId,
-        participantAssessmentId,
-      });
-
       if (checkError && checkError.code !== "PGRST116") {
-        console.error("❌ [DEBUG] Error checking for existing session:", checkError);
+
         return null;
       }
 
       if (existingSession) {
-        console.log("✅ [DEBUG] Found existing session:", existingSession.id);
+
         // #region agent log
         fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:517',message:'Setting responseSessionId from existing session',data:{sessionId:existingSession.id,status:existingSession.status,completionPercent:existingSession.completion_percent},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
         // #endregion
@@ -571,10 +554,6 @@ export default function Assessment360() {
         sessionData.respondent_client_user_id = clientUserId;
       }
 
-      console.log("🔵 [CUSTOM PULSE] Creating new session with data:", {
-        ...sessionData,
-        assessmentDefinitionId, // Explicitly log this
-      });
       // #region agent log
       fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:503',message:'About to insert session',data:{sessionData},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
       // #endregion
@@ -590,18 +569,12 @@ export default function Assessment360() {
       // #endregion
 
       if (createError) {
-        console.error("❌ [DEBUG] Error creating response session:", createError);
-        console.error("❌ [DEBUG] Error message:", createError.message);
-        console.error("❌ [DEBUG] Error code:", createError.code);
-        console.error("❌ [DEBUG] Error details:", createError.details);
-        console.error("❌ [DEBUG] Error hint:", createError.hint);
-        console.error("❌ [DEBUG] Full error object:", JSON.stringify(createError, Object.getOwnPropertyNames(createError)));
-        console.error("❌ [DEBUG] Session data that failed:", JSON.stringify(sessionData, null, 2));
+
         return null;
       }
 
       if (newSession) {
-        console.log("✅ [DEBUG] Created new session:", newSession.id);
+
         // #region agent log
         fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:516',message:'Setting responseSessionId state',data:{sessionId:newSession.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
         // #endregion
@@ -609,10 +582,9 @@ export default function Assessment360() {
         return newSession.id;
       }
 
-      console.warn("⚠️ [DEBUG] No session returned from create");
       return null;
     } catch (error) {
-      console.error("❌ [DEBUG] Unexpected error creating/getting session:", error);
+
       return null;
     } finally {
       setLoadingSession(false);
@@ -634,13 +606,13 @@ export default function Assessment360() {
         .single();
 
       if (sessionError || !session) {
-        console.log("🔵 [DEBUG] No session data found, starting from beginning");
+
         return { questionIndex: 0, stepIndex: 0 };
       }
 
       // Only resume if session is in_progress
       if (session.status !== "in_progress") {
-        console.log("🔵 [DEBUG] Session not in progress, starting from beginning");
+
         return { questionIndex: 0, stepIndex: 0 };
       }
 
@@ -663,7 +635,7 @@ export default function Assessment360() {
       // #endregion
 
       if (responsesError) {
-        console.error("Error fetching responses for resume:", responsesError);
+
         return { questionIndex: 0, stepIndex: 0 };
       }
 
@@ -721,11 +693,6 @@ export default function Assessment360() {
               currentIndex = stepEndIndex;
             }
 
-            console.log("✅ [DEBUG] Resuming from last_question_id:", {
-              questionId: session.last_question_id,
-              questionIndex,
-              stepIndex,
-            });
             return { questionIndex, stepIndex };
           }
         } else {
@@ -733,16 +700,13 @@ export default function Assessment360() {
           questionIndex = questions.findIndex((q) => q.id === session.last_question_id);
 
           if (questionIndex >= 0) {
-            console.log("✅ [DEBUG] Resuming from last_question_id:", {
-              questionId: session.last_question_id,
-              questionIndex,
-            });
+
             return { questionIndex };
           }
         }
 
         // last_question_id exists but question not found (maybe deleted/changed)
-        console.log("⚠️ [DEBUG] last_question_id not found in questions, finding first unanswered");
+
       }
 
       // Find first unanswered question
@@ -763,10 +727,6 @@ export default function Assessment360() {
               currentIndex = stepEndIndex;
             }
 
-            console.log("✅ [DEBUG] Resuming at first unanswered question:", {
-              questionIndex: i,
-              stepIndex,
-            });
             return { questionIndex: i, stepIndex };
           }
         }
@@ -784,29 +744,23 @@ export default function Assessment360() {
           currentIndex = stepEndIndex;
         }
 
-        console.log("✅ [DEBUG] All questions answered, resuming at last question:", {
-          questionIndex: lastIndex,
-          stepIndex,
-        });
         return { questionIndex: lastIndex, stepIndex };
       } else {
         // 360 assessment without steps
         for (let i = 0; i < questions.length; i++) {
           if (!answeredQuestionIds.has(String(questions[i].id))) {
-            console.log("✅ [DEBUG] Resuming at first unanswered question:", { questionIndex: i });
+
             return { questionIndex: i };
           }
         }
 
         // All answered, return last question
         const lastIndex = questions.length - 1;
-        console.log("✅ [DEBUG] All questions answered, resuming at last question:", {
-          questionIndex: lastIndex,
-        });
+
         return { questionIndex: lastIndex };
       }
     } catch (error) {
-      console.error("❌ [DEBUG] Error determining resume position:", error);
+
       return { questionIndex: 0, stepIndex: 0 };
     }
   }
@@ -849,19 +803,6 @@ export default function Assessment360() {
         .eq("session_id", sessionId)
         .order("created_at", { ascending: true });
 
-      console.log("🔍 [DEBUG] All responses for assessment (360/Pulse):", {
-        sessionId,
-        assessmentType,
-        totalResponses: responses?.length || 0,
-        answeredResponses: responses?.filter((r: any) => r.is_answered).length || 0,
-        responses: responses?.map((r: any) => ({
-          questionId: r.question_id,
-          hasAnswer: !!r.answer_text,
-          isAnswered: r.is_answered,
-          answerPreview: r.answer_text ? r.answer_text.substring(0, 50) : null,
-        })),
-      });
-
       // #region agent log
       fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:772',message:'loadExistingResponses QUERY RESULT',data:{sessionId,responseCount:responses?.length||0,responses:responses?.map((r:any)=>({qId:r.question_id,hasText:!!r.answer_text,isAnswered:r.is_answered})),error:error?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
       // #endregion
@@ -870,7 +811,7 @@ export default function Assessment360() {
         // #region agent log
         fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:777',message:'loadExistingResponses ERROR',data:{sessionId,error:error.message,code:error.code},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
         // #endregion
-        console.error("Error loading existing responses:", error);
+
         return;
       }
 
@@ -906,7 +847,7 @@ export default function Assessment360() {
       // #region agent log
       fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:792',message:'loadExistingResponses EXCEPTION',data:{sessionId,error:error instanceof Error?error.message:'unknown'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
       // #endregion
-      console.error("Unexpected error loading responses:", error);
+
     }
   }
 
@@ -920,15 +861,9 @@ export default function Assessment360() {
       // #region agent log
       fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:789',message:'saveQuestionResponse ENTRY',data:{sessionId,questionId,answerText:answerText?answerText.substring(0,100):null,answerLength:answerText?.length||0,isEmpty:!answerText||answerText.trim()===''},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
       // #endregion
-      console.log("💾 [DEBUG] saveQuestionResponse called:", {
-        sessionId,
-        questionId,
-        answerText: answerText ? `${answerText.substring(0, 50)}...` : null,
-        answerLength: answerText?.length || 0,
-      });
 
       if (!sessionId) {
-        console.error("❌ [DEBUG] No sessionId provided!");
+
         // #region agent log
         fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:802',message:'saveQuestionResponse EARLY RETURN - no sessionId',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
         // #endregion
@@ -936,7 +871,7 @@ export default function Assessment360() {
       }
 
       if (!questionId) {
-        console.error("❌ [DEBUG] No questionId provided!");
+
         // #region agent log
         fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:807',message:'saveQuestionResponse EARLY RETURN - no questionId',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
         // #endregion
@@ -947,7 +882,7 @@ export default function Assessment360() {
         // #region agent log
         fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:812',message:'saveQuestionResponse EMPTY ANSWER - returning early',data:{questionId,hasExistingResponse:false},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
         // #endregion
-        console.log("ℹ️ [DEBUG] Empty answer, checking for existing response to mark as not answered");
+
         // Don't save empty answers, but mark as not answered if exists
         const { data: existingResponse, error: checkError } = await supabase
           .from("assessment_responses")
@@ -955,8 +890,6 @@ export default function Assessment360() {
           .eq("session_id", sessionId)
           .eq("question_id", questionId)
           .maybeSingle();
-
-        console.log("🔵 [DEBUG] Empty answer check:", { existingResponse, checkError });
 
         if (existingResponse) {
           const { error: updateError } = await supabase
@@ -969,9 +902,9 @@ export default function Assessment360() {
             .eq("id", existingResponse.id);
 
           if (updateError) {
-            console.error("❌ [DEBUG] Error updating empty response:", updateError);
+
           } else {
-            console.log("✅ [DEBUG] Marked existing response as not answered");
+
           }
         }
         return;
@@ -979,7 +912,7 @@ export default function Assessment360() {
 
       // Use upsert to handle insert/update in one operation
       // This assumes unique constraint on (session_id, question_id) exists
-      console.log("💾 [DEBUG] Upserting response");
+
       const upsertData = {
         session_id: sessionId,
         question_id: questionId,
@@ -987,7 +920,6 @@ export default function Assessment360() {
         is_answered: true,
         updated_at: new Date().toISOString(),
       };
-      console.log("🔵 [DEBUG] Upsert data:", upsertData);
 
       const { data: upsertedData, error: upsertError } = await supabase
         .from("assessment_responses")
@@ -1000,19 +932,18 @@ export default function Assessment360() {
         // #region agent log
         fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:971',message:'saveQuestionResponse UPSERT ERROR',data:{questionId,error:upsertError.message,code:upsertError.code,details:upsertError.details},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
         // #endregion
-        console.error("❌ [DEBUG] Error upserting response:", upsertError);
-        console.error("❌ [DEBUG] Upsert error details:", JSON.stringify(upsertError, null, 2));
+
       } else {
         // #region agent log
         fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:976',message:'saveQuestionResponse UPSERT SUCCESS',data:{questionId,responseId:upsertedData?.[0]?.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
         // #endregion
-        console.log("✅ [DEBUG] Successfully upserted response:", upsertedData);
+
       }
     } catch (error) {
       // #region agent log
       fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:893',message:'saveQuestionResponse EXCEPTION',data:{questionId,error:error instanceof Error?error.message:'unknown'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
       // #endregion
-      console.error("❌ [DEBUG] Unexpected error saving response:", error);
+
     }
   }
 
@@ -1044,10 +975,10 @@ export default function Assessment360() {
         .eq("id", sessionId);
 
       if (error) {
-        console.error("Error updating session progress:", error);
+
       }
     } catch (error) {
-      console.error("Unexpected error updating session progress:", error);
+
     }
   }
 
@@ -1059,7 +990,7 @@ export default function Assessment360() {
   };
 
   const handleNext = async () => {
-    console.log("➡️ [DEBUG] handleNext called");
+
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:873',message:'handleNext called',data:{responseSessionId,usesNewPlan,assessmentDefinitionId,current,currentStep,answersCount:Object.keys(answers).length,assessmentType,questionGroupsLength:questionGroups.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
     // #endregion
@@ -1069,7 +1000,7 @@ export default function Assessment360() {
       // #region agent log
       fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:886',message:'Conditions met for saving',data:{responseSessionId,usesNewPlan,assessmentDefinitionId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
       // #endregion
-      console.log("✅ [DEBUG] Conditions met for saving response");
+
       let currentQuestion: Question;
       let currentStepId: string | null = null;
 
@@ -1080,17 +1011,10 @@ export default function Assessment360() {
         if (currentGroup.step) {
           currentStepId = currentGroup.step.id;
         }
-        console.log("🔵 [DEBUG] Pulse assessment - current question:", {
-          questionId: currentQuestion?.id,
-          questionText: currentQuestion?.text?.substring(0, 50),
-          stepId: currentStepId,
-        });
+
       } else {
         currentQuestion = questions[current];
-        console.log("🔵 [DEBUG] 360 assessment - current question:", {
-          questionId: currentQuestion?.id,
-          questionText: currentQuestion?.text?.substring(0, 50),
-        });
+
       }
 
       if (currentQuestion && typeof currentQuestion.id === "string") {
@@ -1098,10 +1022,7 @@ export default function Assessment360() {
         // #region agent log
         fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:975',message:'handleNext BEFORE saveQuestionResponse',data:{questionId:currentQuestion.id,answerText:answerText?answerText.substring(0,100):null,answerInState:!!answers[currentQuestion.id],allAnswerKeys:Object.keys(answers)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
         // #endregion
-        console.log("💾 [DEBUG] About to save response:", {
-          questionId: currentQuestion.id,
-          answerText: answerText ? `${answerText.substring(0, 50)}...` : null,
-        });
+
         await saveQuestionResponse(responseSessionId, currentQuestion.id, answerText);
 
         // Calculate progress - use database counts for accuracy
@@ -1187,7 +1108,7 @@ export default function Assessment360() {
             .eq("id", participantAssessmentId);
 
           if (statusError) {
-            console.error("Error updating status to In Progress:", statusError);
+
           }
         }
       }
@@ -1204,7 +1125,7 @@ export default function Assessment360() {
       
       // Safety check: ensure current index is valid
       if (current < 0 || current >= allQuestions.length) {
-        console.error("Invalid current index for pulse assessment:", current);
+
         await handleCompleteAssessment();
         return;
       }
@@ -1213,7 +1134,7 @@ export default function Assessment360() {
       
       // Safety check: ensure currentStep is valid
       if (currentStep < 0 || currentStep >= questionGroups.length) {
-        console.error("Invalid currentStep for pulse assessment:", currentStep);
+
         await handleCompleteAssessment();
         return;
       }
@@ -1234,12 +1155,7 @@ export default function Assessment360() {
           // #region agent log
           fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:1050',message:'handleNext moving to next step - BEFORE save',data:{questionId:currentQuestion.id,stepId:currentStepId,answerText:answerText?answerText.substring(0,100):null,answerInState:!!answers[currentQuestion.id],currentStep,questionIndexInStep,questionsInStep:currentGroup.questions.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
           // #endregion
-          console.log("💾 [DEBUG] Saving last question of step before moving to next step:", {
-            questionId: currentQuestion.id,
-            stepId: currentStepId,
-            answerText: answerText ? `${answerText.substring(0, 50)}...` : null,
-          });
-          
+
           await saveQuestionResponse(responseSessionId, currentQuestion.id, answerText);
           
           // Update progress - use database counts for accuracy
@@ -1498,8 +1414,7 @@ export default function Assessment360() {
         } else {
           // If currentQuestion is undefined, still mark session as completed
           // This can happen if we're completing from an invalid state
-          console.warn("⚠️ [DEBUG] Completing assessment without currentQuestion, updating session status only");
-          
+
           // Count answered questions from database for accuracy
           const { count: answeredCount, error: countError } = await supabase
             .from("assessment_responses")
@@ -1535,7 +1450,7 @@ export default function Assessment360() {
         .eq("id", participantAssessmentId);
 
       if (updateError) {
-        console.error("Error completing assessment:", updateError);
+
         alert(`Error: ${updateError.message}`);
         setCompleting(false);
         return;
@@ -1557,11 +1472,11 @@ export default function Assessment360() {
 
           if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
-            console.error("Error creating PDF report:", errorData.error || "Unknown error");
+
             // Don't block completion if report creation fails
           }
         } catch (err) {
-          console.error("Error creating PDF report:", err);
+
           // Don't block completion if report creation fails
         }
       }
@@ -1569,7 +1484,7 @@ export default function Assessment360() {
       // Redirect to assessment overview
       router.push(`/tenant/${subdomain}/assessments/${assessmentId}`);
     } catch (err) {
-      console.error("Error completing assessment:", err);
+
       alert("An unexpected error occurred. Please try again.");
     } finally {
       setCompleting(false);

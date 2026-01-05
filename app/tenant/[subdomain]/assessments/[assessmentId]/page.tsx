@@ -122,7 +122,7 @@ export default function TenantAssessmentDetailPage() {
           fetchParticipantAssessment(userData.id);
         }
       } catch (error) {
-        console.error("Error parsing user data:", error);
+
         setError("Failed to load user data");
         setLoading(false);
       }
@@ -172,8 +172,7 @@ export default function TenantAssessmentDetailPage() {
 
       // If relationship query fails, fallback to separate queries
       if (dbError && (dbError.message?.includes("relationship") || dbError.message?.includes("cache"))) {
-        console.warn("Relationship query failed, fetching separately:", dbError.message);
-        
+
         // Fetch assessment without relationships
         const { data: assessmentData, error: assessmentError } = await supabase
           .from("cohort_assessments")
@@ -229,7 +228,7 @@ export default function TenantAssessmentDetailPage() {
         throw new Error("Assessment not found");
       }
     } catch (err) {
-      console.error("Error fetching assessment details:", err);
+
       setError(err instanceof Error ? err.message : "An unexpected error occurred");
       setAssessment(null);
     } finally {
@@ -299,19 +298,16 @@ export default function TenantAssessmentDetailPage() {
 
         if (assessmentDef && !assessmentDef.is_system) {
           setIsCustomPulse(true);
-          console.log("✅ [CUSTOM PULSE] Detected custom pulse assessment:", {
-            assessmentDefinitionId: assessmentDef.id,
-            isSystem: assessmentDef.is_system,
-          });
+
         } else {
           setIsCustomPulse(false);
         }
       } catch (e) {
-        console.error("Error parsing plan assessment mapping:", e);
+
         setIsCustomPulse(false);
       }
     } catch (error) {
-      console.error("Error checking if custom pulse:", error);
+
       setIsCustomPulse(false);
     }
   }
@@ -326,7 +322,7 @@ export default function TenantAssessmentDetailPage() {
         .single();
 
       if (caError || !cohortAssessment) {
-        console.error("Error fetching cohort assessment:", caError);
+
         setParticipantAssessment(null);
         setNominations([]);
         return;
@@ -340,7 +336,7 @@ export default function TenantAssessmentDetailPage() {
         .eq("cohort_id", cohortAssessment.cohort_id);
 
       if (participantsError || !participants || participants.length === 0) {
-        console.warn("No participants found for this user in this cohort");
+
         setParticipantAssessment(null);
         setNominations([]);
         return;
@@ -358,7 +354,7 @@ export default function TenantAssessmentDetailPage() {
         .limit(1);
 
       if (paError) {
-        console.error("Error fetching participant assessment:", paError);
+
         setParticipantAssessment(null);
         setNominations([]);
         return;
@@ -400,7 +396,7 @@ export default function TenantAssessmentDetailPage() {
         }
       }
     } catch (err) {
-      console.error("Error fetching participant assessment:", err);
+
       setParticipantAssessment(null);
       setNominations([]);
     }
@@ -408,10 +404,6 @@ export default function TenantAssessmentDetailPage() {
 
   async function fetchResponseSession(participantAssessmentId: string) {
     try {
-      console.log("🔍 [CUSTOM PULSE] fetchResponseSession started:", {
-        participantAssessmentId,
-        assessmentId,
-      });
 
       // First, check if this assessment uses the new plan (has assessment_definition_id)
       // We need to get the assessment_definition_id from the cohort -> plan mapping
@@ -421,15 +413,8 @@ export default function TenantAssessmentDetailPage() {
         .eq("id", assessmentId)
         .single();
 
-      console.log("🔍 [CUSTOM PULSE] Cohort assessment lookup:", {
-        found: !!cohortAssessment,
-        error: caError?.message,
-        cohortId: cohortAssessment?.cohort_id,
-        assessmentTypeId: cohortAssessment?.assessment_type_id,
-      });
-
       if (!cohortAssessment) {
-        console.warn("⚠️ [CUSTOM PULSE] No cohort assessment found");
+
         setResponseSession(null);
         setResponseCount(0);
         setTotalQuestions(0);
@@ -443,14 +428,8 @@ export default function TenantAssessmentDetailPage() {
         .eq("id", cohortAssessment.cohort_id)
         .single();
 
-      console.log("🔍 [CUSTOM PULSE] Cohort lookup:", {
-        found: !!cohort,
-        error: cohortError?.message,
-        planId: cohort?.plan_id,
-      });
-
       if (!cohort?.plan_id) {
-        console.warn("⚠️ [CUSTOM PULSE] No plan_id found in cohort");
+
         setResponseSession(null);
         setResponseCount(0);
         setTotalQuestions(0);
@@ -464,31 +443,16 @@ export default function TenantAssessmentDetailPage() {
         .eq("id", cohort.plan_id)
         .single();
 
-      console.log("🔍 [CUSTOM PULSE] Plan lookup:", {
-        found: !!planData,
-        error: planError?.message,
-        hasDescription: !!planData?.description,
-      });
-
       let assessmentDefinitionId: string | null = null;
       let assessmentDefinitionSource: string = "none";
 
       if (planData?.description) {
         const planMappingMatch = planData.description.match(/<!--PLAN_ASSESSMENT_DEFINITIONS:(.*?)-->/);
-        console.log("🔍 [CUSTOM PULSE] Plan mapping extraction:", {
-          hasMatch: !!planMappingMatch,
-          mappingLength: planMappingMatch?.[1]?.length || 0,
-        });
 
         if (planMappingMatch) {
           try {
             const mapping = JSON.parse(planMappingMatch[1]);
             const selectedDefId = mapping[cohortAssessment.assessment_type_id];
-            console.log("🔍 [CUSTOM PULSE] Plan mapping lookup:", {
-              assessmentTypeId: cohortAssessment.assessment_type_id,
-              selectedDefId,
-              mappingKeys: Object.keys(mapping),
-            });
 
             if (selectedDefId) {
               const { data: selectedDef, error: defError } = await supabase
@@ -498,19 +462,13 @@ export default function TenantAssessmentDetailPage() {
                 .eq("assessment_type_id", cohortAssessment.assessment_type_id)
                 .maybeSingle();
 
-              console.log("🔍 [CUSTOM PULSE] Custom assessment definition lookup:", {
-                found: !!selectedDef,
-                error: defError?.message,
-                defId: selectedDef?.id,
-              });
-
               if (selectedDef) {
                 assessmentDefinitionId = selectedDef.id;
                 assessmentDefinitionSource = "custom";
               }
             }
           } catch (e) {
-            console.error("❌ [CUSTOM PULSE] Error parsing plan assessment mapping:", e);
+
           }
         }
       }
@@ -524,26 +482,14 @@ export default function TenantAssessmentDetailPage() {
           .eq("is_system", true)
           .maybeSingle();
 
-        console.log("🔍 [CUSTOM PULSE] System assessment definition lookup:", {
-          found: !!systemDef,
-          error: systemError?.message,
-          defId: systemDef?.id,
-        });
-
         if (systemDef) {
           assessmentDefinitionId = systemDef.id;
           assessmentDefinitionSource = "system";
         }
       }
 
-      console.log("✅ [CUSTOM PULSE] Assessment definition ID resolved:", {
-        assessmentDefinitionId,
-        source: assessmentDefinitionSource,
-        assessmentTypeId: cohortAssessment.assessment_type_id,
-      });
-
       if (!assessmentDefinitionId) {
-        console.warn("⚠️ [CUSTOM PULSE] No assessment definition ID found - old plan");
+
         // Old plan - no response sessions, but check for responses anyway
         await checkForResponsesWithoutSession(participantAssessmentId);
         return;
@@ -558,18 +504,8 @@ export default function TenantAssessmentDetailPage() {
         .eq("respondent_type", "participant")
         .maybeSingle();
 
-      console.log("🔍 [CUSTOM PULSE] Session lookup:", {
-        participantAssessmentId,
-        assessmentDefinitionId,
-        sessionFound: !!session,
-        sessionId: session?.id,
-        sessionStatus: session?.status,
-        error: sessionError?.message,
-        errorCode: sessionError?.code,
-      });
-
       if (sessionError && sessionError.code !== "PGRST116") {
-        console.error("❌ [CUSTOM PULSE] Error fetching response session:", sessionError);
+
         // Don't return - check for responses anyway
       }
 
@@ -584,54 +520,25 @@ export default function TenantAssessmentDetailPage() {
           .limit(1);
 
         const hasSteps = !stepsError && stepsData && stepsData.length > 0;
-        
-        console.log("🔍 [CUSTOM PULSE] Steps check:", {
-          assessmentDefinitionId,
-          hasSteps,
-          stepsCount: stepsData?.length || 0,
-          error: stepsError?.message,
-        });
 
-        // Fetch all responses for this session (for debugging)
+        // Fetch all responses for this session
         const { data: allResponses, error: responsesError } = await supabase
           .from("assessment_responses")
           .select("id, question_id, answer_text, is_answered, created_at, updated_at")
           .eq("session_id", session.id)
           .order("created_at", { ascending: true });
 
-        console.log("🔍 [DEBUG] All responses for assessment:", {
-          sessionId: session.id,
-          participantAssessmentId,
-          assessmentId,
-          assessmentDefinitionId,
-          hasSteps,
-          totalResponses: allResponses?.length || 0,
-          answeredResponses: allResponses?.filter((r: any) => r.is_answered).length || 0,
-          responses: allResponses?.map((r: any) => ({
-            questionId: r.question_id,
-            hasAnswer: !!r.answer_text,
-            isAnswered: r.is_answered,
-            answerPreview: r.answer_text ? r.answer_text.substring(0, 50) : null,
-          })),
-        });
-
         let answeredCount = 0;
         let totalQuestions = 0;
 
         if (hasSteps) {
           // Pulse assessment with steps - count questions per step
-          console.log("🔍 [CUSTOM PULSE] Counting questions with steps");
+
           const { data: steps, error: stepsFetchError } = await supabase
             .from("assessment_steps_v2")
             .select("id, step_order")
             .eq("assessment_definition_id", assessmentDefinitionId)
             .order("step_order", { ascending: true });
-
-          console.log("🔍 [CUSTOM PULSE] Steps fetched:", {
-            stepsCount: steps?.length || 0,
-            error: stepsFetchError?.message,
-            stepIds: steps?.map((s: any) => ({ id: s.id, order: s.step_order })),
-          });
 
           if (!stepsFetchError && steps) {
             // Count total questions across all steps
@@ -642,13 +549,6 @@ export default function TenantAssessmentDetailPage() {
                 .eq("assessment_definition_id", assessmentDefinitionId)
                 .eq("step_id", step.id);
 
-              console.log("🔍 [CUSTOM PULSE] Step question count:", {
-                stepId: step.id,
-                stepOrder: step.step_order,
-                questionCount: stepQuestionCount || 0,
-                error: stepQError?.message,
-              });
-
               if (!stepQError) {
                 totalQuestions += stepQuestionCount || 0;
               }
@@ -656,12 +556,7 @@ export default function TenantAssessmentDetailPage() {
 
             // Count answered questions (already filtered by session_id and is_answered)
             answeredCount = allResponses?.filter((r: any) => r.is_answered).length || 0;
-            
-            console.log("✅ [CUSTOM PULSE] Step-based progress calculated:", {
-              totalQuestions,
-              answeredCount,
-              progressPercent: totalQuestions > 0 ? Math.round((answeredCount / totalQuestions) * 100) : 0,
-            });
+
           }
         } else {
           // 360 assessment without steps - use simple count
@@ -705,11 +600,11 @@ export default function TenantAssessmentDetailPage() {
         await updateStatusFromProgress(session, participantAssessmentId);
       } else {
         // No session found - check for responses anyway (fallback)
-        console.log("⚠️ [CUSTOM PULSE] No session found, checking for responses directly");
+
         await checkForResponsesWithoutSession(participantAssessmentId, assessmentDefinitionId);
       }
     } catch (error) {
-      console.error("❌ [CUSTOM PULSE] Error fetching response session:", error);
+
       setResponseSession(null);
       setResponseCount(0);
       setTotalQuestions(0);
@@ -722,10 +617,6 @@ export default function TenantAssessmentDetailPage() {
     assessmentDefinitionId?: string | null
   ) {
     try {
-      console.log("🔍 [CUSTOM PULSE] Checking for responses without session:", {
-        participantAssessmentId,
-        assessmentDefinitionId,
-      });
 
       // If we don't have assessment_definition_id, try to resolve it
       if (!assessmentDefinitionId) {
@@ -767,7 +658,7 @@ export default function TenantAssessmentDetailPage() {
                     }
                   }
                 } catch (e) {
-                  console.error("Error parsing plan mapping:", e);
+
                 }
               }
             }
@@ -788,7 +679,7 @@ export default function TenantAssessmentDetailPage() {
       }
 
       if (!assessmentDefinitionId) {
-        console.warn("⚠️ [CUSTOM PULSE] Cannot check responses - no assessment_definition_id");
+
         setResponseSession(null);
         setResponseCount(0);
         setTotalQuestions(0);
@@ -806,9 +697,7 @@ export default function TenantAssessmentDetailPage() {
 
       if (existingSessions && existingSessions.length > 0) {
         // Session exists but wasn't found in main query - refetch it
-        console.log("✅ [CUSTOM PULSE] Found existing session, refetching:", {
-          sessionId: existingSessions[0].id,
-        });
+
         await fetchResponseSession(participantAssessmentId);
         return;
       }
@@ -831,12 +720,6 @@ export default function TenantAssessmentDetailPage() {
           .in("session_id", sessionIds)
           .eq("is_answered", true);
 
-        console.log("🔍 [CUSTOM PULSE] Direct response check:", {
-          sessionIds,
-          responseCount: responses?.length || 0,
-          error: responsesError?.message,
-        });
-
         if (responses && responses.length > 0) {
           // Filter responses that match our assessment_definition_id
           const matchingResponses = responses.filter((r: any) => 
@@ -844,7 +727,7 @@ export default function TenantAssessmentDetailPage() {
           );
 
           if (matchingResponses.length > 0) {
-            console.log("✅ [CUSTOM PULSE] Found responses without session, creating session");
+
             // Create a session if responses exist but no session found
             const { data: newSession, error: createError } = await supabase
               .from("assessment_response_sessions")
@@ -860,7 +743,7 @@ export default function TenantAssessmentDetailPage() {
               .single();
 
             if (!createError && newSession) {
-              console.log("✅ [CUSTOM PULSE] Created new session from existing responses:", newSession.id);
+
               // Refetch to get full session data
               await fetchResponseSession(participantAssessmentId);
               return;
@@ -870,7 +753,7 @@ export default function TenantAssessmentDetailPage() {
       }
 
       // No responses found
-      console.log("ℹ️ [CUSTOM PULSE] No responses found without session");
+
       setResponseSession(null);
       setResponseCount(0);
       setTotalQuestions(0);
@@ -880,7 +763,7 @@ export default function TenantAssessmentDetailPage() {
         await updateStatusFromProgress(null, participantAssessmentId);
       }
     } catch (error) {
-      console.error("❌ [CUSTOM PULSE] Error checking responses without session:", error);
+
       setResponseSession(null);
       setResponseCount(0);
       setTotalQuestions(0);
@@ -917,8 +800,7 @@ export default function TenantAssessmentDetailPage() {
         }
       } else {
         // No session - check for responses directly using participant_assessment_id
-        console.log("🔍 [CUSTOM PULSE] updateStatusFromProgress: No session, checking responses directly");
-        
+
         // Find all sessions for this participant_assessment
         const { data: allSessions } = await supabase
           .from("assessment_response_sessions")
@@ -935,11 +817,6 @@ export default function TenantAssessmentDetailPage() {
             .select("*", { count: "exact", head: true })
             .in("session_id", sessionIds)
             .eq("is_answered", true);
-
-          console.log("🔍 [CUSTOM PULSE] Direct response count:", {
-            sessionIds,
-            answeredCount,
-          });
 
           if (answeredCount && answeredCount > 0) {
             newStatus = "In Progress";
@@ -966,7 +843,7 @@ export default function TenantAssessmentDetailPage() {
         }
       }
     } catch (error) {
-      console.error("Error updating status from progress:", error);
+
     }
   }
 
@@ -1035,7 +912,7 @@ export default function TenantAssessmentDetailPage() {
 
       return (answeredCount || 0) > 0;
     } catch (error) {
-      console.error("Error checking for responses directly:", error);
+
       return false;
     }
   }
@@ -1057,7 +934,7 @@ export default function TenantAssessmentDetailPage() {
           .eq("session_id", responseSession.id);
 
         if (deleteResponsesError) {
-          console.error("Error deleting responses:", deleteResponsesError);
+
           showToast("Error deleting responses. Please try again.", "error");
           setRetakingAssessment(false);
           return;
@@ -1077,7 +954,7 @@ export default function TenantAssessmentDetailPage() {
           .eq("id", responseSession.id);
 
         if (resetSessionError) {
-          console.error("Error resetting session:", resetSessionError);
+
           showToast("Error resetting session. Please try again.", "error");
           setRetakingAssessment(false);
           return;
@@ -1091,7 +968,7 @@ export default function TenantAssessmentDetailPage() {
         .eq("id", participantAssessment.id);
 
       if (updateStatusError) {
-        console.error("Error updating status:", updateStatusError);
+
         showToast("Error updating status. Please try again.", "error");
         setRetakingAssessment(false);
         return;
@@ -1102,7 +979,7 @@ export default function TenantAssessmentDetailPage() {
       
       showToast("Assessment reset successfully. You can now start fresh.", "success");
     } catch (err) {
-      console.error("Error retaking assessment:", err);
+
       showToast("An unexpected error occurred. Please try again.", "error");
     } finally {
       setRetakingAssessment(false);
@@ -1120,7 +997,7 @@ export default function TenantAssessmentDetailPage() {
         .order("created_at", { ascending: false });
 
       if (nominationsError) {
-        console.error("Error fetching nominations:", nominationsError);
+
         setNominations([]);
         return;
       }
@@ -1188,7 +1065,7 @@ export default function TenantAssessmentDetailPage() {
 
       setNominations(mergedNominations as ReviewerNomination[]);
     } catch (err) {
-      console.error("Error fetching nominations:", err);
+
       setNominations([]);
     }
   }
@@ -1207,14 +1084,14 @@ export default function TenantAssessmentDetailPage() {
         .order("name", { ascending: true });
 
       if (rosterError) {
-        console.error("Error fetching client roster:", rosterError);
+
         setClientRoster([]);
         return;
       }
 
       setClientRoster(rosterData || []);
     } catch (err) {
-      console.error("Error fetching client roster:", err);
+
       setClientRoster([]);
     } finally {
       setLoadingRoster(false);
@@ -1230,7 +1107,7 @@ export default function TenantAssessmentDetailPage() {
     // Get client_id from user
     const clientId = (user as any).client_id;
     if (!clientId) {
-      console.error("User client_id not found:", user);
+
       alert("Unable to load client roster. Please try logging out and back in.");
       return;
     }
@@ -1406,7 +1283,7 @@ export default function TenantAssessmentDetailPage() {
           .single();
 
         if (createError) {
-          console.error("Error creating participant assessment:", createError);
+
           showToast(`Error: ${createError.message}`, "error");
           setSubmittingNominations(false);
           return;
@@ -1426,7 +1303,7 @@ export default function TenantAssessmentDetailPage() {
         .or("request_status.eq.pending,request_status.eq.accepted");
 
       if (checkError) {
-        console.error("Error checking existing nominations:", checkError);
+
         showToast("Error checking existing nominations. Please try again.", "error");
         setSubmittingNominations(false);
         return;
@@ -1496,7 +1373,7 @@ export default function TenantAssessmentDetailPage() {
             .maybeSingle();
 
           if (externalCheckError) {
-            console.error("Error checking external reviewer:", externalCheckError);
+
             externalErrors.push(`${email}: ${externalCheckError.message}`);
             continue;
           }
@@ -1517,13 +1394,13 @@ export default function TenantAssessmentDetailPage() {
               participantId: user.id, // Use user.id (client_users.id) instead of participant_id
             });
           } catch (inviteError: any) {
-            console.error(`Error inviting external reviewer ${email}:`, inviteError);
+
             externalErrors.push(`${email}: ${inviteError.message || "Failed to invite reviewer"}`);
             continue;
           }
 
           if (!external || !external.id) {
-            console.error(`Failed to get external reviewer ID for ${email}`);
+
             externalErrors.push(`${email}: Failed to create reviewer record`);
             continue;
           }
@@ -1540,14 +1417,14 @@ export default function TenantAssessmentDetailPage() {
             request_status: "pending",
           });
         } catch (err: any) {
-          console.error(`Error processing external reviewer ${email}:`, err);
+
           externalErrors.push(`${email}: ${err.message || "Unknown error"}`);
         }
       }
 
       // Show errors for external reviewers if any
       if (externalErrors.length > 0) {
-        console.error("External reviewer errors:", externalErrors);
+
         // Don't stop the process, just show info message
         showToast(`Some external reviewers could not be added: ${externalErrors.join(", ")}`, "info");
       }
@@ -1568,8 +1445,7 @@ export default function TenantAssessmentDetailPage() {
         .insert(nominationPayload);
 
       if (insertError) {
-        console.error("Error creating nominations:", insertError);
-        console.error("Nomination payload:", JSON.stringify(nominationPayload, null, 2));
+
         showToast(`Error creating nominations: ${insertError.message || "Please try again"}`, "error");
         setSubmittingNominations(false);
         return;
@@ -1595,7 +1471,7 @@ export default function TenantAssessmentDetailPage() {
         "success"
       );
     } catch (err: any) {
-      console.error("Error submitting nominations:", err);
+
       showToast(err.message || "An unexpected error occurred. Please try again.", "error");
     } finally {
       setSubmittingNominations(false);
@@ -1616,7 +1492,7 @@ export default function TenantAssessmentDetailPage() {
         .eq("nominated_by_id", user.id); // Ensure user can only delete their own nominations
 
       if (deleteError) {
-        console.error("Error deleting nomination:", deleteError);
+
         showToast("Error deleting nomination. Please try again.", "error");
         return;
       }
@@ -1628,7 +1504,7 @@ export default function TenantAssessmentDetailPage() {
 
       showToast("Nomination request removed successfully.", "success");
     } catch (err) {
-      console.error("Error deleting nomination:", err);
+
       showToast("An unexpected error occurred. Please try again.", "error");
     } finally {
       setDeletingNomination(null);
@@ -1673,7 +1549,7 @@ export default function TenantAssessmentDetailPage() {
           .single();
 
         if (createError) {
-          console.error("Error creating participant assessment:", createError);
+
           showToast(`Error: ${createError.message}`, "error");
           setStartingAssessment(false);
           return;
@@ -1689,7 +1565,7 @@ export default function TenantAssessmentDetailPage() {
           .eq("id", participantAssessmentId);
 
         if (updateError) {
-          console.error("Error updating participant assessment:", updateError);
+
           showToast(`Error: ${updateError.message}`, "error");
           setStartingAssessment(false);
           return;
@@ -1703,7 +1579,7 @@ export default function TenantAssessmentDetailPage() {
 
       showToast("Assessment started successfully!", "success");
     } catch (err) {
-      console.error("Error starting assessment:", err);
+
       showToast("An unexpected error occurred. Please try again.", "error");
     } finally {
       setStartingAssessment(false);
@@ -1725,7 +1601,7 @@ export default function TenantAssessmentDetailPage() {
         .eq("id", paId);
 
       if (updateError) {
-        console.error("Error completing assessment:", updateError);
+
         showToast(`Error: ${updateError.message}`, "error");
         return;
       }
@@ -1737,7 +1613,7 @@ export default function TenantAssessmentDetailPage() {
 
       showToast("Assessment completed successfully!", "success");
     } catch (err) {
-      console.error("Error completing assessment:", err);
+
       showToast("An unexpected error occurred. Please try again.", "error");
     } finally {
       setCompletingAssessment(false);
@@ -1746,146 +1622,25 @@ export default function TenantAssessmentDetailPage() {
 
   async function checkReportAvailability(participantAssessmentId: string, status?: string | null) {
     try {
-      console.log("🔍 [REPORT CHECK] ===== STARTING REPORT CHECK =====");
-      console.log("🔍 [REPORT CHECK] Input parameters:", {
-        participantAssessmentId,
-        status,
-        assessmentId,
-      });
-
-      // Get assessment type - always fetch directly from cohort_assessment to ensure we have it
-      let assessmentTypeName: string | undefined = undefined;
-      let assessmentTypeId: string | null = null;
-
-      // First try from state
-      if (assessment?.assessment_type?.name) {
-        assessmentTypeName = assessment.assessment_type.name.toLowerCase();
-        assessmentTypeId = assessment.assessment_type_id;
-        console.log("✅ [REPORT CHECK] Got assessment type from state:", assessmentTypeName);
-      } else {
-        // Fetch assessment_type_id from cohort_assessment, then fetch type name
-        console.log("⚠️ [REPORT CHECK] Assessment type not in state, fetching from cohort_assessment...");
-        const { data: cohortAssessmentData, error: caError } = await supabase
-          .from("cohort_assessments")
-          .select("assessment_type_id, assessment_type:assessment_types(name)")
-          .eq("id", assessmentId)
-          .single();
-
-        if (caError) {
-          console.error("❌ [REPORT CHECK] Error fetching cohort_assessment:", caError);
-        } else if (cohortAssessmentData) {
-          assessmentTypeId = cohortAssessmentData.assessment_type_id;
-          
-          // Try to get name from relationship first
-          const typeFromRelation = (cohortAssessmentData as any).assessment_type;
-          if (typeFromRelation?.name) {
-            assessmentTypeName = typeFromRelation.name.toLowerCase();
-            console.log("✅ [REPORT CHECK] Got assessment type from relationship:", assessmentTypeName);
-          } else if (assessmentTypeId) {
-            // Fallback: fetch directly from assessment_types table
-            const { data: typeData, error: typeError } = await supabase
-              .from("assessment_types")
-              .select("name")
-              .eq("id", assessmentTypeId)
-              .single();
-            
-            if (!typeError && typeData) {
-              assessmentTypeName = typeData.name?.toLowerCase();
-              console.log("✅ [REPORT CHECK] Fetched assessment type directly:", assessmentTypeName);
-            } else {
-              console.error("❌ [REPORT CHECK] Failed to fetch assessment type:", typeError);
-            }
-          }
-        }
-      }
-
-      const isPulse = assessmentTypeName === "pulse";
-      const currentStatus = (status || participantAssessment?.status)?.toLowerCase();
-      const isCompleted = currentStatus === "completed";
-
-      console.log("🔍 [REPORT CHECK] Assessment details:", {
-        assessmentTypeName,
-        isPulse,
-        currentStatus,
-        isCompleted,
-        participantAssessmentStatus: participantAssessment?.status,
-        assessmentObject: assessment,
-        assessmentTypeId: assessment?.assessment_type_id,
-        assessmentTypeObject: assessment?.assessment_type,
-        assessmentTypeNameRaw: assessment?.assessment_type?.name,
-      });
-
-      if (!isPulse || !isCompleted) {
-        console.log("⚠️ [REPORT CHECK] Skipping - not pulse or not completed:", { 
-          isPulse, 
-          isCompleted,
-          reason: !isPulse ? "Not a pulse assessment" : "Assessment not completed"
-        });
-        setReportAvailable(false);
-        return;
-      }
-
-      // Use dynamic assessment type name for report lookup (supports custom plans)
-      const reportTypeName = assessmentTypeName.toLowerCase();
-      console.log("🔍 [REPORT CHECK] Querying database:", {
-        participantAssessmentId,
-        reportTypeName,
-        table: "assessment_reports",
-      });
-
       const { data, error } = await supabase
         .from("assessment_reports")
-        .select("id, created_at, updated_at, participant_assessment_id, report_type, storage_path")
+        .select("id, updated_at, participant_assessment_id, report_type, storage_path, source_updated_at")
         .eq("participant_assessment_id", participantAssessmentId)
-        .eq("report_type", reportTypeName)
-        .order("created_at", { ascending: false })
+        .order("updated_at", { ascending: false })
         .limit(1)
         .maybeSingle();
 
-      console.log("🔍 [REPORT CHECK] Database query result:", {
-        hasData: !!data,
-        data,
-        error,
-        errorCode: error?.code,
-        errorMessage: error?.message,
-      });
-
       if (error) {
-        console.error("❌ [REPORT CHECK] Error checking report availability:", {
-          error,
-          errorCode: error.code,
-          errorMessage: error.message,
-          errorDetails: error.details,
-          errorHint: error.hint,
-        });
         setReportAvailable(false);
         return;
       }
 
-      const reportExists = !!data;
-      console.log("✅ [REPORT CHECK] Final result:", {
-        reportExists,
-        reportId: data?.id,
-        participantAssessmentId: data?.participant_assessment_id,
-        reportType: data?.report_type,
-        storagePath: data?.storage_path,
-        created_at: data?.created_at,
-        updated_at: data?.updated_at,
-      });
-
-      console.log("🔍 [REPORT CHECK] Setting reportAvailable state to:", reportExists);
+      const reportExists = !!data && !!data.id && !!data.storage_path && data.participant_assessment_id === participantAssessmentId;
       setReportAvailable(reportExists);
-      console.log("✅ [REPORT CHECK] ===== REPORT CHECK COMPLETE =====");
     } catch (err) {
-      console.error("❌ [REPORT CHECK] Exception in checkReportAvailability:", {
-        error: err,
-        message: err instanceof Error ? err.message : String(err),
-        stack: err instanceof Error ? err.stack : undefined,
-      });
       setReportAvailable(false);
     }
   }
-
 
   async function handleDownloadReport() {
     if (!participantAssessment?.id) {
@@ -1931,7 +1686,7 @@ export default function TenantAssessmentDetailPage() {
 
       showToast("Report downloaded successfully!", "success");
     } catch (err) {
-      console.error("Error downloading report:", err);
+
       showToast(
         err instanceof Error ? err.message : "Failed to download report. Please try again.",
         "error"
@@ -2102,22 +1857,12 @@ export default function TenantAssessmentDetailPage() {
             {(() => {
               const buttonConfig = getButtonConfig();
               const isPulse = assessment?.assessment_type?.name?.toLowerCase() === "pulse";
-              
-              // Debug logging for button visibility
-              console.log("🔍 [BUTTON DEBUG] Assessment overview button visibility:", {
-                isPulse,
-                reportAvailable,
-                participantAssessmentStatus: participantAssessment?.status,
-                assessmentTypeName: assessment?.assessment_type?.name,
-                participantAssessmentId: participantAssessment?.id,
-                showDownloadButton: isPulse && reportAvailable,
-                buttonConfig,
-              });
+              const isCompleted = participantAssessment?.status?.toLowerCase() === "completed";
               
               return (
                 <>
-                  {/* Left side - Download Report button (pulse only, when report available) */}
-                  {isPulse && reportAvailable && (
+                  {/* Left side - Download Report button (pulse only, when completed and report available) */}
+                  {isPulse && isCompleted && reportAvailable && (
                     <Button
                       onClick={handleDownloadReport}
                       variant="outline"
