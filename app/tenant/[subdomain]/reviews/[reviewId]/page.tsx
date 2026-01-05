@@ -331,14 +331,22 @@ export default function ReviewDetailPage() {
       if (!assessmentDefinitionId) return;
 
       // Determine if reviewer is internal or external to use correct respondent_type
-      // Check the nomination to see if it has external_reviewer_id or reviewer_id
+      // Check the nomination to see if it has external_reviewer_id or reviewer_id, and also get review_status
       const { data: nomination } = await supabase
         .from("reviewer_nominations")
-        .select("external_reviewer_id, reviewer_id")
+        .select("external_reviewer_id, reviewer_id, review_status")
         .eq("id", nominationId)
         .maybeSingle();
 
       if (!nomination) return;
+
+      // Check review_status from nomination table first (this is the source of truth)
+      if (nomination.review_status && 
+          (nomination.review_status.toLowerCase() === "completed" || 
+           nomination.review_status.toLowerCase() === "done")) {
+        setReviewSessionStatus("completed");
+        return;
+      }
 
       // Determine respondent_type based on nomination
       const isExternal = !!nomination.external_reviewer_id;
@@ -356,6 +364,12 @@ export default function ReviewDetailPage() {
 
       // If session exists, check if there are any responses saved
       if (session?.id) {
+        // If session status is completed, use that
+        if (session.status === "completed") {
+          setReviewSessionStatus("completed");
+          return;
+        }
+
         const { data: responses } = await supabase
           .from("assessment_responses")
           .select("id")
@@ -587,22 +601,30 @@ export default function ReviewDetailPage() {
           <div className="mt-6 pt-6 border-t flex justify-end items-center gap-4">
             {(() => {
               const sessionStatus = reviewSessionStatus?.toLowerCase();
+              const reviewStatus = review.review_status?.toLowerCase();
+              
+              // Check if review is completed - check both session status and review_status
+              const isCompleted = 
+                sessionStatus === "completed" || 
+                reviewStatus === "completed" ||
+                reviewStatus === "done";
+              
               // Determine button text based on session status
+              // If review is completed, show disabled "Review Completed" button (matching participant side style)
               // If status is "in_progress" or there are saved responses, show "Continue Review"
-              // If status is "completed", show "View Review"
               // Otherwise, show "Start Review"
               const buttonText = 
+                isCompleted ? "Review Completed" :
                 !sessionStatus || sessionStatus === "not_started" ? "Start Review" :
                 sessionStatus === "in_progress" || sessionStatus === "in progress" ? "Continue Review" :
-                sessionStatus === "completed" ? "View Review" :
                 "Start Review";
 
               return (
                 <Button
-                  onClick={() => router.push(`/tenant/${subdomain}/reviews/${reviewId}/questionnaire`)}
-                  variant="default"
+                  onClick={() => !isCompleted && router.push(`/tenant/${subdomain}/reviews/${reviewId}/questionnaire`)}
+                  variant={isCompleted ? "secondary" : "default"}
                   className="w-full sm:w-auto"
-                  disabled={loadingSessionStatus}
+                  disabled={loadingSessionStatus || isCompleted}
                 >
                   {loadingSessionStatus ? "Loading..." : buttonText}
                 </Button>

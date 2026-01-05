@@ -59,6 +59,7 @@ export default function ReviewQuestionnaire() {
   const [assessmentType, setAssessmentType] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [hasResumed, setHasResumed] = useState(false);
+  const [isReviewCompleted, setIsReviewCompleted] = useState(false);
 
   useEffect(() => {
     const loadData = async () => {
@@ -472,7 +473,7 @@ export default function ReviewQuestionnaire() {
       // Check if session already exists
       let query = supabase
         .from("assessment_response_sessions")
-        .select("id")
+        .select("id, status")
         .eq("participant_assessment_id", participantAssessmentId)
         .eq("assessment_definition_id", assessmentDefinitionId)
         .eq("respondent_type", actualRespondentType);
@@ -494,6 +495,14 @@ export default function ReviewQuestionnaire() {
       }
 
       if (existingSession) {
+        // Check if review is already completed
+        if (existingSession.status === "completed") {
+          setIsReviewCompleted(true);
+          // Redirect back to review overview page
+          router.push(`/tenant/${subdomain}/reviews/${reviewId}`);
+          return null;
+        }
+        
         setResponseSessionId(existingSession.id);
         // Load existing responses
         await loadExistingResponses(existingSession.id);
@@ -1251,6 +1260,22 @@ export default function ReviewQuestionnaire() {
       }
     }
   };
+
+  if (isReviewCompleted) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <h2 className="text-2xl font-bold">Review Completed</h2>
+          <p className="text-muted-foreground">
+            This review has been completed and cannot be modified.
+          </p>
+          <Button onClick={() => router.push(`/tenant/${subdomain}/reviews/${reviewId}`)}>
+            Back to Review Details
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   if (loading || loadingSession) {
     return (
