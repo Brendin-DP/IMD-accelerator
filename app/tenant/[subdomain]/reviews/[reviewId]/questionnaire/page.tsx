@@ -605,11 +605,6 @@ export default function ReviewQuestionnaire() {
         return { questionIndex: 0, stepIndex: 0 };
       }
 
-      // Only resume if session is in_progress
-      if (session.status !== "in_progress") {
-        return { questionIndex: 0, stepIndex: 0 };
-      }
-
       // Fetch all responses for this session with joined question data
       const { data: responses, error: responsesError } = await supabase
         .from("assessment_responses")
@@ -623,6 +618,16 @@ export default function ReviewQuestionnaire() {
           )
         `)
         .eq("session_id", sessionId);
+
+      // Check if there are any answered responses
+      const hasAnsweredResponses = responses && responses.length > 0 && 
+        responses.some((r: any) => r.is_answered === true);
+
+      // Resume if session is in_progress OR if there are saved responses (even if status is not_started)
+      // This handles the case where responses were saved but status wasn't updated
+      if (session.status !== "in_progress" && !hasAnsweredResponses) {
+        return { questionIndex: 0, stepIndex: 0 };
+      }
 
       if (responsesError) {
         return { questionIndex: 0, stepIndex: 0 };

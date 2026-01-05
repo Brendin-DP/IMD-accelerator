@@ -330,19 +330,53 @@ export default function ReviewDetailPage() {
 
       if (!assessmentDefinitionId) return;
 
-      // Query for review session
+      // Determine if reviewer is internal or external to use correct respondent_type
+      // Check the nomination to see if it has external_reviewer_id or reviewer_id
+      const { data: nomination } = await supabase
+        .from("reviewer_nominations")
+        .select("external_reviewer_id, reviewer_id")
+        .eq("id", nominationId)
+        .maybeSingle();
+
+      if (!nomination) return;
+
+      // Determine respondent_type based on nomination
+      const isExternal = !!nomination.external_reviewer_id;
+      const respondentType = isExternal ? "external_reviewer" : "client_user";
+
+      // Query for review session with correct respondent_type
       const { data: session } = await supabase
         .from("assessment_response_sessions")
-        .select("status")
+        .select("id, status, last_question_id")
         .eq("participant_assessment_id", participantAssessmentId)
         .eq("assessment_definition_id", assessmentDefinitionId)
-        .eq("respondent_type", "reviewer")
+        .eq("respondent_type", respondentType)
         .eq("reviewer_nomination_id", nominationId)
         .maybeSingle();
 
-      setReviewSessionStatus(session?.status || null);
+      // If session exists, check if there are any responses saved
+      if (session?.id) {
+        const { data: responses } = await supabase
+          .from("assessment_responses")
+          .select("id")
+          .eq("session_id", session.id)
+          .eq("is_answered", true)
+          .limit(1);
+
+        // If session exists and has responses, it's in progress (even if status is not_started)
+        if (responses && responses.length > 0) {
+          setReviewSessionStatus("in_progress");
+        } else {
+          // Use session status, or default to not_started
+          setReviewSessionStatus(session.status || "not_started");
+        }
+      } else {
+        // No session found
+        setReviewSessionStatus(null);
+      }
     } catch (err) {
       // Silently fail - status will default to null
+      console.error("Error fetching review session status:", err);
     } finally {
       setLoadingSessionStatus(false);
     }
@@ -553,9 +587,13 @@ export default function ReviewDetailPage() {
           <div className="mt-6 pt-6 border-t flex justify-end items-center gap-4">
             {(() => {
               const sessionStatus = reviewSessionStatus?.toLowerCase();
+              // Determine button text based on session status
+              // If status is "in_progress" or there are saved responses, show "Continue Review"
+              // If status is "completed", show "View Review"
+              // Otherwise, show "Start Review"
               const buttonText = 
                 !sessionStatus || sessionStatus === "not_started" ? "Start Review" :
-                sessionStatus === "in_progress" ? "Continue Review" :
+                sessionStatus === "in_progress" || sessionStatus === "in progress" ? "Continue Review" :
                 sessionStatus === "completed" ? "View Review" :
                 "Start Review";
 
