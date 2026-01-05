@@ -376,9 +376,23 @@ export default function TenantAssessmentDetailPage() {
         fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:276',message:'About to call fetchResponseSession',data:{participantAssessmentId:pa.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
         // #endregion
         await fetchResponseSession(pa.id);
-        fetchNominations(pa.id, userId);
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:378',message:'After fetchResponseSession, about to call fetchNominations',data:{participantAssessmentId:pa.id,userId,assessmentId,paIdType:typeof pa.id,hasPaId:!!pa.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
+        try {
+          await fetchNominations(pa.id, userId);
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:384',message:'After fetchNominations call',data:{participantAssessmentId:pa.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
+        } catch (nomErr) {
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:387',message:'Error in fetchNominations',data:{error:nomErr instanceof Error?nomErr.message:String(nomErr),stack:nomErr instanceof Error?nomErr.stack:null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+          // #endregion
+        }
         // Check if report is available for pulse assessments
         await checkReportAvailability(pa.id, pa.status);
+        // Check and update existing reports if new reviews completed
+        await checkAndUpdateReport(pa.id);
       } else {
         // Check if there are any nominations for this assessment that might exist
         // by checking all participant_assessments for this assessment
@@ -988,21 +1002,142 @@ export default function TenantAssessmentDetailPage() {
 
   async function fetchNominations(participantAssessmentId: string, userId: string) {
     try {
-      // Fetch all nominations where this user nominated reviewers (regardless of status)
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:991',message:'fetchNominations entry',data:{participantAssessmentId,userId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+      
+      // Fetch all nominations for this participant assessment (not filtered by nominated_by_id)
+      // This ensures we show all nominations regardless of who created them
       const { data: nominationsData, error: nominationsError } = await supabase
         .from("reviewer_nominations")
         .select("*")
         .eq("participant_assessment_id", participantAssessmentId)
-        .eq("nominated_by_id", userId)
         .order("created_at", { ascending: false });
 
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:1018',message:'Query result',data:{nominationsCount:nominationsData?.length||0,error:nominationsError?.message||null,hasData:!!nominationsData,queryParticipantAssessmentId:participantAssessmentId,rawData:nominationsData?.map((n:any)=>({id:n.id,is_external:n.is_external,reviewer_id:n.reviewer_id,external_reviewer_id:n.external_reviewer_id,participant_assessment_id:n.participant_assessment_id}))||[]},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,C'})}).catch(()=>{});
+      // #endregion
+
+      // If no nominations found, try to find nominations by cohort_assessment_id and participant_id as fallback
+      // This handles cases where participant_assessment_id might not match exactly
+      if ((!nominationsData || nominationsData.length === 0) && !nominationsError) {
+        // Get participant_id and cohort_assessment_id from participant_assessment
+        const { data: paData } = await supabase
+          .from("participant_assessments")
+          .select("participant_id, cohort_assessment_id")
+          .eq("id", participantAssessmentId)
+          .single();
+
+        if (paData?.participant_id && paData?.cohort_assessment_id) {
+          // Find all participant_assessments for this participant and assessment
+          const { data: allPAs } = await supabase
+            .from("participant_assessments")
+            .select("id")
+            .eq("participant_id", paData.participant_id)
+            .eq("cohort_assessment_id", paData.cohort_assessment_id);
+
+          if (allPAs && allPAs.length > 0) {
+            const allPaIds = allPAs.map((pa: any) => pa.id).filter(Boolean);
+            // Query nominations for all matching participant assessments
+            const { data: fallbackNominations, error: fallbackError } = await supabase
+              .from("reviewer_nominations")
+              .select("*")
+              .in("participant_assessment_id", allPaIds)
+              .order("created_at", { ascending: false });
+
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:1035',message:'Fallback query result',data:{fallbackCount:fallbackNominations?.length||0,allPaIds,participantId:paData.participant_id,cohortAssessmentId:paData.cohort_assessment_id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+            // #endregion
+
+            if (!fallbackError && fallbackNominations && fallbackNominations.length > 0) {
+              // Use fallback nominations
+              const fallbackData = fallbackNominations;
+              // Continue with fallback data - replace nominationsData
+              const internalNominations = fallbackData.filter((n: any) => !n.is_external && n.reviewer_id);
+              const externalNominations = fallbackData.filter((n: any) => n.is_external && n.external_reviewer_id);
+              
+              // Get unique reviewer and nominated_by IDs (same as admin)
+              const reviewerIds = [...new Set(internalNominations.map((n: any) => n.reviewer_id).filter(Boolean))];
+              const nominatedByIds = [...new Set(fallbackData.map((n: any) => n.nominated_by_id).filter(Boolean))];
+              const allUserIds = [...new Set([...reviewerIds, ...nominatedByIds])];
+
+              // Fetch client users (for both reviewers and nominated_by)
+              let clientUsers: any[] = [];
+              
+              if (allUserIds.length > 0) {
+                const { data: users, error: usersError } = await supabase
+                  .from("client_users")
+                  .select("id, name, surname, email")
+                  .in("id", allUserIds);
+
+                if (!usersError && users) {
+                  clientUsers = users;
+                }
+              }
+
+              // Fetch external reviewer details, including review_status
+              const externalReviewerIds = [...new Set(externalNominations.map((n: any) => n.external_reviewer_id).filter(Boolean))];
+              let externalReviewers: any[] = [];
+              
+              if (externalReviewerIds.length > 0) {
+                const { data: externals, error: externalsError } = await supabase
+                  .from("external_reviewers")
+                  .select("id, email, review_status")
+                  .in("id", externalReviewerIds);
+
+                if (!externalsError && externals) {
+                  externalReviewers = externals;
+                }
+              }
+
+              // Merge the data (same structure as admin)
+              const mergedNominations = fallbackData.map((nomination: any) => {
+                if (nomination.is_external && nomination.external_reviewer_id) {
+                  // External reviewer - get review_status from external_reviewers table
+                  const externalReviewer = externalReviewers.find((e: any) => e.id === nomination.external_reviewer_id);
+                  return {
+                    ...nomination,
+                    reviewer: null,
+                    external_reviewer: externalReviewer || null,
+                    nominated_by: clientUsers.find((u: any) => u.id === nomination.nominated_by_id) || null,
+                    review_status: externalReviewer?.review_status || nomination.review_status || null,
+                  };
+                } else {
+                  // Internal reviewer - get review_status from reviewer_nominations table
+                  return {
+                    ...nomination,
+                    reviewer: clientUsers.find((u: any) => u.id === nomination.reviewer_id) || null,
+                    external_reviewer: null,
+                    nominated_by: clientUsers.find((u: any) => u.id === nomination.nominated_by_id) || null,
+                    review_status: nomination.review_status || null,
+                  };
+                }
+              });
+
+              // #region agent log
+              fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:1095',message:'Using fallback nominations',data:{mergedCount:mergedNominations.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+              // #endregion
+
+              setNominations(mergedNominations as ReviewerNomination[]);
+              return;
+            }
+          }
+        }
+      }
+
       if (nominationsError) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:1002',message:'Query error occurred',data:{error:nominationsError.message,code:nominationsError.code,details:nominationsError.details},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+        // #endregion
 
         setNominations([]);
         return;
       }
 
       if (!nominationsData || nominationsData.length === 0) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:1008',message:'No nominations found',data:{participantAssessmentId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,C'})}).catch(()=>{});
+        // #endregion
         setNominations([]);
         return;
       }
@@ -1010,16 +1145,24 @@ export default function TenantAssessmentDetailPage() {
       // Separate internal and external nominations
       const internalNominations = nominationsData.filter((n: any) => !n.is_external && n.reviewer_id);
       const externalNominations = nominationsData.filter((n: any) => n.is_external && n.external_reviewer_id);
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:1014',message:'After filtering',data:{totalNominations:nominationsData.length,internalCount:internalNominations.length,externalCount:externalNominations.length,filteredOut:nominationsData.length-internalNominations.length-externalNominations.length,filteredOutDetails:nominationsData.filter((n:any)=>!(n.is_external?n.external_reviewer_id:n.reviewer_id)).map((n:any)=>({id:n.id,is_external:n.is_external,reviewer_id:n.reviewer_id,external_reviewer_id:n.external_reviewer_id}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B,D'})}).catch(()=>{});
+      // #endregion
 
-      // Fetch internal reviewer details
+      // Get unique reviewer and nominated_by IDs (same as admin)
       const reviewerIds = [...new Set(internalNominations.map((n: any) => n.reviewer_id).filter(Boolean))];
+      const nominatedByIds = [...new Set(nominationsData.map((n: any) => n.nominated_by_id).filter(Boolean))];
+      const allUserIds = [...new Set([...reviewerIds, ...nominatedByIds])];
+
+      // Fetch client users (for both reviewers and nominated_by)
       let clientUsers: any[] = [];
       
-      if (reviewerIds.length > 0) {
+      if (allUserIds.length > 0) {
         const { data: users, error: usersError } = await supabase
           .from("client_users")
           .select("id, name, surname, email")
-          .in("id", reviewerIds);
+          .in("id", allUserIds);
 
         if (!usersError && users) {
           clientUsers = users;
@@ -1041,7 +1184,7 @@ export default function TenantAssessmentDetailPage() {
         }
       }
 
-      // Merge the data
+      // Merge the data (same structure as admin)
       const mergedNominations = nominationsData.map((nomination: any) => {
         if (nomination.is_external && nomination.external_reviewer_id) {
           // External reviewer - get review_status from external_reviewers table
@@ -1050,6 +1193,7 @@ export default function TenantAssessmentDetailPage() {
             ...nomination,
             reviewer: null,
             external_reviewer: externalReviewer || null,
+            nominated_by: clientUsers.find((u: any) => u.id === nomination.nominated_by_id) || null,
             review_status: externalReviewer?.review_status || nomination.review_status || null,
           };
         } else {
@@ -1058,10 +1202,15 @@ export default function TenantAssessmentDetailPage() {
             ...nomination,
             reviewer: clientUsers.find((u: any) => u.id === nomination.reviewer_id) || null,
             external_reviewer: null,
+            nominated_by: clientUsers.find((u: any) => u.id === nomination.nominated_by_id) || null,
             review_status: nomination.review_status || null,
           };
         }
       });
+
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:1074',message:'Before setNominations',data:{mergedCount:mergedNominations.length,clientUsersCount:clientUsers.length,externalReviewersCount:externalReviewers.length,mergedNominations:mergedNominations.map((n:any)=>({id:n.id,hasReviewer:!!n.reviewer,hasExternalReviewer:!!n.external_reviewer,hasNominatedBy:!!n.nominated_by}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
 
       setNominations(mergedNominations as ReviewerNomination[]);
     } catch (err) {
@@ -1295,11 +1444,11 @@ export default function TenantAssessmentDetailPage() {
 
       // Check existing nominations to avoid duplicates
       // Only check for active nominations (pending or accepted), not rejected ones
+      // Check all nominations for this participant assessment, not just ones created by current user
       const { data: existingNominations, error: checkError } = await supabase
         .from("reviewer_nominations")
         .select("reviewer_id, external_reviewer_id, request_status")
         .eq("participant_assessment_id", participantAssessmentId)
-        .eq("nominated_by_id", user.id)
         .or("request_status.eq.pending,request_status.eq.accepted");
 
       if (checkError) {
@@ -1639,6 +1788,122 @@ export default function TenantAssessmentDetailPage() {
       setReportAvailable(reportExists);
     } catch (err) {
       setReportAvailable(false);
+    }
+  }
+
+  async function checkAndUpdateReport(participantAssessmentId: string) {
+    try {
+      // Check if report exists
+      const { data: report } = await supabase
+        .from("assessment_reports")
+        .select("id, source_updated_at, report_type")
+        .eq("participant_assessment_id", participantAssessmentId)
+        .maybeSingle();
+
+      if (!report) {
+        // No report exists yet, nothing to update
+        return;
+      }
+
+      // Get assessment_definition_id (same logic as fetchResponseSession)
+      const { data: cohortAssessment } = await supabase
+        .from("cohort_assessments")
+        .select("cohort_id, assessment_type_id")
+        .eq("id", assessmentId)
+        .single();
+
+      if (!cohortAssessment) return;
+
+      let assessmentDefinitionId: string | null = null;
+
+      // Get plan from cohort
+      const { data: cohort } = await supabase
+        .from("cohorts")
+        .select("plan_id")
+        .eq("id", cohortAssessment.cohort_id)
+        .single();
+
+      if (cohort?.plan_id) {
+        const { data: planData } = await supabase
+          .from("plans")
+          .select("description")
+          .eq("id", cohort.plan_id)
+          .single();
+
+        if (planData?.description) {
+          const planMappingMatch = planData.description.match(/<!--PLAN_ASSESSMENT_DEFINITIONS:(.*?)-->/);
+          if (planMappingMatch) {
+            try {
+              const mapping = JSON.parse(planMappingMatch[1]);
+              const selectedDefId = mapping[cohortAssessment.assessment_type_id];
+              if (selectedDefId) {
+                const { data: selectedDef } = await supabase
+                  .from("assessment_definitions_v2")
+                  .select("id")
+                  .eq("id", selectedDefId)
+                  .eq("assessment_type_id", cohortAssessment.assessment_type_id)
+                  .maybeSingle();
+
+                if (selectedDef) {
+                  assessmentDefinitionId = selectedDef.id;
+                }
+              }
+            } catch (e) {
+              // Fall through to system assessment
+            }
+          }
+        }
+      }
+
+      // Fall back to system assessment
+      if (!assessmentDefinitionId) {
+        const { data: systemDef } = await supabase
+          .from("assessment_definitions_v2")
+          .select("id")
+          .eq("assessment_type_id", cohortAssessment.assessment_type_id)
+          .eq("is_system", true)
+          .maybeSingle();
+
+        if (systemDef) {
+          assessmentDefinitionId = systemDef.id;
+        }
+      }
+
+      if (!assessmentDefinitionId) return;
+
+      // Check if there are completed reviewer sessions
+      const { data: completedSessions } = await supabase
+        .from("assessment_response_sessions")
+        .select("id, submitted_at")
+        .eq("participant_assessment_id", participantAssessmentId)
+        .eq("assessment_definition_id", assessmentDefinitionId)
+        .eq("status", "completed")
+        .in("respondent_type", ["client_user", "external_reviewer"])
+        .not("reviewer_nomination_id", "is", null)
+        .order("submitted_at", { ascending: false })
+        .limit(1);
+
+      if (!completedSessions || completedSessions.length === 0) {
+        // No completed reviews, nothing to update
+        return;
+      }
+
+      const latestReviewDate = completedSessions[0]?.submitted_at;
+      const reportUpdatedDate = report.source_updated_at;
+
+      // If there are completed reviews and report is older than the latest review, regenerate
+      if (latestReviewDate && (!reportUpdatedDate || new Date(latestReviewDate) > new Date(reportUpdatedDate))) {
+        // Trigger report regeneration in background (non-blocking)
+        fetch("/api/reports/pulse/regenerate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ participant_assessment_id: participantAssessmentId }),
+        }).catch(() => {
+          // Silently fail - this is a background operation
+        });
+      }
+    } catch (err) {
+      // Silently fail - this is a background check
     }
   }
 

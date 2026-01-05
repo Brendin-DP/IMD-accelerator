@@ -111,13 +111,214 @@ export async function POST(req: Request) {
       }, { status: 400 });
     }
 
-    // Minimal empty data for testing create/download vertical
+    // Get assessment_definition_id from plan mapping or system assessment
+    const assessmentTypeId = cohortAssessment.assessment_type_id;
+    let assessmentDefinitionId: string | null = null;
+
+    // Get cohort_id from cohort_assessment
+    const { data: cohortAssessmentFull } = await supabase
+      .from("cohort_assessments")
+      .select("cohort_id")
+      .eq("id", participantAssessment.cohort_assessment_id)
+      .single();
+
+    if (cohortAssessmentFull?.cohort_id) {
+      const { data: cohort } = await supabase
+        .from("cohorts")
+        .select("id, plan_id, name")
+        .eq("id", cohortAssessmentFull.cohort_id)
+        .single();
+
+      if (cohort?.plan_id) {
+        const { data: planData } = await supabase
+          .from("plans")
+          .select("description")
+          .eq("id", cohort.plan_id)
+          .single();
+
+        if (planData?.description) {
+          const planMappingMatch = planData.description.match(/<!--PLAN_ASSESSMENT_DEFINITIONS:(.*?)-->/);
+          if (planMappingMatch) {
+            try {
+              const mapping = JSON.parse(planMappingMatch[1]);
+              const selectedDefId = mapping[assessmentTypeId];
+              if (selectedDefId) {
+                const { data: selectedDef } = await supabase
+                  .from("assessment_definitions_v2")
+                  .select("id")
+                  .eq("id", selectedDefId)
+                  .eq("assessment_type_id", assessmentTypeId)
+                  .maybeSingle();
+
+                if (selectedDef) {
+                  assessmentDefinitionId = selectedDef.id;
+                }
+              }
+            } catch (e) {
+              // Fall through to system assessment
+            }
+          }
+        }
+      }
+    }
+
+    // Fall back to system assessment
+    if (!assessmentDefinitionId) {
+      const { data: systemDef } = await supabase
+        .from("assessment_definitions_v2")
+        .select("id")
+        .eq("assessment_type_id", assessmentTypeId)
+        .eq("is_system", true)
+        .maybeSingle();
+
+      if (systemDef) {
+        assessmentDefinitionId = systemDef.id;
+      }
+    }
+
+    // Fetch participant information
+    const { data: participantData } = await supabase
+      .from("cohort_participants")
+      .select("client_user_id, client_users(name, surname, email)")
+      .eq("id", participantAssessment.participant_id)
+      .single();
+
+    const participantName = participantData?.client_users
+      ? `${participantData.client_users.name || ""} ${participantData.client_users.surname || ""}`.trim() || participantData.client_users.email
+      : "Participant";
+
+    // Fetch cohort name
+    let cohortName = "Cohort";
+    if (cohortAssessmentFull?.cohort_id) {
+      const { data: cohortData } = await supabase
+        .from("cohorts")
+        .select("name")
+        .eq("id", cohortAssessmentFull.cohort_id)
+        .single();
+      cohortName = cohortData?.name || "Cohort";
+    }
+
+    // Fetch completed reviewer data
+    const reviewers: PulseReportData["reviewers"] = [];
+
+    if (assessmentDefinitionId) {
+      // Query completed reviewer sessions
+      const { data: reviewerSessions, error: sessionsError } = await supabase
+        .from("assessment_response_sessions")
+        .select("id, reviewer_nomination_id, respondent_type, respondent_client_user_id, respondent_external_reviewer_id")
+        .eq("participant_assessment_id", participant_assessment_id)
+        .eq("assessment_definition_id", assessmentDefinitionId)
+        .eq("status", "completed")
+        .in("respondent_type", ["client_user", "external_reviewer"])
+        .not("reviewer_nomination_id", "is", null);
+
+      if (!sessionsError && reviewerSessions && reviewerSessions.length > 0) {
+        // Process each completed session
+        for (const session of reviewerSessions) {
+          if (!session.reviewer_nomination_id) continue;
+
+          // Get reviewer nomination
+          const { data: nomination } = await supabase
+            .from("reviewer_nominations")
+            .select("reviewer_id, external_reviewer_id")
+            .eq("id", session.reviewer_nomination_id)
+            .maybeSingle();
+
+          if (!nomination) continue;
+
+          let reviewerName = "";
+          let reviewerEmail = "";
+
+          // Get reviewer info (internal or external)
+          if (nomination.reviewer_id) {
+            // Internal reviewer
+            const { data: clientUser } = await supabase
+              .from("client_users")
+              .select("name, surname, email")
+              .eq("id", nomination.reviewer_id)
+              .single();
+
+            if (clientUser) {
+              reviewerName = `${clientUser.name || ""} ${clientUser.surname || ""}`.trim() || clientUser.email;
+              reviewerEmail = clientUser.email;
+            }
+          } else if (nomination.external_reviewer_id) {
+            // External reviewer
+            const { data: externalReviewer } = await supabase
+              .from("external_reviewers")
+              .select("email")
+              .eq("id", nomination.external_reviewer_id)
+              .single();
+
+            if (externalReviewer) {
+              reviewerName = externalReviewer.email;
+              reviewerEmail = externalReviewer.email;
+            }
+          }
+
+          if (!reviewerEmail) continue; // Skip if we can't get reviewer info
+
+          // Fetch reviewer responses
+          const { data: responses } = await supabase
+            .from("assessment_responses")
+            .select(`
+              question_id,
+              answer_text,
+              question:assessment_questions_v2(
+                id,
+                question_text,
+                text,
+                question_order,
+                step_id,
+                step:assessment_steps_v2(step_order)
+              )
+            `)
+            .eq("session_id", session.id)
+            .eq("is_answered", true)
+            .order("created_at", { ascending: true });
+
+          if (!responses || responses.length === 0) continue;
+
+          // Map responses to QA format, maintaining order
+          const qaResponses: Array<{ question: string; answer: string | null }> = [];
+
+          // Sort responses by step_order and question_order
+          const sortedResponses = [...responses].sort((a: any, b: any) => {
+            const aStepOrder = a.question?.step?.step_order ?? 0;
+            const bStepOrder = b.question?.step?.step_order ?? 0;
+            if (aStepOrder !== bStepOrder) {
+              return aStepOrder - bStepOrder;
+            }
+            const aQOrder = a.question?.question_order ?? 0;
+            const bQOrder = b.question?.question_order ?? 0;
+            return aQOrder - bQOrder;
+          });
+
+          for (const response of sortedResponses) {
+            const question = (response as any).question;
+            const questionText = question?.question_text || question?.text || `Question ${response.question_id}`;
+            qaResponses.push({
+              question: questionText,
+              answer: response.answer_text,
+            });
+          }
+
+          reviewers.push({
+            reviewerName,
+            reviewerEmail,
+            responses: qaResponses,
+          });
+        }
+      }
+    }
+
+    // Prepare report data
     const data: PulseReportData = {
-      title: "Pulse Survey Report",
-      participantName: "Participant",
-      cohortName: "Cohort",
+      title: `${assessmentType.name} Survey Report`,
+      participantName,
+      cohortName,
       generatedAt: new Date().toISOString(),
-      reviewers: [], // Empty reviewers array for blank report
+      reviewers,
     };
 
     // 3) Render PDF bytes

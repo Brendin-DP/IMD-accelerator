@@ -1220,6 +1220,20 @@ export default function ReviewQuestionnaire() {
       // Update review status to Completed
       await updateReviewStatus("Completed");
 
+      // Trigger report regeneration (non-blocking, handle errors gracefully)
+      if (participantAssessmentId) {
+        try {
+          await fetch("/api/reports/pulse/regenerate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ participant_assessment_id: participantAssessmentId }),
+          });
+          // Don't wait for response or handle errors - this is a background operation
+        } catch (error) {
+          // Silently fail - report regeneration shouldn't block review completion
+        }
+      }
+
       // Redirect back to review detail page (NOT report page)
       router.push(`/tenant/${subdomain}/reviews/${reviewId}`);
     } catch (err) {
