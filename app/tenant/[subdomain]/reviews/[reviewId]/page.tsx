@@ -56,7 +56,8 @@ export default function ReviewDetailPage() {
   const [review, setReview] = useState<ReviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [reviewSessionStatus, setReviewSessionStatus] = useState<string | null>(null);
+  const [loadingSessionStatus, setLoadingSessionStatus] = useState(false);
 
   useEffect(() => {
     const storedUser = localStorage.getItem("participant");
@@ -241,6 +242,9 @@ export default function ReviewDetailPage() {
         ...nomination,
         participant_assessment: participantAssessment as any,
       });
+
+      // Fetch review session status
+      await fetchReviewSessionStatus(participantAssessmentId, reviewId);
     } catch (err) {
       console.error("Error fetching review details:", err);
       setError(err instanceof Error ? err.message : "Failed to load review details");
@@ -250,46 +254,100 @@ export default function ReviewDetailPage() {
     }
   }
 
-  async function updateReviewStatus(newStatus: string) {
-    if (!review || !user) return;
-
+  async function fetchReviewSessionStatus(participantAssessmentId: string, nominationId: string) {
     try {
-      setUpdatingStatus(true);
+      setLoadingSessionStatus(true);
+      
+      // First, get the assessment_definition_id from the participant assessment
+      const { data: paData } = await supabase
+        .from("participant_assessments")
+        .select("cohort_assessment_id, cohort_assessments(assessment_type_id, cohort_id)")
+        .eq("id", participantAssessmentId)
+        .single();
 
-      if (review.is_external && review.external_reviewer_id) {
-        // Update external_reviewers table
-        const { error: updateError } = await supabase
-          .from("external_reviewers")
-          .update({ review_status: newStatus })
-          .eq("id", review.external_reviewer_id);
+      if (!paData) return;
 
-        if (updateError) {
-          throw updateError;
-        }
-      } else {
-        // Update reviewer_nominations table
-        const { error: updateError } = await supabase
-          .from("reviewer_nominations")
-          .update({ review_status: newStatus })
-          .eq("id", reviewId);
+      const cohortAssessment = paData.cohort_assessments as any;
+      if (!cohortAssessment?.assessment_type_id || !cohortAssessment?.cohort_id) return;
 
-        if (updateError) {
-          throw updateError;
+      const assessmentTypeId = cohortAssessment.assessment_type_id;
+      const cohortId = cohortAssessment.cohort_id;
+
+      // Get the plan to find assessment definition
+      const { data: cohort } = await supabase
+        .from("cohorts")
+        .select("plan_id")
+        .eq("id", cohortId)
+        .single();
+
+      if (!cohort?.plan_id) return;
+
+      const { data: planData } = await supabase
+        .from("plans")
+        .select("description")
+        .eq("id", cohort.plan_id)
+        .single();
+
+      let assessmentDefinitionId: string | null = null;
+
+      if (planData?.description) {
+        const planMappingMatch = planData.description.match(/<!--PLAN_ASSESSMENT_DEFINITIONS:(.*?)-->/);
+        if (planMappingMatch) {
+          try {
+            const mapping = JSON.parse(planMappingMatch[1]);
+            const selectedDefId = mapping[assessmentTypeId];
+            if (selectedDefId) {
+              const { data: selectedDef } = await supabase
+                .from("assessment_definitions_v2")
+                .select("id")
+                .eq("id", selectedDefId)
+                .eq("assessment_type_id", assessmentTypeId)
+                .maybeSingle();
+
+              if (selectedDef) {
+                assessmentDefinitionId = selectedDef.id;
+              }
+            }
+          } catch (e) {
+            // Fall through to system assessment
+          }
         }
       }
 
-      // Update local state
-      setReview({
-        ...review,
-        review_status: newStatus,
-      });
+      // Fall back to system assessment
+      if (!assessmentDefinitionId) {
+        const { data: systemDef } = await supabase
+          .from("assessment_definitions_v2")
+          .select("id")
+          .eq("assessment_type_id", assessmentTypeId)
+          .eq("is_system", true)
+          .maybeSingle();
+
+        if (systemDef) {
+          assessmentDefinitionId = systemDef.id;
+        }
+      }
+
+      if (!assessmentDefinitionId) return;
+
+      // Query for review session
+      const { data: session } = await supabase
+        .from("assessment_response_sessions")
+        .select("status")
+        .eq("participant_assessment_id", participantAssessmentId)
+        .eq("assessment_definition_id", assessmentDefinitionId)
+        .eq("respondent_type", "reviewer")
+        .eq("reviewer_nomination_id", nominationId)
+        .maybeSingle();
+
+      setReviewSessionStatus(session?.status || null);
     } catch (err) {
-      console.error("Error updating review status:", err);
-      alert(err instanceof Error ? err.message : "Failed to update review status");
+      // Silently fail - status will default to null
     } finally {
-      setUpdatingStatus(false);
+      setLoadingSessionStatus(false);
     }
   }
+
 
   function getStatusColor(status: string | null): string {
     if (!status) return "bg-gray-100 text-gray-800";
@@ -492,43 +550,26 @@ export default function ReviewDetailPage() {
           </div>
           
           {/* Action Buttons */}
-          <div className="mt-6 pt-6 border-t flex justify-between items-center gap-4">
-            <div className="flex gap-2">
-              {(!review.review_status || review.review_status.toLowerCase() === "not started" || review.review_status.toLowerCase() === "not_started") && (
+          <div className="mt-6 pt-6 border-t flex justify-end items-center gap-4">
+            {(() => {
+              const sessionStatus = reviewSessionStatus?.toLowerCase();
+              const buttonText = 
+                !sessionStatus || sessionStatus === "not_started" ? "Start Review" :
+                sessionStatus === "in_progress" ? "Continue Review" :
+                sessionStatus === "completed" ? "View Review" :
+                "Start Review";
+
+              return (
                 <Button
-                  onClick={() => updateReviewStatus("In progress")}
-                  disabled={updatingStatus}
+                  onClick={() => router.push(`/tenant/${subdomain}/reviews/${reviewId}/questionnaire`)}
+                  variant="default"
+                  className="w-full sm:w-auto"
+                  disabled={loadingSessionStatus}
                 >
-                  {updatingStatus ? "Updating..." : "Start Review"}
+                  {loadingSessionStatus ? "Loading..." : buttonText}
                 </Button>
-              )}
-              {review.review_status && review.review_status.toLowerCase() === "in progress" && (
-                <Button
-                  onClick={() => updateReviewStatus("Completed")}
-                  disabled={updatingStatus}
-                >
-                  {updatingStatus ? "Updating..." : "Complete Review"}
-                </Button>
-              )}
-              {review.review_status && review.review_status.toLowerCase() === "completed" && (
-                <>
-                  <Button
-                    variant="secondary"
-                    onClick={() => updateReviewStatus("Not started")}
-                    disabled={updatingStatus}
-                  >
-                    {updatingStatus ? "Updating..." : "Reset Review"}
-                  </Button>
-                </>
-              )}
-            </div>
-            <Button
-              onClick={() => router.push(`/tenant/${subdomain}/reviews/${reviewId}/questionnaire`)}
-              variant="secondary"
-              className="w-full sm:w-auto"
-            >
-              Simulate
-            </Button>
+              );
+            })()}
           </div>
         </CardContent>
       </Card>
