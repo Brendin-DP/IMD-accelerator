@@ -509,18 +509,180 @@ export default function TenantAssessmentDetailPage() {
         return;
       }
 
+      // DEBUG: Log assessment details for specific assessment
+      const isTargetAssessment = assessmentId === "892ebbad-7a17-4ccd-bc33-d61b9d72b9dc";
+      if (isTargetAssessment) {
+        console.log('[DEBUG TARGET ASSESSMENT] Assessment details:', {
+          assessmentId,
+          participantAssessmentId,
+          assessmentDefinitionId,
+          assessmentDefinitionSource,
+          cohortId: cohortAssessment?.cohort_id,
+          assessmentTypeId: cohortAssessment?.assessment_type_id,
+          planId: cohort?.plan_id
+        });
+      }
+      
+      // First, check ALL sessions for this participant_assessment_id to see what exists
+      const { data: allSessions, error: allSessionsError } = await supabase
+        .from("assessment_response_sessions")
+        .select("id, status, completion_percent, assessment_definition_id, respondent_type, created_at, updated_at")
+        .eq("participant_assessment_id", participantAssessmentId);
+      
+      if (isTargetAssessment) {
+        console.log('[DEBUG TARGET ASSESSMENT] ALL sessions found:', {
+          participantAssessmentId,
+          allSessionsCount: allSessions?.length || 0,
+          allSessions: allSessions?.map((s: any) => ({
+            id: s.id,
+            status: s.status,
+            completion_percent: s.completion_percent,
+            assessment_definition_id: s.assessment_definition_id,
+            respondent_type: s.respondent_type,
+            matchesExpectedDefId: s.assessment_definition_id === assessmentDefinitionId,
+            created_at: s.created_at,
+            updated_at: s.updated_at
+          })),
+          error: allSessionsError?.message
+        });
+      }
+      
       // Fetch response session
       const { data: session, error: sessionError } = await supabase
         .from("assessment_response_sessions")
-        .select("id, status, completion_percent, last_question_id, last_step_id")
+        .select("id, status, completion_percent, last_question_id, last_step_id, assessment_definition_id")
         .eq("participant_assessment_id", participantAssessmentId)
         .eq("assessment_definition_id", assessmentDefinitionId)
         .eq("respondent_type", "participant")
         .maybeSingle();
 
-      if (sessionError && sessionError.code !== "PGRST116") {
+      if (isTargetAssessment) {
+        console.log('[DEBUG TARGET ASSESSMENT] Session lookup result:', {
+          hasSession: !!session,
+          sessionId: session?.id,
+          sessionStatus: session?.status,
+          sessionCompletion: session?.completion_percent,
+          sessionDefId: session?.assessment_definition_id,
+          expectedDefId: assessmentDefinitionId,
+          matches: session?.assessment_definition_id === assessmentDefinitionId,
+          sessionError: sessionError?.message,
+          sessionErrorCode: sessionError?.code
+        });
+      }
 
+      if (sessionError && sessionError.code !== "PGRST116") {
+        if (isTargetAssessment) {
+          console.error('[DEBUG TARGET ASSESSMENT] Session lookup error:', sessionError);
+        }
         // Don't return - check for responses anyway
+      }
+      
+      // If no session found with matching assessment_definition_id, but sessions exist, try to find and update
+      if (!session && allSessions && allSessions.length > 0) {
+        const participantSession = allSessions.find((s: any) => s.respondent_type === "participant");
+        if (participantSession && participantSession.assessment_definition_id !== assessmentDefinitionId) {
+          if (isTargetAssessment) {
+            console.warn('[DEBUG TARGET ASSESSMENT] Found session with DIFFERENT assessment_definition_id - attempting to update:', {
+              sessionId: participantSession.id,
+              oldDefId: participantSession.assessment_definition_id,
+              newDefId: assessmentDefinitionId,
+              status: participantSession.status,
+              completion: participantSession.completion_percent
+            });
+          }
+          
+          // Update the session to use the correct assessment_definition_id
+          const { error: updateError } = await supabase
+            .from("assessment_response_sessions")
+            .update({ assessment_definition_id: assessmentDefinitionId })
+            .eq("id", participantSession.id);
+          
+          if (!updateError) {
+            if (isTargetAssessment) {
+              console.log('[DEBUG TARGET ASSESSMENT] Successfully updated session assessment_definition_id');
+            }
+            // Re-fetch the session with updated ID
+            const { data: updatedSession } = await supabase
+              .from("assessment_response_sessions")
+              .select("id, status, completion_percent, last_question_id, last_step_id")
+              .eq("id", participantSession.id)
+              .single();
+            
+            if (updatedSession) {
+              // Use the updated session
+              const sessionToUse = updatedSession;
+              // Continue processing with updatedSession - we'll need to replace 'session' variable
+              // For now, set it in state and continue
+              setResponseSession(sessionToUse);
+              
+              // Fetch responses and continue with the logic
+              const { data: allResponses, error: responsesError } = await supabase
+                .from("assessment_responses")
+                .select("id, question_id, answer_text, is_answered, created_at, updated_at")
+                .eq("session_id", sessionToUse.id)
+                .order("created_at", { ascending: true });
+              
+              // Check if assessment has steps
+              const { data: stepsData, error: stepsError } = await supabase
+                .from("assessment_steps_v2")
+                .select("id")
+                .eq("assessment_definition_id", assessmentDefinitionId)
+                .limit(1);
+              
+              const hasSteps = !stepsError && stepsData && stepsData.length > 0;
+              let answeredCount = 0;
+              let totalQuestions = 0;
+              
+              if (hasSteps) {
+                const { data: steps, error: stepsFetchError } = await supabase
+                  .from("assessment_steps_v2")
+                  .select("id, step_order")
+                  .eq("assessment_definition_id", assessmentDefinitionId)
+                  .order("step_order", { ascending: true });
+                
+                if (!stepsFetchError && steps) {
+                  for (const step of steps) {
+                    const { count: stepQuestionCount, error: stepQError } = await supabase
+                      .from("assessment_questions_v2")
+                      .select("*", { count: "exact", head: true })
+                      .eq("assessment_definition_id", assessmentDefinitionId)
+                      .eq("step_id", step.id);
+                    if (!stepQError) {
+                      totalQuestions += stepQuestionCount || 0;
+                    }
+                  }
+                  answeredCount = allResponses?.filter((r: any) => r.is_answered).length || 0;
+                }
+              } else {
+                const { count: answeredCountResult, error: countError } = await supabase
+                  .from("assessment_responses")
+                  .select("*", { count: "exact", head: true })
+                  .eq("session_id", sessionToUse.id)
+                  .eq("is_answered", true);
+                if (!countError) {
+                  answeredCount = answeredCountResult || 0;
+                }
+                
+                const { count: totalCount, error: totalError } = await supabase
+                  .from("assessment_questions_v2")
+                  .select("*", { count: "exact", head: true })
+                  .eq("assessment_definition_id", assessmentDefinitionId);
+                if (!totalError) {
+                  totalQuestions = totalCount || 0;
+                }
+              }
+              
+              setResponseCount(answeredCount);
+              setTotalQuestions(totalQuestions);
+              await updateStatusFromProgress(sessionToUse, participantAssessmentId);
+              return; // Exit early since we've handled the updated session
+            }
+          } else {
+            if (isTargetAssessment) {
+              console.error('[DEBUG TARGET ASSESSMENT] Failed to update session:', updateError);
+            }
+          }
+        }
       }
 
       if (session) {
