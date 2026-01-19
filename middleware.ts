@@ -40,10 +40,17 @@ export function middleware(req: NextRequest) {
     // spacex.lvh.me → spacex
     // spacex.localhost → spacex
     // localhost → null (no subdomain, goes to admin)
+    // admin.lvh.me → null (admin subdomain, not a tenant)
     if (hostname === "localhost" || hostname === "127.0.0.1") {
       tenant = null; // No subdomain - admin routes
     } else {
-      tenant = hostname.split(".")[0];
+      const subdomain = hostname.split(".")[0];
+      // Exclude "admin" as a tenant - it's an admin subdomain
+      if (subdomain === "admin") {
+        tenant = null; // Admin subdomain - treat as admin routes
+      } else {
+        tenant = subdomain;
+      }
     }
   } else {
     // Production: Extract tenant from path
@@ -64,12 +71,13 @@ export function middleware(req: NextRequest) {
     return NextResponse.redirect(redirectUrl);
   }
 
-  // 7️⃣ Skip plain localhost (no subdomain) in localhost mode - these are admin routes
+  // 7️⃣ Skip plain localhost (no subdomain) or admin subdomain in localhost mode - these are admin routes
   if (isLocalhost) {
     const isPlainLocalhost = hostname === "localhost" || hostname === "127.0.0.1";
+    const isAdminSubdomain = hostname.split(".")[0] === "admin";
     
-    if (isPlainLocalhost) {
-      console.log("⏭️ Skipping middleware - Plain localhost (admin routes):", { host, tenant });
+    if (isPlainLocalhost || isAdminSubdomain) {
+      console.log("⏭️ Skipping middleware - Admin route (localhost or admin subdomain):", { host, tenant, isPlainLocalhost, isAdminSubdomain });
       return NextResponse.next();
     }
   }
