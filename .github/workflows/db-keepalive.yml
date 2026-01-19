@@ -2,34 +2,80 @@ name: Keep DB Alive
 
 on:
   schedule:
-    # Run every 2 days at 6 AM UTC
-    - cron: "0 6 */2 * *"
+    # Run every day at 6 AM UTC (more reliable than */2)
+    # GitHub Actions scheduled workflows only run on the default branch
+    - cron: "0 6 * * *"
   # Allow manual triggering for testing
   workflow_dispatch:
+    inputs:
+      app_url:
+        description: 'Override APP_URL (optional, defaults to VERCEL_APP_URL secret)'
+        required: false
+        type: string
 
 jobs:
   ping:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - name: Ping DB Healthcheck
+      - name: Setup and Ping DB Healthcheck
         env:
           APP_URL: ${{ secrets.VERCEL_APP_URL }}
+          MANUAL_URL: ${{ inputs.app_url }}
         run: |
+          # Use manual URL if provided, otherwise use secret
+          if [ -n "$MANUAL_URL" ]; then
+            APP_URL="$MANUAL_URL"
+            echo "📝 Using manually provided APP_URL"
+          fi
+          
           if [ -z "$APP_URL" ]; then
-            echo "⚠️ Warning: VERCEL_APP_URL secret not set. Please add it in repository settings."
-            echo "For now, update the workflow file with your Vercel app URL."
+            echo "❌ Error: VERCEL_APP_URL secret not set."
+            echo ""
+            echo "To fix this:"
+            echo "1. Go to: https://github.com/Brendin-DP/IMD-accelerator/settings/secrets/actions"
+            echo "2. Click 'New repository secret'"
+            echo "3. Name: VERCEL_APP_URL"
+            echo "4. Value: Your Vercel app URL (e.g., https://your-app.vercel.app)"
+            echo ""
+            echo "Or use workflow_dispatch with the app_url input parameter."
             exit 1
           fi
           
-          echo "Pinging healthcheck endpoint: ${APP_URL}/api/health/db"
+          # Remove trailing slash if present
+          APP_URL="${APP_URL%/}"
+          HEALTH_ENDPOINT="${APP_URL}/api/health/db"
           
-          response=$(curl -s -o /dev/null -w "%{http_code}" "${APP_URL}/api/health/db")
+          echo "🔍 Configuration:"
+          echo "  APP_URL: ${APP_URL}"
+          echo "  Health endpoint: ${HEALTH_ENDPOINT}"
+          echo "  Timestamp: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+          echo ""
           
-          if [ "$response" -eq 200 ]; then
-            echo "✅ Healthcheck successful (HTTP $response)"
+          echo "📡 Pinging healthcheck endpoint..."
+          
+          # Use curl with timeout and capture both status code and response body
+          response=$(curl -s -w "\n%{http_code}" --max-time 30 "${HEALTH_ENDPOINT}" || echo -e "\n000")
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          
+          echo ""
+          echo "📊 Response:"
+          echo "  HTTP Status: ${http_code}"
+          echo "  Body: ${body}"
+          echo ""
+          
+          if [ "$http_code" = "200" ]; then
+            echo "✅ Healthcheck successful!"
+            echo "   Database connection is healthy."
             exit 0
+          elif [ "$http_code" = "000" ]; then
+            echo "❌ Healthcheck failed: Connection timeout or network error"
+            echo "   The endpoint may be unreachable or the server is down."
+            exit 1
           else
-            echo "❌ Healthcheck failed (HTTP $response)"
+            echo "❌ Healthcheck failed: HTTP ${http_code}"
+            echo "   The endpoint returned an error status."
             exit 1
           fi
 
