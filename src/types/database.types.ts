@@ -16,32 +16,44 @@ export type Database = {
     Tables: {
       assessment_definitions_v2: {
         Row: {
+          allow_external_nominees: boolean | null
+          allow_internal_nominees: boolean | null
           assessment_type_id: string
           base_assessment_id: string | null
           created_at: string
           description: string | null
           id: string
           is_system: boolean
+          max_nominees: number | null
+          min_nominees: number | null
           name: string
           updated_at: string
         }
         Insert: {
+          allow_external_nominees?: boolean | null
+          allow_internal_nominees?: boolean | null
           assessment_type_id: string
           base_assessment_id?: string | null
           created_at?: string
           description?: string | null
           id?: string
           is_system?: boolean
+          max_nominees?: number | null
+          min_nominees?: number | null
           name: string
           updated_at?: string
         }
         Update: {
+          allow_external_nominees?: boolean | null
+          allow_internal_nominees?: boolean | null
           assessment_type_id?: string
           base_assessment_id?: string | null
           created_at?: string
           description?: string | null
           id?: string
           is_system?: boolean
+          max_nominees?: number | null
+          min_nominees?: number | null
           name?: string
           updated_at?: string
         }
@@ -1012,3 +1024,5 @@ export const Constants = {
     },
   },
 } as const
+A new version of Supabase CLI is available: v2.72.7 (currently installed v2.54.11)
+We recommend updating regularly for new features and bug fixes: https://supabase.com/docs/guides/cli/getting-started#updating-the-supabase-cli

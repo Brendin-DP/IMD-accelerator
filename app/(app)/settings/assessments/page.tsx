@@ -47,6 +47,9 @@ export default function AssessmentsPage() {
     name: "",
     description: "",
     base_assessment_id: "",
+    min_nominees: "",
+    max_nominees: "",
+    nomination_types: "both", // "internal", "external", or "both"
   });
 
   useEffect(() => {
@@ -228,18 +231,81 @@ export default function AssessmentsPage() {
         return;
       }
 
-      // Create the custom assessment
+      // Prepare nominee settings - ensure types match database schema exactly
+      // Database expects: min_nominees: number | null, max_nominees: number | null
+      // Database expects: allow_internal_nominees: boolean | null, allow_external_nominees: boolean | null
+      let minNomineesValue: number | null = null;
+      let maxNomineesValue: number | null = null;
+      
+      // Parse and validate min_nominees
+      if (formData.min_nominees.trim() !== "") {
+        const parsed = parseInt(formData.min_nominees.trim(), 10);
+        if (!isNaN(parsed)) {
+          minNomineesValue = parsed;
+        } else {
+          setSubmitError("Minimum nominees must be a valid number");
+          setSubmitting(false);
+          return;
+        }
+      }
+      
+      // Parse and validate max_nominees
+      if (formData.max_nominees.trim() !== "") {
+        const parsed = parseInt(formData.max_nominees.trim(), 10);
+        if (!isNaN(parsed)) {
+          maxNomineesValue = parsed;
+        } else {
+          setSubmitError("Maximum nominees must be a valid number");
+          setSubmitting(false);
+          return;
+        }
+      }
+      
+      // Validate that min is not greater than max if both are set
+      if (minNomineesValue !== null && maxNomineesValue !== null && minNomineesValue > maxNomineesValue) {
+        setSubmitError("Minimum nominees cannot be greater than maximum nominees");
+        setSubmitting(false);
+        return;
+      }
+      
+      // Validate that values are non-negative
+      if ((minNomineesValue !== null && minNomineesValue < 0) || 
+          (maxNomineesValue !== null && maxNomineesValue < 0)) {
+        setSubmitError("Nominee limits must be non-negative numbers");
+        setSubmitting(false);
+        return;
+      }
+      
+      // Map nomination_types to boolean flags
+      const allowInternal = formData.nomination_types === "internal" || formData.nomination_types === "both";
+      const allowExternal = formData.nomination_types === "external" || formData.nomination_types === "both";
+
+      // Create the custom assessment with proper types matching database schema
+      const insertData: {
+        name: string;
+        description: string | null;
+        is_system: boolean;
+        base_assessment_id: string;
+        assessment_type_id: string;
+        min_nominees: number | null;
+        max_nominees: number | null;
+        allow_internal_nominees: boolean;
+        allow_external_nominees: boolean;
+      } = {
+        name: formData.name.trim(),
+        description: formData.description.trim() || null,
+        is_system: false,
+        base_assessment_id: formData.base_assessment_id,
+        assessment_type_id: baseAssessment.assessment_type_id,
+        min_nominees: minNomineesValue,
+        max_nominees: maxNomineesValue,
+        allow_internal_nominees: allowInternal,
+        allow_external_nominees: allowExternal,
+      };
+
       const { data: newAssessment, error: insertError } = await supabase
         .from("assessment_definitions_v2")
-        .insert([
-          {
-            name: formData.name.trim(),
-            description: formData.description.trim() || null,
-            is_system: false,
-            base_assessment_id: formData.base_assessment_id,
-            assessment_type_id: baseAssessment.assessment_type_id,
-          },
-        ])
+        .insert([insertData])
         .select()
         .single();
 
@@ -258,6 +324,9 @@ export default function AssessmentsPage() {
         name: "",
         description: "",
         base_assessment_id: "",
+        min_nominees: "",
+        max_nominees: "",
+        nomination_types: "both",
       });
       setIsDialogOpen(false);
 
@@ -494,6 +563,61 @@ export default function AssessmentsPage() {
                       {assessment.name}
                     </SelectItem>
                   ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Nominee Limits Section */}
+            <div className="space-y-3 pt-2 border-t">
+              <label className="text-sm font-medium">
+                Nominee Limits
+              </label>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label htmlFor="min_nominees" className="text-sm font-medium text-muted-foreground">
+                    Min
+                  </label>
+                  <Input
+                    id="min_nominees"
+                    type="number"
+                    min="0"
+                    value={formData.min_nominees}
+                    onChange={(e) => setFormData({ ...formData, min_nominees: e.target.value })}
+                    placeholder="0"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label htmlFor="max_nominees" className="text-sm font-medium text-muted-foreground">
+                    Max
+                  </label>
+                  <Input
+                    id="max_nominees"
+                    type="number"
+                    min="0"
+                    value={formData.max_nominees}
+                    onChange={(e) => setFormData({ ...formData, max_nominees: e.target.value })}
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Who can be nominated */}
+            <div className="space-y-2">
+              <label htmlFor="nomination_types" className="text-sm font-medium">
+                Who can be nominated
+              </label>
+              <Select
+                value={formData.nomination_types}
+                onValueChange={(value) => setFormData({ ...formData, nomination_types: value })}
+              >
+                <SelectTrigger id="nomination_types">
+                  <SelectValue placeholder="Select nomination type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="internal">Internal</SelectItem>
+                  <SelectItem value="external">External</SelectItem>
+                  <SelectItem value="both">Both</SelectItem>
                 </SelectContent>
               </Select>
             </div>

@@ -108,6 +108,17 @@ export default function TenantAssessmentDetailPage() {
   const [startingAssessment, setStartingAssessment] = useState(false);
   const [completingAssessment, setCompletingAssessment] = useState(false);
   const [isCustomPulse, setIsCustomPulse] = useState<boolean>(false);
+  const [nomineeLimits, setNomineeLimits] = useState<{
+    min_nominees: number | null;
+    max_nominees: number | null;
+    allow_internal_nominees: boolean | null;
+    allow_external_nominees: boolean | null;
+  }>({
+    min_nominees: null,
+    max_nominees: null,
+    allow_internal_nominees: null,
+    allow_external_nominees: null,
+  });
   const [downloadingReport, setDownloadingReport] = useState(false);
   const [reportAvailable, setReportAvailable] = useState(false);
 
@@ -236,18 +247,12 @@ export default function TenantAssessmentDetailPage() {
     }
   }
 
-  // Function to detect if this is a custom assessment that inherits from pulse
+  // Function to fetch assessment definition nominee settings
   async function checkIfCustomPulse(cohortAssessment: any) {
     try {
       const assessmentTypeId = cohortAssessment.assessment_type_id;
       const assessmentTypeName = cohortAssessment.assessment_type?.name?.toLowerCase() || "";
       
-      // Only check if assessment type is pulse
-      if (assessmentTypeName !== "pulse") {
-        setIsCustomPulse(false);
-        return;
-      }
-
       // Get cohort to find plan
       const { data: cohort } = await supabase
         .from("cohorts")
@@ -257,6 +262,13 @@ export default function TenantAssessmentDetailPage() {
 
       if (!cohort?.plan_id) {
         setIsCustomPulse(false);
+        // Set default limits if no plan
+        setNomineeLimits({
+          min_nominees: null,
+          max_nominees: 10, // Default max
+          allow_internal_nominees: true,
+          allow_external_nominees: true,
+        });
         return;
       }
 
@@ -269,6 +281,12 @@ export default function TenantAssessmentDetailPage() {
 
       if (!planData?.description) {
         setIsCustomPulse(false);
+        setNomineeLimits({
+          min_nominees: null,
+          max_nominees: 10,
+          allow_internal_nominees: true,
+          allow_external_nominees: true,
+        });
         return;
       }
 
@@ -276,6 +294,12 @@ export default function TenantAssessmentDetailPage() {
       const planMappingMatch = planData.description.match(/<!--PLAN_ASSESSMENT_DEFINITIONS:(.*?)-->/);
       if (!planMappingMatch) {
         setIsCustomPulse(false);
+        setNomineeLimits({
+          min_nominees: null,
+          max_nominees: 10,
+          allow_internal_nominees: true,
+          allow_external_nominees: true,
+        });
         return;
       }
 
@@ -285,30 +309,59 @@ export default function TenantAssessmentDetailPage() {
         
         if (!selectedDefId) {
           setIsCustomPulse(false);
+          setNomineeLimits({
+            min_nominees: null,
+            max_nominees: 10,
+            allow_internal_nominees: true,
+            allow_external_nominees: true,
+          });
           return;
         }
 
-        // Check if the assessment definition is custom (is_system = false)
+        // Fetch assessment definition with nominee settings
         const { data: assessmentDef } = await supabase
           .from("assessment_definitions_v2")
-          .select("id, is_system, assessment_type_id")
+          .select("id, is_system, assessment_type_id, min_nominees, max_nominees, allow_internal_nominees, allow_external_nominees")
           .eq("id", selectedDefId)
           .eq("assessment_type_id", assessmentTypeId)
           .maybeSingle();
 
-        if (assessmentDef && !assessmentDef.is_system) {
-          setIsCustomPulse(true);
-
+        if (assessmentDef) {
+          setIsCustomPulse(!assessmentDef.is_system);
+          
+          // Set nominee limits from assessment definition, with defaults
+          setNomineeLimits({
+            min_nominees: assessmentDef.min_nominees ?? null,
+            max_nominees: assessmentDef.max_nominees ?? 10, // Default to 10 if null
+            allow_internal_nominees: assessmentDef.allow_internal_nominees ?? true,
+            allow_external_nominees: assessmentDef.allow_external_nominees ?? true,
+          });
         } else {
           setIsCustomPulse(false);
+          setNomineeLimits({
+            min_nominees: null,
+            max_nominees: 10,
+            allow_internal_nominees: true,
+            allow_external_nominees: true,
+          });
         }
       } catch (e) {
-
         setIsCustomPulse(false);
+        setNomineeLimits({
+          min_nominees: null,
+          max_nominees: 10,
+          allow_internal_nominees: true,
+          allow_external_nominees: true,
+        });
       }
     } catch (error) {
-
       setIsCustomPulse(false);
+      setNomineeLimits({
+        min_nominees: null,
+        max_nominees: 10,
+        allow_internal_nominees: true,
+        allow_external_nominees: true,
+      });
     }
   }
 
@@ -1430,27 +1483,29 @@ export default function TenantAssessmentDetailPage() {
     setEmailValid(null);
     setEmailValidationMessage("");
     
-    // For custom pulse, ensure we start with empty external reviewers
-    if (isCustomPulse) {
+    // Filter out external reviewers if not allowed
+    if (!nomineeLimits.allow_external_nominees) {
       setSelectedReviewers((prev) => prev.filter((item) => !item.includes("@")));
     }
   }
+
+  // Helper function to get active nominations count
+  const getActiveNominationsCount = () => {
+    return nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length;
+  };
 
   function handleToggleReviewer(reviewerId: string) {
     setSelectedReviewers((prev) => {
       if (prev.includes(reviewerId)) {
         return prev.filter((id) => id !== reviewerId);
       } else {
-        // Limit to 3 for custom pulse, 10 for default (existing active + new selections)
-        // Only count active nominations (pending or accepted), not rejected ones
-        const activeNominationsCount = nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length;
-        const maxNominations = isCustomPulse ? 3 : 10;
+        // Limit based on assessment definition settings (existing active + new selections)
+        const activeNominationsCount = getActiveNominationsCount();
+        const maxNominations = nomineeLimits.max_nominees ?? 10;
         const maxNewSelections = maxNominations - activeNominationsCount;
-        if (prev.length >= maxNewSelections) {
+        if (maxNominations !== null && prev.length >= maxNewSelections) {
           showToast(
-            isCustomPulse
-              ? `Custom pulse surveys are limited to 3 nominations. You can only select up to ${maxNewSelections} more reviewer(s). You already have ${activeNominationsCount} active nomination(s).`
-              : `You can only select up to ${maxNewSelections} more reviewer(s). You already have ${activeNominationsCount} active nomination(s).`,
+            `You can only select up to ${maxNewSelections} more reviewer(s). You already have ${activeNominationsCount} active nomination(s). Maximum ${maxNominations} nomination${maxNominations !== 1 ? 's' : ''} allowed.`,
             "info"
           );
           return prev;
@@ -1493,14 +1548,14 @@ export default function TenantAssessmentDetailPage() {
       };
     }
 
-      // Check if we've reached the limit (3 for custom pulse, 10 for default)
-      const activeNominationsCount = nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length;
-      const maxNominations = isCustomPulse ? 3 : 10;
+      // Check if we've reached the limit based on assessment definition
+      const activeNominationsCount = getActiveNominationsCount();
+      const maxNominations = nomineeLimits.max_nominees ?? 10;
       const maxNewSelections = maxNominations - activeNominationsCount;
-      if (selectedReviewers.length >= maxNewSelections) {
+      if (maxNominations !== null && selectedReviewers.length >= maxNewSelections) {
         return { 
           valid: false, 
-          message: `You can only select up to ${maxNewSelections} more reviewer(s)` 
+          message: `You can only select up to ${maxNewSelections} more reviewer(s). Maximum ${maxNominations} nomination${maxNominations !== 1 ? 's' : ''} allowed.` 
         };
       }
 
@@ -1620,30 +1675,42 @@ export default function TenantAssessmentDetailPage() {
         return;
       }
 
-      // Check nomination limit for custom pulse (3) vs default (10)
-      const maxNominations = isCustomPulse ? 3 : 10;
-      const activeNominationsCount = existingNominations?.filter(
-        (n: any) => n.request_status === "pending" || n.request_status === "accepted"
-      ).length || 0;
+      // Get nomination limits from assessment definition
+      const maxNominations = nomineeLimits.max_nominees ?? 10; // Default to 10 if not set
+      const allowInternal = nomineeLimits.allow_internal_nominees ?? true;
+      const allowExternal = nomineeLimits.allow_external_nominees ?? true;
+      
+      // existingNominations query already filters for pending/accepted, so just use length
+      const activeNominationsCount = existingNominations?.length || 0;
 
-      // Separate internal and external reviewers
-      const internalReviewers = selectedReviewers.filter((item) => !item.includes("@"));
-      const externalReviewers = isCustomPulse ? [] : selectedReviewers.filter((item) => item.includes("@"));
+      // Separate internal and external reviewers based on assessment settings
+      const internalReviewers = allowInternal 
+        ? selectedReviewers.filter((item) => !item.includes("@"))
+        : [];
+      const externalReviewers = allowExternal 
+        ? selectedReviewers.filter((item) => item.includes("@"))
+        : [];
 
-      // For custom pulse, reject external reviewers
-      if (isCustomPulse && externalReviewers.length > 0) {
-        showToast("External nominations are not allowed for custom pulse surveys.", "error");
+      // Validate external reviewers are allowed
+      if (!allowExternal && externalReviewers.length > 0) {
+        showToast("External nominations are not allowed for this assessment.", "error");
+        setSubmittingNominations(false);
+        return;
+      }
+
+      // Validate internal reviewers are allowed
+      if (!allowInternal && internalReviewers.length > 0) {
+        showToast("Internal nominations are not allowed for this assessment.", "error");
         setSubmittingNominations(false);
         return;
       }
 
       // Check if adding new nominations would exceed the limit
       const totalNewNominations = internalReviewers.length + externalReviewers.length;
-      if (activeNominationsCount + totalNewNominations > maxNominations) {
+      if (maxNominations !== null && activeNominationsCount + totalNewNominations > maxNominations) {
+        const remaining = maxNominations - activeNominationsCount;
         showToast(
-          isCustomPulse 
-            ? "Custom pulse surveys are limited to 3 nominations." 
-            : "Maximum 10 nominations allowed.",
+          `Maximum ${maxNominations} nomination${maxNominations !== 1 ? 's' : ''} allowed. You can only add ${remaining} more.`,
           "error"
         );
         setSubmittingNominations(false);
@@ -2413,13 +2480,11 @@ export default function TenantAssessmentDetailPage() {
                     onClick={handleOpenNominationModal}
                     disabled={
                       (!participantAssessment?.id && !assessment) || 
-                      nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length >= (isCustomPulse ? 3 : 10)
+                      (nomineeLimits.max_nominees !== null && getActiveNominationsCount() >= (nomineeLimits.max_nominees ?? 10))
                     }
                     title={
-                      isCustomPulse && nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length >= 3
-                        ? "Maximum 3 nominations allowed for custom pulse surveys"
-                        : nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length >= 10
-                        ? "Maximum 10 nominations allowed"
+                      nomineeLimits.max_nominees !== null && getActiveNominationsCount() >= (nomineeLimits.max_nominees ?? 10)
+                        ? `Maximum ${nomineeLimits.max_nominees} nomination${nomineeLimits.max_nominees !== 1 ? 's' : ''} allowed`
                         : undefined
                     }
                   >
@@ -2427,17 +2492,15 @@ export default function TenantAssessmentDetailPage() {
                   </Button>
                 </div>
               </div>
-            {nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length >= (isCustomPulse ? 3 : 10) && (
+            {nomineeLimits.max_nominees !== null && getActiveNominationsCount() >= (nomineeLimits.max_nominees ?? 10) && (
               <p className="text-sm text-muted-foreground mt-2">
-                {isCustomPulse 
-                  ? "You have reached the maximum of 3 active nominations for custom pulse surveys."
-                  : "You have reached the maximum of 10 active nominations (internal + external)."}
+                You have reached the maximum of {nomineeLimits.max_nominees} active nomination{nomineeLimits.max_nominees !== 1 ? 's' : ''} for this assessment.
               </p>
             )}
           </CardHeader>
           <CardContent>
-            {/* Tabs - Only show if not custom pulse (custom pulse only has internal) */}
-            {!isCustomPulse && (
+            {/* Tabs - Only show if external nominations are allowed */}
+            {(nomineeLimits.allow_external_nominees ?? true) && (
               <div className="flex space-x-1 border-b mb-4">
                 <button
                   onClick={() => setActiveTab("internal")}
@@ -2461,8 +2524,8 @@ export default function TenantAssessmentDetailPage() {
                 </button>
               </div>
             )}
-            {/* For custom pulse, always show internal. For others, use tab selection */}
-            {(isCustomPulse || activeTab === "internal") ? (
+            {/* Show internal tab if internal nominations are allowed, otherwise use tab selection */}
+            {((nomineeLimits.allow_internal_nominees ?? true) && (!nomineeLimits.allow_external_nominees || activeTab === "internal")) ? (
               (() => {
                 let internalNominations = nominations.filter((n) => !n.is_external);
                 
@@ -2679,18 +2742,27 @@ export default function TenantAssessmentDetailPage() {
           <DialogHeader>
             <DialogTitle>Request Nomination</DialogTitle>
             <DialogDescription>
-              {isCustomPulse ? (
-                <>Select up to {3 - nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length} reviewers from your client roster. Custom pulse surveys are limited to 3 nominations. You have {nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length} active nomination(s).</>
-              ) : (
-                <>Select up to {10 - nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length} reviewers from your client roster or add external reviewers by email. You have {nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length} active nomination(s).</>
-              )}
+              {(() => {
+                const maxNominations = nomineeLimits.max_nominees ?? 10;
+                const activeCount = getActiveNominationsCount();
+                const remaining = maxNominations - activeCount;
+                const allowExternal = nomineeLimits.allow_external_nominees ?? true;
+                
+                return (
+                  <>
+                    Select up to {remaining} reviewer{remaining !== 1 ? 's' : ''} from your client roster{allowExternal ? ' or add external reviewers by email' : ''}. 
+                    Maximum {maxNominations} nomination{maxNominations !== 1 ? 's' : ''} allowed. 
+                    You have {activeCount} active nomination{activeCount !== 1 ? 's' : ''}.
+                  </>
+                );
+              })()}
             </DialogDescription>
           </DialogHeader>
           <DialogClose onClick={() => setIsNominationModalOpen(false)} />
 
           <div className="space-y-4">
-            {/* Add External Reviewer Section - Hidden for custom pulse */}
-            {!isCustomPulse && (
+            {/* Add External Reviewer Section - Hidden if external nominations not allowed */}
+            {(nomineeLimits.allow_external_nominees ?? true) && (
               <>
                 <div className="space-y-2">
                   <div className="flex gap-2 items-end">
@@ -2791,11 +2863,11 @@ export default function TenantAssessmentDetailPage() {
                       {clientRoster.map((user) => {
                         const isSelected = selectedReviewers.includes(user.id);
                         // Only disable if they have an active nomination (pending or accepted), not rejected
-                        const activeNominationsCount = nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length;
                         const isAlreadyNominated = nominations.some(
                           (n) => n.reviewer_id === user.id && (n.request_status === "pending" || n.request_status === "accepted")
                         );
-                        const maxNominations = isCustomPulse ? 3 : 10;
+                        const maxNominations = nomineeLimits.max_nominees ?? 10;
+                        const activeNominationsCount = getActiveNominationsCount();
                         
                         return (
                           <tr
@@ -2810,7 +2882,7 @@ export default function TenantAssessmentDetailPage() {
                                 checked={isSelected}
                                 disabled={
                                   isAlreadyNominated ||
-                                  (!isSelected && selectedReviewers.length >= (maxNominations - activeNominationsCount))
+                                  (maxNominations !== null && !isSelected && selectedReviewers.length >= (maxNominations - activeNominationsCount))
                                 }
                                 onChange={() => handleToggleReviewer(user.id)}
                                 className="h-4 w-4 rounded border-gray-300"
@@ -2832,12 +2904,24 @@ export default function TenantAssessmentDetailPage() {
 
                 <div className="flex items-center justify-between pt-4 border-t">
                   <p className="text-sm text-muted-foreground">
-                    {selectedReviewers.length} of {(isCustomPulse ? 3 : 10) - nominations.filter(n => n.request_status === "pending" || n.request_status === "accepted").length} selected
-                    {!isCustomPulse && selectedReviewers.filter(email => email.includes("@")).length > 0 && (
-                      <span className="ml-2">
-                        ({selectedReviewers.filter(email => email.includes("@")).length} external)
-                      </span>
-                    )}
+                    {(() => {
+                      const maxNominations = nomineeLimits.max_nominees ?? 10;
+                      const activeCount = getActiveNominationsCount();
+                      const remaining = maxNominations - activeCount;
+                      const externalCount = selectedReviewers.filter(email => email.includes("@")).length;
+                      const allowExternal = nomineeLimits.allow_external_nominees ?? true;
+                      
+                      return (
+                        <>
+                          {selectedReviewers.length} of {remaining} selected
+                          {allowExternal && externalCount > 0 && (
+                            <span className="ml-2">
+                              ({externalCount} external)
+                            </span>
+                          )}
+                        </>
+                      );
+                    })()}
                   </p>
                   <div className="flex gap-2">
                     <Button

@@ -211,7 +211,7 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
     }
   }
 
-  // If login page, don't render sidebar
+  // If login page, don't render sidebar - just show children without layout
   if (isLoginPage) {
     return <>{children}</>;
   }
@@ -225,6 +225,11 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
         </div>
       </div>
     );
+  }
+
+  // If no user after validation, don't render sidebar (should redirect to login, but as fallback)
+  if (!user) {
+    return <>{children}</>;
   }
 
   const handleLogout = () => {
