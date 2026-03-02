@@ -16,10 +16,26 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { QuestionTypeIcon } from "@/components/ui/question-type-icon";
 import { supabase } from "@/lib/supabaseClient";
-
-// Note: Install @dnd-kit packages: npm install @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities
-// For now, drag & drop is commented out until packages are installed
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 interface AssessmentDefinition {
   id: string;
@@ -81,6 +97,14 @@ export default function AssessmentDetailPage() {
   const [isQuestionDialogOpen, setIsQuestionDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
+
+  // Drag and drop sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   useEffect(() => {
     if (assessmentId) {
@@ -391,6 +415,38 @@ export default function AssessmentDetailPage() {
       console.error("Error deleting question:", err);
       alert(err instanceof Error ? err.message : "Failed to delete question");
     }
+  }
+
+  function handleReorderQuestions(activeId: string, overId: string, stepId: string | null) {
+    // Filter questions for this step (or null for questions without steps)
+    const stepQuestions = questions
+      .filter((q) => {
+        if (stepId === null) {
+          return q.step_id === null;
+        }
+        return q.step_id === stepId;
+      })
+      .sort((a, b) => a.question_order - b.question_order);
+
+    const oldIndex = stepQuestions.findIndex((q) => q.id === activeId);
+    const newIndex = stepQuestions.findIndex((q) => q.id === overId);
+
+    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
+
+    const reorderedQuestions = arrayMove(stepQuestions, oldIndex, newIndex);
+
+    // Update local state only (no database persistence)
+    const updatedQuestions = questions.map((q) => {
+      const matchesStep = stepId === null ? q.step_id === null : q.step_id === stepId;
+      if (matchesStep) {
+        const reorderedIndex = reorderedQuestions.findIndex((rq) => rq.id === q.id);
+        if (reorderedIndex !== -1) {
+          return { ...q, question_order: reorderedIndex + 1 };
+        }
+      }
+      return q;
+    });
+    setQuestions(updatedQuestions);
   }
 
   async function handleReorderQuestion(questionId: string, newOrder: number, stepId: string | null) {
@@ -757,103 +813,36 @@ export default function AssessmentDetailPage() {
                   {group.questions.length === 0 ? (
                     <p className="text-sm text-muted-foreground">No questions in this step.</p>
                   ) : (
-                    <div className="space-y-4">
-                      {group.questions.map((question, qIndex) => (
-                        <div
-                          key={question.id}
-                          className="border-l-4 border-primary/20 pl-4 py-2 bg-muted/30 rounded-r flex items-start gap-3"
-                        >
-                          {isEditMode && (
-                            <div className="flex flex-col gap-1 pt-1">
-                              <GripVertical className="h-5 w-5 text-muted-foreground cursor-move" />
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleEditQuestion(question)}
-                                className="h-6 w-6 p-0"
-                              >
-                                <Edit className="h-3 w-3" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleDeleteQuestion(question.id)}
-                                className="h-6 w-6 p-0"
-                              >
-                                <Trash2 className="h-3 w-3 text-destructive" />
-                              </Button>
-                            </div>
-                          )}
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="text-xs font-medium text-muted-foreground">
-                                Q{question.question_order}
-                              </span>
-                              {question.required && (
-                                <span className="text-xs font-medium text-destructive">Required</span>
-                              )}
-                              <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded">
-                                {question.question_type || "text"}
-                              </span>
-                            </div>
-                            {isEditMode ? (
-                              <Input
-                                value={question.question_text}
-                                onChange={(e) => {
-                                  const updatedQuestions = questions.map((q) =>
-                                    q.id === question.id ? { ...q, question_text: e.target.value } : q
-                                  );
-                                  setQuestions(updatedQuestions);
-                                }}
-                                className="mt-1"
-                              />
-                            ) : (
-                              <p className="text-sm font-medium">{question.question_text}</p>
-                            )}
-                            {isEditMode && (
-                              <div className="flex items-center gap-2 mt-2">
-                                <label className="flex items-center gap-2 text-sm">
-                                  <input
-                                    type="checkbox"
-                                    checked={question.required}
-                                    onChange={(e) => {
-                                      const updatedQuestions = questions.map((q) =>
-                                        q.id === question.id ? { ...q, required: e.target.checked } : q
-                                      );
-                                      setQuestions(updatedQuestions);
-                                    }}
-                                  />
-                                  Required
-                                </label>
-                                {steps.length > 0 && (
-                                  <Select
-                                    value={question.step_id || "__none__"}
-                                    onValueChange={(value) => {
-                                      const updatedQuestions = questions.map((q) =>
-                                        q.id === question.id ? { ...q, step_id: value === "__none__" ? null : value } : q
-                                      );
-                                      setQuestions(updatedQuestions);
-                                    }}
-                                  >
-                                    <SelectTrigger className="w-48">
-                                      <SelectValue placeholder="Select step" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="__none__">General Questions</SelectItem>
-                                      {steps.map((step) => (
-                                        <SelectItem key={step.id} value={step.id}>
-                                          Step {step.step_order}: {step.title || "Untitled"}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                )}
-                              </div>
-                            )}
-                          </div>
+                    <DndContext
+                      sensors={sensors}
+                      collisionDetection={closestCenter}
+                      onDragEnd={(event: DragEndEvent) => {
+                        const { active, over } = event;
+                        if (over && active.id !== over.id) {
+                          handleReorderQuestions(active.id as string, over.id as string, group.step?.id || null);
+                        }
+                      }}
+                    >
+                      <SortableContext
+                        items={group.questions.map((q) => q.id)}
+                        strategy={verticalListSortingStrategy}
+                      >
+                        <div className="space-y-6">
+                          {group.questions.map((question) => (
+                            <SortableQuestionItem
+                              key={question.id}
+                              question={question}
+                              isEditMode={isEditMode}
+                              steps={steps}
+                              questions={questions}
+                              setQuestions={setQuestions}
+                              onDelete={handleDeleteQuestion}
+                              onEdit={handleEditQuestion}
+                            />
+                          ))}
                         </div>
-                      ))}
-                    </div>
+                      </SortableContext>
+                    </DndContext>
                   )}
                 </CardContent>
               </Card>
@@ -878,73 +867,40 @@ export default function AssessmentDetailPage() {
                 </Button>
               </div>
             ) : (
-              <div className="space-y-4">
-                {questions.map((question) => (
-                  <div
-                    key={question.id}
-                    className="border-l-4 border-primary/20 pl-4 py-2 bg-muted/30 rounded-r flex items-start gap-3"
-                  >
-                    <div className="flex flex-col gap-1 pt-1">
-                      <GripVertical className="h-5 w-5 text-muted-foreground cursor-move" />
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleEditQuestion(question)}
-                        className="h-6 w-6 p-0"
-                      >
-                        <Edit className="h-3 w-3" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDeleteQuestion(question.id)}
-                        className="h-6 w-6 p-0"
-                      >
-                        <Trash2 className="h-3 w-3 text-destructive" />
-                      </Button>
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xs font-medium text-muted-foreground">
-                          Q{question.question_order}
-                        </span>
-                        {question.required && (
-                          <span className="text-xs font-medium text-destructive">Required</span>
-                        )}
-                      </div>
-                      <Input
-                        value={question.question_text}
-                        onChange={(e) => {
-                          const updatedQuestions = questions.map((q) =>
-                            q.id === question.id ? { ...q, question_text: e.target.value } : q
-                          );
-                          setQuestions(updatedQuestions);
-                        }}
-                        className="mt-1"
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={(event: DragEndEvent) => {
+                  const { active, over } = event;
+                  if (over && active.id !== over.id) {
+                    handleReorderQuestions(active.id as string, over.id as string, null);
+                  }
+                }}
+              >
+                <SortableContext
+                  items={questions.map((q) => q.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <div className="space-y-6">
+                    {questions.map((question) => (
+                      <SortableQuestionItem
+                        key={question.id}
+                        question={question}
+                        isEditMode={isEditMode}
+                        steps={steps}
+                        questions={questions}
+                        setQuestions={setQuestions}
+                        onDelete={handleDeleteQuestion}
+                        onEdit={handleEditQuestion}
                       />
-                      <div className="flex items-center gap-2 mt-2">
-                        <label className="flex items-center gap-2 text-sm">
-                          <input
-                            type="checkbox"
-                            checked={question.required}
-                            onChange={(e) => {
-                              const updatedQuestions = questions.map((q) =>
-                                q.id === question.id ? { ...q, required: e.target.checked } : q
-                              );
-                              setQuestions(updatedQuestions);
-                            }}
-                          />
-                          Required
-                        </label>
-                      </div>
-                    </div>
+                    ))}
+                    <Button onClick={() => handleAddQuestion(null)} className="w-full">
+                      <Plus className="mr-2 h-4 w-4" />
+                      Add Question
+                    </Button>
                   </div>
-                ))}
-                <Button onClick={() => handleAddQuestion(null)} className="w-full">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Question
-                </Button>
-              </div>
+                </SortableContext>
+              </DndContext>
             )}
           </CardContent>
         </Card>
@@ -994,6 +950,124 @@ export default function AssessmentDetailPage() {
           />
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// Sortable Question Item Component
+function SortableQuestionItem({
+  question,
+  isEditMode,
+  steps,
+  questions,
+  setQuestions,
+  onDelete,
+  onEdit,
+}: {
+  question: AssessmentQuestion;
+  isEditMode: boolean;
+  steps: AssessmentStep[];
+  questions: AssessmentQuestion[];
+  setQuestions: (questions: AssessmentQuestion[]) => void;
+  onDelete: (id: string) => void;
+  onEdit: (question: AssessmentQuestion) => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: question.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="border rounded-lg shadow-sm bg-card p-4 flex items-center gap-4 hover:shadow-md transition-shadow"
+    >
+      {isEditMode && (
+        <>
+          <div
+            {...attributes}
+            {...listeners}
+            className="cursor-move flex-shrink-0"
+          >
+            <GripVertical className="h-5 w-5 text-muted-foreground" />
+          </div>
+          <QuestionTypeIcon type={question.question_type} className="flex-shrink-0" />
+          <Input
+            value={question.question_text}
+            onChange={(e) => {
+              const updatedQuestions = questions.map((q) =>
+                q.id === question.id ? { ...q, question_text: e.target.value } : q
+              );
+              setQuestions(updatedQuestions);
+            }}
+            className="flex-1"
+            placeholder="Enter question text"
+          />
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <label className="text-sm text-muted-foreground whitespace-nowrap">Required</label>
+            <Switch
+              checked={question.required}
+              onCheckedChange={(checked) => {
+                const updatedQuestions = questions.map((q) =>
+                  q.id === question.id ? { ...q, required: checked } : q
+                );
+                setQuestions(updatedQuestions);
+              }}
+            />
+          </div>
+          {steps.length > 0 && (
+            <Select
+              value={question.step_id || "__none__"}
+              onValueChange={(value) => {
+                const updatedQuestions = questions.map((q) =>
+                  q.id === question.id ? { ...q, step_id: value === "__none__" ? null : value } : q
+                );
+                setQuestions(updatedQuestions);
+              }}
+            >
+              <SelectTrigger className="w-48 flex-shrink-0">
+                <SelectValue placeholder="Select step" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">General Questions</SelectItem>
+                {steps.map((step) => (
+                  <SelectItem key={step.id} value={step.id}>
+                    Step {step.step_order}: {step.title || "Untitled"}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onDelete(question.id)}
+            className="h-8 w-8 p-0 flex-shrink-0"
+          >
+            <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive transition-colors" />
+          </Button>
+        </>
+      )}
+      {!isEditMode && (
+        <>
+          <QuestionTypeIcon type={question.question_type} className="flex-shrink-0" />
+          <p className="text-sm font-medium flex-1">{question.question_text}</p>
+          {question.required && (
+            <span className="text-xs font-medium text-destructive flex-shrink-0">Required</span>
+          )}
+        </>
+      )}
     </div>
   );
 }
