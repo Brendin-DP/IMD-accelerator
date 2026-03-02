@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Plus, ArrowLeft, ChevronDown, UserPlus, Upload, Download, FileUp, MoreVertical, Edit, Trash2, Palette, Image } from "lucide-react";
+import { Plus, ArrowLeft, ChevronDown, UserPlus, Upload, Download, FileUp, MoreVertical, Edit, Trash2, Palette, Image, UserCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -383,6 +383,53 @@ export default function ClientDetailPage() {
       setSubmitError(err instanceof Error ? err.message : "An unexpected error occurred");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleImpersonateUser(user: ClientUser) {
+    try {
+      // Check if admin is logged in
+      const adminUserStr = localStorage.getItem("imd_admin");
+      if (!adminUserStr) {
+        alert("Admin session not found. Please log in as admin first.");
+        return;
+      }
+
+      // Get client subdomain
+      if (!client?.subdomain) {
+        alert("Client subdomain not found. Cannot impersonate user.");
+        return;
+      }
+
+      // Fetch full user details from database
+      const { data: fullUser, error: userError } = await supabase
+        .from("client_users")
+        .select("*")
+        .eq("id", user.id)
+        .eq("client_id", clientId)
+        .single();
+
+      if (userError || !fullUser) {
+        alert(`Failed to fetch user details: ${userError?.message || "User not found"}`);
+        return;
+      }
+
+      // Store admin session for later restoration
+      localStorage.setItem("impersonation_admin", adminUserStr);
+      
+      // Store impersonated user as participant
+      const { password_hash, ...userWithoutPassword } = fullUser;
+      localStorage.setItem("participant", JSON.stringify(userWithoutPassword));
+      
+      // Set impersonation flag
+      localStorage.setItem("is_impersonating", "true");
+
+      // Redirect to tenant subdomain dashboard
+      const tenantUrl = `/tenant/${client.subdomain}/dashboard`;
+      window.location.href = tenantUrl;
+    } catch (err) {
+      console.error("Error impersonating user:", err);
+      alert(`Failed to impersonate user: ${err instanceof Error ? err.message : "Unknown error"}`);
     }
   }
 
@@ -837,6 +884,12 @@ export default function ClientDetailPage() {
                             >
                               <Edit className="mr-2 h-4 w-4" />
                               Edit User
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleImpersonateUser(user)}
+                            >
+                              <UserCheck className="mr-2 h-4 w-4" />
+                              Impersonate User
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() => {

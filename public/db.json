@@ -203,9 +203,9 @@
   ],
   "themes": {
     "undefined": {
-      "primaryColor": "#351c5e",
+      "primaryColor": "#3b9165",
       "secondaryColor": "#64748b",
-      "appTitle": "SpaceXL"
+      "appTitle": "Lego"
     }
   }
 }

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Users, User, LogOut, ChevronDown, Bell, HelpCircle } from "lucide-react";
+import { LayoutDashboard, Users, User, LogOut, ChevronDown, Bell, HelpCircle, X, Shield } from "lucide-react";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabaseClient";
@@ -19,6 +19,8 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
   const [clientName, setClientName] = useState<string>("");
   const [notificationCount, setNotificationCount] = useState<number>(0);
   const [validating, setValidating] = useState<boolean>(true);
+  const [isImpersonating, setIsImpersonating] = useState<boolean>(false);
+  const [adminUser, setAdminUser] = useState<any>(null);
   const { theme } = useTheme(subdomain);
 
   // Don't show layout on login page
@@ -74,6 +76,20 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
           localStorage.removeItem("participant");
           router.push(`/tenant/${subdomain}/login`);
           return;
+        }
+
+        // Check if impersonating
+        const impersonatingFlag = localStorage.getItem("is_impersonating");
+        const adminUserStr = localStorage.getItem("impersonation_admin");
+        
+        if (impersonatingFlag === "true" && adminUserStr) {
+          try {
+            const adminData = JSON.parse(adminUserStr);
+            setIsImpersonating(true);
+            setAdminUser(adminData);
+          } catch (err) {
+            console.error("Error parsing admin user data:", err);
+          }
         }
 
         // Validation passed - set user and fetch notifications
@@ -236,7 +252,27 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
 
   const handleLogout = () => {
     localStorage.removeItem("participant");
+    // Clear impersonation if active
+    if (isImpersonating) {
+      localStorage.removeItem("is_impersonating");
+      localStorage.removeItem("impersonation_admin");
+    }
     router.push(`/tenant/${subdomain}/login`);
+  };
+
+  const handleStopImpersonating = () => {
+    // Restore admin session
+    if (adminUser) {
+      localStorage.setItem("imd_admin", JSON.stringify(adminUser));
+    }
+    
+    // Clear impersonation data
+    localStorage.removeItem("participant");
+    localStorage.removeItem("is_impersonating");
+    localStorage.removeItem("impersonation_admin");
+    
+    // Redirect to admin dashboard
+    window.location.href = "/dashboard";
   };
 
   const navigation = [
@@ -251,6 +287,29 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Impersonation Banner */}
+      {isImpersonating && adminUser && (
+        <div className="fixed top-0 left-0 right-0 z-50 bg-yellow-500 text-yellow-900 border-b border-yellow-600">
+          <div className="flex items-center justify-between px-4 py-2 max-w-full">
+            <div className="flex items-center gap-2">
+              <Shield className="h-4 w-4" />
+              <span className="text-sm font-medium">
+                Impersonating: {user?.name || user?.email || "User"} | Admin: {adminUser.name || adminUser.email || "Admin"}
+              </span>
+            </div>
+            <Button
+              onClick={handleStopImpersonating}
+              variant="ghost"
+              size="sm"
+              className="h-7 text-yellow-900 hover:bg-yellow-600 hover:text-yellow-950"
+            >
+              <X className="h-4 w-4 mr-1" />
+              Stop Impersonating
+            </Button>
+          </div>
+        </div>
+      )}
+      
       {/* Sidebar */}
       <aside className="fixed left-0 top-0 h-screen w-64 border-r bg-primary">
         <div className="flex h-full flex-col">
@@ -367,7 +426,7 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
       </aside>
 
       {/* Main Content */}
-      <div className="ml-64">
+      <div className={`ml-64 ${isImpersonating ? "pt-10" : ""}`}>
         <main className="p-8">{children}</main>
       </div>
     </div>
