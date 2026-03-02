@@ -730,54 +730,6 @@ export default function ClientDetailPage() {
             </Button>
           </div>
         </CardHeader>
-        <CardContent>
-          {currentTheme ? (
-            <div className="space-y-3">
-              <div className="flex items-center gap-4">
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground">Primary Color</label>
-                  <div className="flex items-center gap-2 mt-1">
-                    <div
-                      className="w-8 h-8 rounded border"
-                      style={{ backgroundColor: currentTheme.primaryColor || "#7335d6" }}
-                    />
-                    <span className="text-sm font-medium">{currentTheme.primaryColor || "#7335d6"}</span>
-                  </div>
-                </div>
-                {currentTheme.secondaryColor && (
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">Secondary Color</label>
-                    <div className="flex items-center gap-2 mt-1">
-                      <div
-                        className="w-8 h-8 rounded border"
-                        style={{ backgroundColor: currentTheme.secondaryColor }}
-                      />
-                      <span className="text-sm font-medium">{currentTheme.secondaryColor}</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-              {currentTheme.logoUrl && (
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground">Logo</label>
-                  <div className="mt-1">
-                    <img src={currentTheme.logoUrl} alt="Logo" className="h-12 object-contain" />
-                  </div>
-                </div>
-              )}
-              {currentTheme.appTitle && (
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground">App Title</label>
-                  <p className="text-sm font-medium mt-1">{currentTheme.appTitle}</p>
-                </div>
-              )}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              No custom theme configured. Click "Customize Theme" to set up colors, logo, and app title.
-            </p>
-          )}
-        </CardContent>
       </Card>
 
       {/* Client Users Table */}
