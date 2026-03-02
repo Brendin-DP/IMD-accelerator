@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Plus, ArrowLeft, ChevronDown, UserPlus, Upload, Download, FileUp, MoreVertical, Edit, Trash2 } from "lucide-react";
+import { Plus, ArrowLeft, ChevronDown, UserPlus, Upload, Download, FileUp, MoreVertical, Edit, Trash2, Palette, Image } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -86,11 +86,13 @@ export default function ClientDetailPage() {
   const [globalPassword, setGlobalPassword] = useState("");
   const [settingGlobalPassword, setSettingGlobalPassword] = useState(false);
   const [globalPasswordError, setGlobalPasswordError] = useState<string | null>(null);
+  const [currentTheme, setCurrentTheme] = useState<any>(null);
 
   useEffect(() => {
     if (clientId) {
       fetchClientDetails();
       fetchClientUsers();
+      fetchTheme();
     }
   }, [clientId]);
 
@@ -489,6 +491,20 @@ export default function ClientDetailPage() {
     }
   }
 
+  async function fetchTheme() {
+    if (!clientId) return;
+    
+    try {
+      const response = await fetch(`/api/themes/${clientId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setCurrentTheme(data.theme);
+      }
+    } catch (err) {
+      console.error("Error fetching theme:", err);
+    }
+  }
+
   async function handleSetGlobalPassword(e: React.FormEvent) {
     e.preventDefault();
     setSettingGlobalPassword(true);
@@ -646,6 +662,74 @@ export default function ClientDetailPage() {
               </p>
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Theme Customization Card */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Palette className="h-5 w-5 text-muted-foreground" />
+              <CardTitle>Theme Customization</CardTitle>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push(`/settings/clients/${clientId}/theme`)}
+            >
+              <Palette className="mr-2 h-4 w-4" />
+              Customize Theme
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {currentTheme ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-4">
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground">Primary Color</label>
+                  <div className="flex items-center gap-2 mt-1">
+                    <div
+                      className="w-8 h-8 rounded border"
+                      style={{ backgroundColor: currentTheme.primaryColor || "#7335d6" }}
+                    />
+                    <span className="text-sm font-medium">{currentTheme.primaryColor || "#7335d6"}</span>
+                  </div>
+                </div>
+                {currentTheme.secondaryColor && (
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Secondary Color</label>
+                    <div className="flex items-center gap-2 mt-1">
+                      <div
+                        className="w-8 h-8 rounded border"
+                        style={{ backgroundColor: currentTheme.secondaryColor }}
+                      />
+                      <span className="text-sm font-medium">{currentTheme.secondaryColor}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+              {currentTheme.logoUrl && (
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground">Logo</label>
+                  <div className="mt-1">
+                    <img src={currentTheme.logoUrl} alt="Logo" className="h-12 object-contain" />
+                  </div>
+                </div>
+              )}
+              {currentTheme.appTitle && (
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground">App Title</label>
+                  <p className="text-sm font-medium mt-1">{currentTheme.appTitle}</p>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No custom theme configured. Click "Customize Theme" to set up colors, logo, and app title.
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -1202,6 +1286,7 @@ export default function ClientDetailPage() {
           </form>
         </DialogContent>
       </Dialog>
+
     </div>
   );
 }

@@ -7,7 +7,8 @@ import { LayoutDashboard, Users, User, LogOut, ChevronDown, Bell, HelpCircle } f
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabaseClient";
-import { Analytics } from "@vercel/analytics/next"
+import { Analytics } from "@vercel/analytics/next";
+import { useTheme } from "@/lib/useTheme";
 
 export default function TenantLayout({ children }: { children: React.ReactNode }) {
   const params = useParams();
@@ -18,6 +19,7 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
   const [clientName, setClientName] = useState<string>("");
   const [notificationCount, setNotificationCount] = useState<number>(0);
   const [validating, setValidating] = useState<boolean>(true);
+  const { theme } = useTheme(subdomain);
 
   // Don't show layout on login page
   const isLoginPage = pathname?.includes("/login");
@@ -253,8 +255,20 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
       <aside className="fixed left-0 top-0 h-screen w-64 border-r bg-primary">
         <div className="flex h-full flex-col">
           {/* Logo/Header */}
-          <div className="flex h-16 items-center border-b border-primary-foreground/20 px-6">
-            <h1 className="text-xl font-semibold text-primary-foreground">IMD Accelerator</h1>
+          <div className="flex h-16 items-center border-b border-primary-foreground/20 px-6 gap-3">
+            {theme.logoUrl && (
+              <img
+                src={theme.logoUrl}
+                alt="Logo"
+                className="h-8 w-auto object-contain"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = "none";
+                }}
+              />
+            )}
+            <h1 className="text-xl font-semibold text-primary-foreground">
+              {theme.appTitle || "IMD Accelerator"}
+            </h1>
           </div>
 
           {/* Navigation */}

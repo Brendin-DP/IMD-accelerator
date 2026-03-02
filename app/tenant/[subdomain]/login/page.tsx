@@ -4,6 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { Button, Input, Card } from "@/components/ui";
+import { useTheme } from "@/lib/useTheme";
 
 export default function TenantLogin() {
   const params = useParams();
@@ -14,6 +15,7 @@ export default function TenantLogin() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [clientName, setClientName] = useState<string>("");
+  const { theme } = useTheme(subdomain);
 
   // Fetch client name on mount
   useEffect(() => {
@@ -178,7 +180,17 @@ export default function TenantLogin() {
       {/* Left side - Image/Branding */}
       <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-primary to-primary/80 items-center justify-center p-12">
         <div className="text-white space-y-6 max-w-md">
-          <h1 className="text-5xl font-bold">IMD Accelerator</h1>
+          {theme.logoUrl && (
+            <img
+              src={theme.logoUrl}
+              alt="Logo"
+              className="h-16 w-auto object-contain mb-4"
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = "none";
+              }}
+            />
+          )}
+          <h1 className="text-5xl font-bold">{theme.appTitle || "IMD Accelerator"}</h1>
           <p className="text-xl text-white/90">
             Access your assessment portal. Complete assessments, nominate reviewers, and track your progress.
           </p>
