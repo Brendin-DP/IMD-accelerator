@@ -207,5 +207,67 @@
       "secondaryColor": "#64748b",
       "appTitle": "Lego"
     }
-  }
+  },
+  "impersonation_logs": [
+    {
+      "id": "1772535431431-v10gfgo34l-vnglgn2pys",
+      "impersonated_user_id": "55d0d3bf-ea34-45f6-a580-3420a042dbac",
+      "impersonated_user_name": "Jacob Nguyen",
+      "client_id": "12880154-a607-4114-8491-71716dd4915c",
+      "client_name": "SpaceX",
+      "impersonator_id": "2dfc5033-e009-4b46-aac5-38c4d1f62e0c",
+      "impersonator_name": "Brendin du Plessis",
+      "created_at": "2026-03-03T10:57:11.431Z"
+    },
+    {
+      "id": "1772535474525-ixlxv4nfpq-pe94w4a87ef",
+      "impersonated_user_id": "94b21340-0b2c-4a9f-88ae-6d8586c06e0e",
+      "impersonated_user_name": "Ella White",
+      "client_id": "12880154-a607-4114-8491-71716dd4915c",
+      "client_name": "SpaceX",
+      "impersonator_id": "2dfc5033-e009-4b46-aac5-38c4d1f62e0c",
+      "impersonator_name": "Brendin du Plessis",
+      "created_at": "2026-03-03T10:57:54.525Z"
+    },
+    {
+      "id": "1772535547571-b0eo7km4ioi-l73a7l69pn",
+      "impersonated_user_id": "94b21340-0b2c-4a9f-88ae-6d8586c06e0e",
+      "impersonated_user_name": "Ella White",
+      "client_id": "12880154-a607-4114-8491-71716dd4915c",
+      "client_name": "SpaceX",
+      "impersonator_id": "2dfc5033-e009-4b46-aac5-38c4d1f62e0c",
+      "impersonator_name": "Brendin du Plessis",
+      "created_at": "2026-03-03T10:59:07.571Z"
+    },
+    {
+      "id": "1772535569148-25m7bmfsatk-eee4nzb9a8i",
+      "impersonated_user_id": "26bbcea2-7957-4050-9fb8-72463a5194a5",
+      "impersonated_user_name": "James Anderson",
+      "client_id": "dfb33c28-93bd-4559-aa07-86bb0d54e377",
+      "client_name": "Lego",
+      "impersonator_id": "2dfc5033-e009-4b46-aac5-38c4d1f62e0c",
+      "impersonator_name": "Brendin du Plessis",
+      "created_at": "2026-03-03T10:59:29.148Z"
+    },
+    {
+      "id": "1772535639212-en39lj5tm4-ojvfjerik8h",
+      "impersonated_user_id": "2c410ef0-dfd4-4c9f-b90f-c35a8c9b89d4",
+      "impersonated_user_name": "Isabella Wilson",
+      "client_id": "12880154-a607-4114-8491-71716dd4915c",
+      "client_name": "SpaceX",
+      "impersonator_id": "2dfc5033-e009-4b46-aac5-38c4d1f62e0c",
+      "impersonator_name": "Brendin du Plessis",
+      "created_at": "2026-03-03T11:00:39.212Z"
+    },
+    {
+      "id": "1772535651718-cm9ve61dl2-xc5nks0bd",
+      "impersonated_user_id": "26bbcea2-7957-4050-9fb8-72463a5194a5",
+      "impersonated_user_name": "James Anderson",
+      "client_id": "dfb33c28-93bd-4559-aa07-86bb0d54e377",
+      "client_name": "Lego",
+      "impersonator_id": "2dfc5033-e009-4b46-aac5-38c4d1f62e0c",
+      "impersonator_name": "Brendin du Plessis",
+      "created_at": "2026-03-03T11:00:51.718Z"
+    }
+  ]
 }

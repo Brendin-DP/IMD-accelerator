@@ -424,6 +424,61 @@ export default function ClientDetailPage() {
       // Set impersonation flag
       localStorage.setItem("is_impersonating", "true");
 
+      // Log impersonation event (non-blocking)
+      try {
+        const adminUser = JSON.parse(adminUserStr);
+        const impersonatedUserName = fullUser.name && fullUser.surname
+          ? `${fullUser.name} ${fullUser.surname}`
+          : fullUser.email || "Unknown User";
+        const impersonatorName = adminUser.name && adminUser.surname
+          ? `${adminUser.name} ${adminUser.surname}`
+          : adminUser.email || "Unknown Admin";
+
+        // Generate UUID - use crypto.randomUUID() if available, otherwise fallback
+        let logId: string;
+        try {
+          logId = crypto.randomUUID();
+        } catch {
+          // Fallback UUID generation
+          logId = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}-${Math.random().toString(36).substring(2, 15)}`;
+        }
+
+        const logEntry = {
+          id: logId,
+          impersonated_user_id: fullUser.id,
+          impersonated_user_name: impersonatedUserName,
+          client_id: clientId,
+          client_name: client?.name || "Unknown Client",
+          impersonator_id: adminUser.id,
+          impersonator_name: impersonatorName,
+          created_at: new Date().toISOString(),
+        };
+
+        // Fire and forget - don't wait for response
+        fetch("/api/impersonation-logs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(logEntry),
+        })
+        .then((response) => {
+          if (!response.ok) {
+            return response.json().then((data) => {
+              throw new Error(data.error || `HTTP ${response.status}`);
+            });
+          }
+          return response.json();
+        })
+        .then((data) => {
+          console.log("Impersonation logged successfully:", data);
+        })
+        .catch((err) => {
+          console.error("Failed to log impersonation:", err);
+        });
+      } catch (logError) {
+        console.error("Error creating impersonation log:", logError);
+        // Don't block impersonation if logging fails
+      }
+
       // Redirect to tenant subdomain dashboard
       const tenantUrl = `/tenant/${client.subdomain}/dashboard`;
       window.location.href = tenantUrl;

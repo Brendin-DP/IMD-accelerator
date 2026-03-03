@@ -34,6 +34,7 @@ export default function UserDetailPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [clientSubdomain, setClientSubdomain] = useState<string | null>(null);
+  const [clientName, setClientName] = useState<string | null>(null);
 
   useEffect(() => {
     if (userId && clientId) {
@@ -46,12 +47,13 @@ export default function UserDetailPage() {
     try {
       const { data, error } = await supabase
         .from("clients")
-        .select("subdomain")
+        .select("subdomain, name")
         .eq("id", clientId)
         .single();
       
       if (!error && data) {
         setClientSubdomain(data.subdomain);
+        setClientName(data.name);
       }
     } catch (err) {
       console.error("Error fetching client subdomain:", err);
@@ -82,6 +84,61 @@ export default function UserDetailPage() {
       
       // Set impersonation flag
       localStorage.setItem("is_impersonating", "true");
+
+      // Log impersonation event (non-blocking)
+      try {
+        const adminUser = JSON.parse(adminUserStr);
+        const impersonatedUserName = user!.name && user!.surname
+          ? `${user!.name} ${user!.surname}`
+          : user!.email || "Unknown User";
+        const impersonatorName = adminUser.name && adminUser.surname
+          ? `${adminUser.name} ${adminUser.surname}`
+          : adminUser.email || "Unknown Admin";
+
+        // Generate UUID - use crypto.randomUUID() if available, otherwise fallback
+        let logId: string;
+        try {
+          logId = crypto.randomUUID();
+        } catch {
+          // Fallback UUID generation
+          logId = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}-${Math.random().toString(36).substring(2, 15)}`;
+        }
+
+        const logEntry = {
+          id: logId,
+          impersonated_user_id: user!.id,
+          impersonated_user_name: impersonatedUserName,
+          client_id: clientId,
+          client_name: clientName || "Unknown Client",
+          impersonator_id: adminUser.id,
+          impersonator_name: impersonatorName,
+          created_at: new Date().toISOString(),
+        };
+
+        // Fire and forget - don't wait for response
+        fetch("/api/impersonation-logs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(logEntry),
+        })
+        .then((response) => {
+          if (!response.ok) {
+            return response.json().then((data) => {
+              throw new Error(data.error || `HTTP ${response.status}`);
+            });
+          }
+          return response.json();
+        })
+        .then((data) => {
+          console.log("Impersonation logged successfully:", data);
+        })
+        .catch((err) => {
+          console.error("Failed to log impersonation:", err);
+        });
+      } catch (logError) {
+        console.error("Error creating impersonation log:", logError);
+        // Don't block impersonation if logging fails
+      }
 
       // Redirect to tenant subdomain dashboard
       const tenantUrl = `/tenant/${clientSubdomain}/dashboard`;
