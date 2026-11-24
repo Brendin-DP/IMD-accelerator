@@ -2,7 +2,6 @@
 import { NextResponse } from "next/server";
 import { renderToBuffer } from "@react-pdf/renderer";
 import React from "react";
-import { createClient } from "@supabase/supabase-js";
 import { PulseReportPDF, type PulseReportData } from "../_pdf";
 import { createServerClient } from "@/lib/supabaseServer";
 
@@ -358,11 +357,8 @@ export async function POST(req: Request) {
     // Create admin client with service role for database writes (bypasses RLS)
     let supabaseAdmin;
     try {
-      supabaseAdmin = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!,
-        { auth: { persistSession: false } }
-      );
+      // Service-role client (or the mock DB when NEXT_PUBLIC_USE_MOCK_DB is on)
+      supabaseAdmin = createServerClient();
 
     } catch (adminClientError) {
 

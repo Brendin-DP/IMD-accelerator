@@ -1,13 +1,15 @@
 "use client";
 
 import { createBrowserClient } from "@supabase/ssr";
+import { MockSupabaseClient, httpQueryExecutor, httpStorageExecutor } from "@/lib/mockdb/client";
+import { USE_MOCK_DB } from "@/lib/mockdb/mode";
 
 // Get environment variables - these must be available at build time
 // Trim whitespace and remove quotes if present
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim().replace(/^["']|["']$/g, '');
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim().replace(/^["']|["']$/g, '');
 
-if (!supabaseUrl || !supabaseAnonKey) {
+if (!USE_MOCK_DB && (!supabaseUrl || !supabaseAnonKey)) {
   console.error(
     "⚠️ Missing Supabase environment variables!\n" +
     "Please ensure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are set.\n" +
@@ -25,6 +27,11 @@ function getSupabase() {
     throw new Error('Supabase client can only be accessed in the browser');
   }
   
+  if (!_supabaseInstance && USE_MOCK_DB) {
+    // Mock DB: same API, backed by /api/db → data/db.json (see lib/mockdb).
+    _supabaseInstance = new MockSupabaseClient(httpQueryExecutor, httpStorageExecutor) as unknown as ReturnType<typeof createBrowserClient>;
+  }
+
   if (!_supabaseInstance) {
     if (!supabaseUrl || !supabaseAnonKey) {
       throw new Error(

@@ -1,0 +1,1253 @@
+{
+  "enums": {
+    "assessment_status": [
+      "Not started",
+      "In Progress",
+      "Completed"
+    ],
+    "client_status": [
+      "active",
+      "inactive"
+    ],
+    "client_user_role": [
+      "participant",
+      "manager",
+      "observer"
+    ],
+    "cohort_status": [
+      "draft",
+      "active",
+      "completed"
+    ],
+    "nomination_status": [
+      "pending",
+      "accepted",
+      "rejected"
+    ],
+    "participant_status": [
+      "invited",
+      "active",
+      "completed"
+    ],
+    "review_status_enum": [
+      "Not started",
+      "In progress",
+      "Completed"
+    ],
+    "user_role": [
+      "admin",
+      "user"
+    ],
+    "user_status": [
+      "active",
+      "inactive"
+    ]
+  },
+  "tables": {
+    "assessment_definitions_v2": {
+      "columns": {
+        "allow_external_nominees": {
+          "type": "boolean",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "allow_internal_nominees": {
+          "type": "boolean",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "assessment_type_id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "base_assessment_id": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "created_at": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "description": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "is_system": {
+          "type": "boolean",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "max_nominees": {
+          "type": "number",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "min_nominees": {
+          "type": "number",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "name": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "updated_at": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        }
+      }
+    },
+    "assessment_questions_v2": {
+      "columns": {
+        "assessment_definition_id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "created_at": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "question_order": {
+          "type": "number",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "question_text": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "question_type": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "required": {
+          "type": "boolean",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "step_id": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        }
+      }
+    },
+    "assessment_reports": {
+      "columns": {
+        "id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "participant_assessment_id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "report_type": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "source_updated_at": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "storage_path": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "updated_at": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        }
+      }
+    },
+    "assessment_response_sessions": {
+      "columns": {
+        "assessment_definition_id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "completion_percent": {
+          "type": "number",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "created_at": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "last_question_id": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "last_step_id": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "participant_assessment_id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "respondent_client_user_id": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "respondent_external_reviewer_id": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "respondent_type": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "reviewer_nomination_id": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "started_at": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "status": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "submitted_at": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "updated_at": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        }
+      }
+    },
+    "assessment_responses": {
+      "columns": {
+        "answer_json": {
+          "type": "json",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "answer_text": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "created_at": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "is_answered": {
+          "type": "boolean",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "question_id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "session_id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "updated_at": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        }
+      }
+    },
+    "assessment_steps_v2": {
+      "columns": {
+        "assessment_definition_id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "created_at": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "step_order": {
+          "type": "number",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "title": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        }
+      }
+    },
+    "assessment_types": {
+      "columns": {
+        "description": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "name": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        }
+      }
+    },
+    "client_users": {
+      "columns": {
+        "client_id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "created_at": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "email": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "name": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "password_hash": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "role": {
+          "type": "enum",
+          "nullable": false,
+          "enum": "client_user_role",
+          "hasDefault": true
+        },
+        "status": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "surname": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        }
+      }
+    },
+    "clients": {
+      "columns": {
+        "created_at": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "created_by": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "logo_url": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "name": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "primary_contact_email": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "status": {
+          "type": "enum",
+          "nullable": false,
+          "enum": "client_status",
+          "hasDefault": true
+        },
+        "subdomain": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "theme": {
+          "type": "json",
+          "nullable": true,
+          "hasDefault": false
+        }
+      }
+    },
+    "cohort_assessments": {
+      "columns": {
+        "assessment_definition_id": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "assessment_status": {
+          "type": "enum",
+          "nullable": false,
+          "enum": "assessment_status",
+          "hasDefault": true
+        },
+        "assessment_type_id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "cohort_id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "created_at": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "end_date": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "name": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "start_date": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "template_version_id": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        }
+      }
+    },
+    "cohort_participants": {
+      "columns": {
+        "client_user_id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "cohort_id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "status": {
+          "type": "enum",
+          "nullable": false,
+          "enum": "participant_status",
+          "hasDefault": true
+        }
+      }
+    },
+    "cohorts": {
+      "columns": {
+        "client_id": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "created_at": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "created_by": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "end_date": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "name": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "plan_id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "start_date": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "status": {
+          "type": "enum",
+          "nullable": true,
+          "enum": "cohort_status",
+          "hasDefault": false
+        }
+      }
+    },
+    "external_reviewers": {
+      "columns": {
+        "client_id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "created_at": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "email": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "invited_by": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "name": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "review_status": {
+          "type": "enum",
+          "nullable": true,
+          "enum": "review_status_enum",
+          "hasDefault": false
+        },
+        "status": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        }
+      }
+    },
+    "imd_users": {
+      "columns": {
+        "created_at": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "email": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "name": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "password_hash": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "role": {
+          "type": "enum",
+          "nullable": false,
+          "enum": "user_role",
+          "hasDefault": true
+        },
+        "status": {
+          "type": "enum",
+          "nullable": false,
+          "enum": "user_status",
+          "hasDefault": true
+        },
+        "surname": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "updated_at": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        }
+      }
+    },
+    "participant_assessments": {
+      "columns": {
+        "allow_reviewer_nominations": {
+          "type": "boolean",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "cohort_assessment_id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "created_at": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "participant_id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "score": {
+          "type": "number",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "status": {
+          "type": "enum",
+          "nullable": false,
+          "enum": "assessment_status",
+          "hasDefault": true
+        },
+        "submitted_at": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        }
+      }
+    },
+    "plan_assessments": {
+      "columns": {
+        "assessment_type_id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "plan_id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        }
+      }
+    },
+    "plans": {
+      "columns": {
+        "created_at": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "description": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "name": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        }
+      }
+    },
+    "reviewer_nominations": {
+      "columns": {
+        "created_at": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "external_reviewer_id": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "is_external": {
+          "type": "boolean",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "nominated_by_id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "participant_assessment_id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "request_status": {
+          "type": "enum",
+          "nullable": false,
+          "enum": "nomination_status",
+          "hasDefault": true
+        },
+        "review_status": {
+          "type": "enum",
+          "nullable": true,
+          "enum": "review_status_enum",
+          "hasDefault": false
+        },
+        "review_submitted_at": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "reviewer_id": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        }
+      }
+    }
+  },
+  "relationships": [
+    {
+      "name": "assessment_definitions_v2_assessment_type_id_fkey",
+      "table": "assessment_definitions_v2",
+      "columns": [
+        "assessment_type_id"
+      ],
+      "referencedTable": "assessment_types",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "assessment_definitions_v2_base_assessment_id_fkey",
+      "table": "assessment_definitions_v2",
+      "columns": [
+        "base_assessment_id"
+      ],
+      "referencedTable": "assessment_definitions_v2",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "assessment_questions_v2_assessment_definition_id_fkey",
+      "table": "assessment_questions_v2",
+      "columns": [
+        "assessment_definition_id"
+      ],
+      "referencedTable": "assessment_definitions_v2",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "assessment_questions_v2_step_id_fkey",
+      "table": "assessment_questions_v2",
+      "columns": [
+        "step_id"
+      ],
+      "referencedTable": "assessment_steps_v2",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "assessment_reports_participant_assessment_id_fkey",
+      "table": "assessment_reports",
+      "columns": [
+        "participant_assessment_id"
+      ],
+      "referencedTable": "participant_assessments",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "assessment_response_sessions_assessment_definition_fkey",
+      "table": "assessment_response_sessions",
+      "columns": [
+        "assessment_definition_id"
+      ],
+      "referencedTable": "assessment_definitions_v2",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "assessment_response_sessions_last_question_fkey",
+      "table": "assessment_response_sessions",
+      "columns": [
+        "last_question_id"
+      ],
+      "referencedTable": "assessment_questions_v2",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "assessment_response_sessions_last_step_fkey",
+      "table": "assessment_response_sessions",
+      "columns": [
+        "last_step_id"
+      ],
+      "referencedTable": "assessment_steps_v2",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "assessment_response_sessions_participant_assessment_fkey",
+      "table": "assessment_response_sessions",
+      "columns": [
+        "participant_assessment_id"
+      ],
+      "referencedTable": "participant_assessments",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "assessment_response_sessions_resp_client_user_fkey",
+      "table": "assessment_response_sessions",
+      "columns": [
+        "respondent_client_user_id"
+      ],
+      "referencedTable": "client_users",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "assessment_response_sessions_resp_external_reviewer_fkey",
+      "table": "assessment_response_sessions",
+      "columns": [
+        "respondent_external_reviewer_id"
+      ],
+      "referencedTable": "external_reviewers",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "assessment_response_sessions_reviewer_nomination_fkey",
+      "table": "assessment_response_sessions",
+      "columns": [
+        "reviewer_nomination_id"
+      ],
+      "referencedTable": "reviewer_nominations",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "assessment_responses_question_fkey",
+      "table": "assessment_responses",
+      "columns": [
+        "question_id"
+      ],
+      "referencedTable": "assessment_questions_v2",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "assessment_responses_session_fkey",
+      "table": "assessment_responses",
+      "columns": [
+        "session_id"
+      ],
+      "referencedTable": "assessment_response_sessions",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "assessment_steps_v2_assessment_definition_id_fkey",
+      "table": "assessment_steps_v2",
+      "columns": [
+        "assessment_definition_id"
+      ],
+      "referencedTable": "assessment_definitions_v2",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "client_users_client_id_fkey",
+      "table": "client_users",
+      "columns": [
+        "client_id"
+      ],
+      "referencedTable": "clients",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "clients_created_by_fkey",
+      "table": "clients",
+      "columns": [
+        "created_by"
+      ],
+      "referencedTable": "imd_users",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "cohort_assessments_assessment_definition_id_fkey",
+      "table": "cohort_assessments",
+      "columns": [
+        "assessment_definition_id"
+      ],
+      "referencedTable": "assessment_definitions_v2",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "cohort_assessments_assessment_type_id_fkey",
+      "table": "cohort_assessments",
+      "columns": [
+        "assessment_type_id"
+      ],
+      "referencedTable": "assessment_types",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "cohort_assessments_cohort_id_fkey",
+      "table": "cohort_assessments",
+      "columns": [
+        "cohort_id"
+      ],
+      "referencedTable": "cohorts",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "cohort_participants_client_user_id_fkey",
+      "table": "cohort_participants",
+      "columns": [
+        "client_user_id"
+      ],
+      "referencedTable": "client_users",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "cohort_participants_cohort_id_fkey",
+      "table": "cohort_participants",
+      "columns": [
+        "cohort_id"
+      ],
+      "referencedTable": "cohorts",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "cohorts_client_id_fkey",
+      "table": "cohorts",
+      "columns": [
+        "client_id"
+      ],
+      "referencedTable": "clients",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "cohorts_created_by_fkey",
+      "table": "cohorts",
+      "columns": [
+        "created_by"
+      ],
+      "referencedTable": "imd_users",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "cohorts_plan_id_fkey",
+      "table": "cohorts",
+      "columns": [
+        "plan_id"
+      ],
+      "referencedTable": "plans",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "external_reviewers_client_id_fkey",
+      "table": "external_reviewers",
+      "columns": [
+        "client_id"
+      ],
+      "referencedTable": "clients",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "external_reviewers_invited_by_fkey",
+      "table": "external_reviewers",
+      "columns": [
+        "invited_by"
+      ],
+      "referencedTable": "client_users",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "participant_assessments_cohort_assessment_id_fkey",
+      "table": "participant_assessments",
+      "columns": [
+        "cohort_assessment_id"
+      ],
+      "referencedTable": "cohort_assessments",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "participant_assessments_participant_id_fkey",
+      "table": "participant_assessments",
+      "columns": [
+        "participant_id"
+      ],
+      "referencedTable": "cohort_participants",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "plan_assessments_assessment_type_id_fkey",
+      "table": "plan_assessments",
+      "columns": [
+        "assessment_type_id"
+      ],
+      "referencedTable": "assessment_types",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "plan_assessments_plan_id_fkey",
+      "table": "plan_assessments",
+      "columns": [
+        "plan_id"
+      ],
+      "referencedTable": "plans",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "reviewer_nominations_external_reviewer_id_fkey",
+      "table": "reviewer_nominations",
+      "columns": [
+        "external_reviewer_id"
+      ],
+      "referencedTable": "external_reviewers",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "reviewer_nominations_nominated_by_id_fkey",
+      "table": "reviewer_nominations",
+      "columns": [
+        "nominated_by_id"
+      ],
+      "referencedTable": "client_users",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "reviewer_nominations_participant_assessment_id_fkey",
+      "table": "reviewer_nominations",
+      "columns": [
+        "participant_assessment_id"
+      ],
+      "referencedTable": "participant_assessments",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "reviewer_nominations_reviewer_id_fkey",
+      "table": "reviewer_nominations",
+      "columns": [
+        "reviewer_id"
+      ],
+      "referencedTable": "client_users",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    }
+  ]
+}

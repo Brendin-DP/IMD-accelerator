@@ -1,0 +1,29 @@
+{
+  "_comment": "Demo identities for IMD admin users, applied by scripts/apply-demo-logins.mjs (and after npm run db:export). Keyed by imd_users.id so foreign keys stay intact. Plain-text passwords: the prototype login compares password_hash directly.",
+  "imd_users": {
+    "2dfc5033-e009-4b46-aac5-38c4d1f62e0c": {
+      "name": "Avery",
+      "surname": "Demo",
+      "email": "avery.demo@example.com",
+      "password": "demo-171f4a"
+    },
+    "2dbd7a74-1eb3-4ea3-a8de-60093cd3b462": {
+      "name": "Jordan",
+      "surname": "Demo",
+      "email": "jordan.demo@example.com",
+      "password": "demo-be7f7e"
+    },
+    "993051a2-ea65-49b1-8ee1-ea4115d3c109": {
+      "name": "Riley",
+      "surname": "Demo",
+      "email": "riley.demo@example.com",
+      "password": "demo-5a585e"
+    },
+    "3e3c728d-69d1-4e9d-a4b5-893e9ca0ba32": {
+      "name": "Casey",
+      "surname": "Demo",
+      "email": "casey.demo@example.com",
+      "password": "demo-43e4ce"
+    }
+  }
+}

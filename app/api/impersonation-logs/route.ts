@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
+import { readDb, updateDb } from "@/lib/mockdb/server";
 
-const DB_JSON_PATH = path.join(process.cwd(), "public", "db.json");
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 interface ImpersonationLog {
   id: string;
@@ -15,34 +15,10 @@ interface ImpersonationLog {
   created_at: string;
 }
 
-interface DbJson {
-  assessment_questions_360?: any[];
-  themes?: Record<string, any>;
-  impersonation_logs?: ImpersonationLog[];
-}
-
-function readDbJson(): DbJson {
-  try {
-    const fileContent = fs.readFileSync(DB_JSON_PATH, "utf-8");
-    const parsed = JSON.parse(fileContent);
-    // Ensure impersonation_logs exists
-    if (!parsed.impersonation_logs) {
-      parsed.impersonation_logs = [];
-    }
-    return parsed;
-  } catch (error) {
-    console.error("Error reading db.json:", error);
-    return { themes: {}, impersonation_logs: [] };
-  }
-}
-
-function writeDbJson(data: DbJson): void {
-  try {
-    fs.writeFileSync(DB_JSON_PATH, JSON.stringify(data, null, 2), "utf-8");
-  } catch (error) {
-    console.error("Error writing db.json:", error);
-    throw error;
-  }
+// Logs live in the mock DB as the "impersonation_logs" table.
+async function readLogs(): Promise<ImpersonationLog[]> {
+  const db = await readDb();
+  return (db.impersonation_logs as ImpersonationLog[] | undefined) ?? [];
 }
 
 function validateLogEntry(entry: any): entry is ImpersonationLog {
@@ -62,8 +38,7 @@ function validateLogEntry(entry: any): entry is ImpersonationLog {
 
 export async function GET() {
   try {
-    const db = readDbJson();
-    const logs = db.impersonation_logs || [];
+    const logs = await readLogs();
     
     // Sort by created_at descending (newest first)
     const sortedLogs = [...logs].sort((a, b) => {
@@ -91,14 +66,9 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    const db = readDbJson();
-    if (!db.impersonation_logs) {
-      db.impersonation_logs = [];
-    }
-    
-    // Add the new log entry
-    db.impersonation_logs.push(body as ImpersonationLog);
-    writeDbJson(db);
+    await updateDb((db) => {
+      (db.impersonation_logs ??= []).push(body as ImpersonationLog);
+    });
     
     return NextResponse.json({ success: true, log: body });
   } catch (error) {
