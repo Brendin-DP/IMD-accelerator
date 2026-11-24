@@ -11,7 +11,8 @@
     "generate:types:local": "node scripts/generate-types.js --local",
     "db:export": "node scripts/export-supabase.mjs && node scripts/apply-demo-logins.mjs",
     "generate:mock-schema": "node scripts/generate-mock-schema.mjs",
-    "db:demo-logins": "node scripts/apply-demo-logins.mjs"
+    "db:demo-logins": "node scripts/apply-demo-logins.mjs",
+    "db:seed": "node scripts/seed-demo.mjs --reports"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
