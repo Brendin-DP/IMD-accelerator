@@ -34,6 +34,35 @@ export default function TenantCohortPage() {
     fetchClientAndCohorts();
   }, [subdomain]);
 
+  /**
+   * Add active cohorts the signed-in participant is enrolled in that belong to
+   * another client (e.g. a cross-client programme cohort), so every cohort on
+   * their dashboard is also reachable from here.
+   */
+  async function withOwnEnrolments(list: any[], ownClientId: string) {
+    try {
+      const stored = localStorage.getItem("participant");
+      const userId = stored ? JSON.parse(stored)?.id : null;
+      if (!userId) return list;
+      const { data: enrolments } = await supabase
+        .from("cohort_participants")
+        .select("cohort_id")
+        .eq("client_user_id", userId);
+      const known = new Set(list.map((c) => c.id));
+      const extraIds = [...new Set((enrolments ?? []).map((e: any) => e.cohort_id))].filter((id) => !known.has(id));
+      if (!extraIds.length) return list;
+      const { data: extra } = await supabase
+        .from("cohorts")
+        .select("*, plan:plans(id, name)")
+        .in("id", extraIds)
+        .neq("client_id", ownClientId)
+        .gte("end_date", new Date().toISOString().split("T")[0]);
+      return [...list, ...(extra ?? [])].sort((a, b) => String(b.start_date ?? "").localeCompare(String(a.start_date ?? "")));
+    } catch {
+      return list;
+    }
+  }
+
   async function fetchClientAndCohorts() {
     try {
       setLoading(true);
@@ -92,14 +121,14 @@ export default function TenantCohortPage() {
             plan: plansData?.find((p: any) => p.id === cohort.plan_id) || null,
           }));
 
-          setCohorts(mergedCohorts || []);
+          setCohorts(await withOwnEnrolments(mergedCohorts || [], client.id));
         } else {
-          setCohorts([]);
+          setCohorts(await withOwnEnrolments([], client.id));
         }
       } else if (cohortsData) {
-        setCohorts(cohortsData || []);
+        setCohorts(await withOwnEnrolments(cohortsData || [], client.id));
       } else {
-        setCohorts([]);
+        setCohorts(await withOwnEnrolments([], client.id));
       }
     } catch (err) {
       console.error("Error fetching cohorts:", err);

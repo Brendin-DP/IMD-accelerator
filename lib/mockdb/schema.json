@@ -46,6 +46,11 @@
   "tables": {
     "assessment_definitions_v2": {
       "columns": {
+        "config": {
+          "type": "json",
+          "nullable": true,
+          "hasDefault": false
+        },
         "allow_external_nominees": {
           "type": "boolean",
           "nullable": true,
@@ -110,6 +115,11 @@
     },
     "assessment_questions_v2": {
       "columns": {
+        "config": {
+          "type": "json",
+          "nullable": true,
+          "hasDefault": false
+        },
         "assessment_definition_id": {
           "type": "string",
           "nullable": false,
@@ -154,6 +164,11 @@
     },
     "assessment_reports": {
       "columns": {
+        "phase": {
+          "type": "number",
+          "nullable": false,
+          "hasDefault": true
+        },
         "id": {
           "type": "string",
           "nullable": false,
@@ -188,6 +203,11 @@
     },
     "assessment_response_sessions": {
       "columns": {
+        "phase": {
+          "type": "number",
+          "nullable": false,
+          "hasDefault": true
+        },
         "assessment_definition_id": {
           "type": "string",
           "nullable": false,
@@ -311,6 +331,16 @@
     },
     "assessment_steps_v2": {
       "columns": {
+        "phase_number": {
+          "type": "number",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "step_key": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
         "assessment_definition_id": {
           "type": "string",
           "nullable": false,
@@ -452,6 +482,45 @@
         },
         "theme": {
           "type": "json",
+          "nullable": true,
+          "hasDefault": false
+        }
+      }
+    },
+    "cohort_assessment_phases": {
+      "columns": {
+        "cohort_assessment_id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "created_at": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "end_date": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "name": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "phase_number": {
+          "type": "number",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "start_date": {
+          "type": "string",
           "nullable": true,
           "hasDefault": false
         }
@@ -826,6 +895,45 @@
           "hasDefault": false
         }
       }
+    },
+    "reviewer_round_invitations": {
+      "columns": {
+        "completed_at": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "created_at": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        },
+        "phase_id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "reviewer_nomination_id": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": false
+        },
+        "sent_at": {
+          "type": "string",
+          "nullable": true,
+          "hasDefault": false
+        },
+        "status": {
+          "type": "string",
+          "nullable": false,
+          "hasDefault": true
+        }
+      }
     }
   },
   "relationships": [
@@ -1028,6 +1136,18 @@
         "created_by"
       ],
       "referencedTable": "imd_users",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "cohort_assessment_phases_cohort_assessment_id_fkey",
+      "table": "cohort_assessment_phases",
+      "columns": [
+        "cohort_assessment_id"
+      ],
+      "referencedTable": "cohort_assessments",
       "referencedColumns": [
         "id"
       ],
@@ -1244,6 +1364,30 @@
         "reviewer_id"
       ],
       "referencedTable": "client_users",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "reviewer_round_invitations_phase_id_fkey",
+      "table": "reviewer_round_invitations",
+      "columns": [
+        "phase_id"
+      ],
+      "referencedTable": "cohort_assessment_phases",
+      "referencedColumns": [
+        "id"
+      ],
+      "isOneToOne": false
+    },
+    {
+      "name": "reviewer_round_invitations_reviewer_nomination_id_fkey",
+      "table": "reviewer_round_invitations",
+      "columns": [
+        "reviewer_nomination_id"
+      ],
+      "referencedTable": "reviewer_nominations",
       "referencedColumns": [
         "id"
       ],

@@ -31,6 +31,9 @@ interface AssessmentDefinition {
   };
 }
 
+/** System definitions, plus programme templates (definitions carrying a config variant, e.g. a habit journey). */
+const isBaseCandidate = (a: AssessmentDefinition) => a.is_system || !!(a as any).config?.variant;
+
 export default function AssessmentsPage() {
   const router = useRouter();
   const [assessments, setAssessments] = useState<AssessmentDefinition[]>([]);
@@ -98,11 +101,11 @@ export default function AssessmentsPage() {
           })) || [];
 
           setAssessments(assessmentsWithTypes);
-          setSystemAssessments(assessmentsWithTypes.filter((a: AssessmentDefinition) => a.is_system));
+          setSystemAssessments(assessmentsWithTypes.filter(isBaseCandidate));
         }
       } else {
         setAssessments(data || []);
-        setSystemAssessments(data?.filter((a: AssessmentDefinition) => a.is_system) || []);
+        setSystemAssessments(data?.filter(isBaseCandidate) || []);
       }
     } catch (err) {
       console.error("Unexpected error:", err);
@@ -291,6 +294,7 @@ export default function AssessmentsPage() {
         max_nominees: number | null;
         allow_internal_nominees: boolean;
         allow_external_nominees: boolean;
+        config: unknown;
       } = {
         name: formData.name.trim(),
         description: formData.description.trim() || null,
@@ -301,6 +305,8 @@ export default function AssessmentsPage() {
         max_nominees: maxNomineesValue,
         allow_internal_nominees: allowInternal,
         allow_external_nominees: allowExternal,
+        // A programme template's config (variant, slider, nomination rules, copy) carries over.
+        config: (baseAssessment as any).config ?? null,
       };
 
       const { data: newAssessment, error: insertError } = await supabase
@@ -378,6 +384,8 @@ export default function AssessmentsPage() {
           assessment_definition_id: newAssessmentId,
           step_order: step.step_order,
           title: step.title,
+          step_key: step.step_key ?? null,
+          phase_number: step.phase_number ?? 1,
         }));
 
         const { data: insertedSteps, error: insertStepsError } = await supabase
@@ -409,6 +417,7 @@ export default function AssessmentsPage() {
           question_order: question.question_order,
           required: question.required,
           step_id: question.step_id ? stepIdMap.get(question.step_id) || null : null,
+          config: question.config ?? null,
         }));
 
         const { error: insertQuestionsError } = await supabase

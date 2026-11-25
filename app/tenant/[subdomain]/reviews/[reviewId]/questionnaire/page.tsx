@@ -5,7 +5,18 @@ import { Button } from "@/components/ui/button";
 import { Stepper, StepperStep } from "@/components/ui/stepper";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabaseClient";
+import { once } from "@/lib/once";
 import { MicTextarea } from "@/components/mictextarea";
+import { QuestionField, QuestionText, StepHeadings } from "@/components/assessment/question-field";
+import {
+  isAnswerable,
+  isHabitJourney,
+  parseConfig,
+  questionContext,
+  resolveJourney,
+  type ResolvedJourney,
+} from "@/lib/assessment-config";
+import { loadPlaceholderValues, updateInvitation } from "@/lib/habit-journey";
 
 interface Question {
   id: number | string;
@@ -60,6 +71,10 @@ export default function ReviewQuestionnaire() {
   const [loading, setLoading] = useState(true);
   const [hasResumed, setHasResumed] = useState(false);
   const [isReviewCompleted, setIsReviewCompleted] = useState(false);
+  // Habit-journey programmes (definition config) — null for classic assessments.
+  const [journey, setJourney] = useState<ResolvedJourney | null>(null);
+  const [headings, setHeadings] = useState<any[]>([]);
+  const [placeholders, setPlaceholders] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const loadData = async () => {
@@ -215,7 +230,7 @@ export default function ReviewQuestionnaire() {
 
                   if (defId) {
                     setAssessmentDefinitionId(defId);
-                    await loadQuestionsFromDB(defId, assessmentTypeId, assessmentTypeData?.name || "");
+                    await loadQuestionsFromDB(defId, assessmentTypeId, assessmentTypeData?.name || "", paId);
                     
                     // Create or get response session
                     // Validate required data before calling
@@ -230,13 +245,15 @@ export default function ReviewQuestionnaire() {
                     } else if (!isExternal && !userData.id) {
                       console.error("Error: client_user_id is required for internal reviewer");
                     } else {
-                      await createOrGetResponseSession(
+                      await once(`review-session:${nominationId}:${defId}`, () =>
+                        createOrGetResponseSession(
                         paId,
                         defId,
                         "reviewer",
                         nominationId,
                         isExternal ? (extReviewerId || undefined) : undefined,
                         isExternal ? undefined : userData.id
+                      ),
                       );
                     }
                   } else {
@@ -332,9 +349,10 @@ export default function ReviewQuestionnaire() {
     }
   }, [current, questionGroups, assessmentType]);
 
-  async function loadQuestionsFromDB(assessmentDefinitionId: string, assessmentTypeId: string, assessmentTypeName: string) {
+  async function loadQuestionsFromDB(assessmentDefinitionId: string, assessmentTypeId: string, assessmentTypeName: string, paForValues?: string | null) {
     try {
       const isPulse = assessmentTypeName?.toLowerCase() === "pulse";
+      let loadedSteps: any[] = [];
 
       // Fetch steps if Pulse
       if (isPulse) {
@@ -347,6 +365,7 @@ export default function ReviewQuestionnaire() {
         if (stepsError) {
           // Continue without steps
         } else if (stepsData && stepsData.length > 0) {
+          loadedSteps = stepsData;
           setSteps(stepsData);
         } else {
           setSteps([]);
@@ -368,8 +387,31 @@ export default function ReviewQuestionnaire() {
         return;
       }
 
+      // Programme config decides who answers what. Classic definitions have no
+      // config, so reviewers keep answering every question as before.
+      const { data: definitionRow } = await supabase
+        .from("assessment_definitions_v2")
+        .select("config")
+        .eq("id", assessmentDefinitionId)
+        .maybeSingle();
+      const journeyConfig = isHabitJourney(parseConfig(definitionRow?.config)) ? resolveJourney(definitionRow?.config) : null;
+      setJourney(journeyConfig);
+      const phaseOfStep = (stepId: string | null) => loadedSteps.find((st) => st.id === stepId)?.phase_number ?? 1;
+      const visibleQuestions = (questionsData || []).filter((q: any) => {
+        const context = questionContext(q);
+        return (context === null || context === "reviewer") && phaseOfStep(q.step_id) === 1;
+      });
+      setHeadings(visibleQuestions.filter((q: any) => !isAnswerable(q)).map((q: any) => ({ ...q, text: q.question_text })));
+      const answerableQuestions = visibleQuestions.filter((q: any) => isAnswerable(q));
+      if (journeyConfig) {
+        setSteps(loadedSteps.filter((st) => answerableQuestions.some((q: any) => q.step_id === st.id)));
+        if (paForValues) {
+          setPlaceholders(await loadPlaceholderValues(paForValues, assessmentDefinitionId, questionsData || []));
+        }
+      }
+
       // Transform DB questions to match Question interface
-      const transformedQuestions = questionsData?.map((q: any) => ({
+      const transformedQuestions = answerableQuestions.map((q: any) => ({
         id: q.id,
         text: q.question_text,
         question_text: q.question_text,
@@ -377,7 +419,8 @@ export default function ReviewQuestionnaire() {
         question_type: q.question_type,
         required: q.required,
         step_id: q.step_id,
-      })) || [];
+        config: q.config,
+      }));
 
       setQuestions(transformedQuestions);
     } catch (error) {
@@ -827,10 +870,12 @@ export default function ReviewQuestionnaire() {
       }
 
       // Use upsert to handle insert/update in one operation
+      const isSlider = (questions.find((q: any) => q.id === questionId) as any)?.question_type === "slider";
       const upsertData = {
         session_id: sessionId,
         question_id: questionId,
         answer_text: answerText,
+        answer_json: isSlider ? Number(answerText) : null,
         is_answered: true,
         updated_at: new Date().toISOString(),
       };
@@ -867,7 +912,11 @@ export default function ReviewQuestionnaire() {
         updateData.last_step_id = lastStepId;
       }
 
-      if (totalQuestions !== undefined && answeredCount !== undefined) {
+      if (journey) {
+        totalQuestions = questions.length;
+        answeredCount = questions.filter((q: any) => (answers[q.id] || "").trim() !== "").length;
+      }
+      if (totalQuestions !== undefined && answeredCount !== undefined && totalQuestions > 0) {
         updateData.completion_percent = Math.round((answeredCount / totalQuestions) * 100);
       }
 
@@ -1004,6 +1053,9 @@ export default function ReviewQuestionnaire() {
           .eq("id", responseSessionId);
 
         await updateReviewStatus("In progress");
+        if (journey && reviewerNominationId && cohortAssessmentId) {
+          await updateInvitation(reviewerNominationId, cohortAssessmentId, "opened");
+        }
       }
     }
 
@@ -1219,9 +1271,17 @@ export default function ReviewQuestionnaire() {
 
       // Update review status to Completed
       await updateReviewStatus("Completed");
+      if (reviewerNominationId) {
+        await supabase
+          .from("reviewer_nominations")
+          .update({ review_submitted_at: new Date().toISOString() })
+          .eq("id", reviewerNominationId);
+        if (journey && cohortAssessmentId) await updateInvitation(reviewerNominationId, cohortAssessmentId, "completed");
+      }
 
-      // Trigger report regeneration (non-blocking, handle errors gracefully)
-      if (participantAssessmentId) {
+      // Trigger report regeneration (non-blocking, handle errors gracefully).
+      // Habit-journey reports are computed on screen and anonymised, so no PDF.
+      if (participantAssessmentId && !journey) {
         try {
           await fetch("/api/reports/pulse/regenerate", {
             method: "POST",
@@ -1341,6 +1401,9 @@ export default function ReviewQuestionnaire() {
     questionIndexInStep = current;
   }
 
+  // Habit-journey programmes enforce required answers; classic ones never did.
+  const missingRequired = !!journey && !!currentQuestion?.required && !(answers[currentQuestion?.id] || "").trim();
+
   // Render Pulse assessment with steps
   if (assessmentType?.toLowerCase() === "pulse" && questionGroups.length > 0) {
     const stepperSteps: StepperStep[] = questionGroups.map((group, index) => {
@@ -1350,23 +1413,29 @@ export default function ReviewQuestionnaire() {
 
       return {
         title: group.step?.title || `Step ${index + 1}`,
-        description: `${group.questions.length} question${group.questions.length !== 1 ? 's' : ''}`,
+        description: journey ? undefined : `${group.questions.length} question${group.questions.length !== 1 ? 's' : ''}`,
         status: isStepCompleted ? "completed" : isStepActive ? "active" : "pending",
         content: isStepActive ? (
-          <div className="mt-4">
+          <div className="mt-4 space-y-4">
+            <StepHeadings headings={headings.filter((h: any) => h.step_id === currentQuestion.step_id)} values={placeholders} />
             <div className="border rounded-lg p-6 space-y-4">
-              <p className="text-lg font-medium">{currentQuestion.text || currentQuestion.question_text}</p>
+              <QuestionText
+                text={currentQuestion.text || currentQuestion.question_text || ""}
+                values={placeholders}
+                className="text-lg font-medium [&_b]:font-semibold"
+              />
               
               <div className="border-t my-4" />
               
               <div className="space-y-2">
                 <label htmlFor={`answer-${currentQuestion.id}`} className="text-sm font-medium">
-                  Your response (optional)
+                  Your response {currentQuestion.required && journey ? "" : "(optional)"}
                 </label>
-                <MicTextarea
+                <QuestionField
+                  question={currentQuestion as any}
                   value={answers[currentQuestion.id] || ""}
                   onChange={(next) => handleAnswerChange(currentQuestion.id, next)}
-                  placeholder="Type your answer… or hold the mic to speak"
+                  slider={journey?.slider}
                 />
               </div>
             </div>
@@ -1374,12 +1443,12 @@ export default function ReviewQuestionnaire() {
             <div className="flex items-center justify-between gap-4 pt-4">
               <div className="flex items-center gap-4">
                 <p className="text-muted-foreground text-sm">
-                  Question {questionIndexInStep + 1} of {currentGroup.questions.length} in this step
+                  Question {questionIndexInStep + 1} of {currentGroup?.questions.length ?? 0} in this step
                 </p>
                 <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden max-w-xs">
                   <div
                     className="h-full bg-primary transition-all duration-300 rounded-full"
-                    style={{ width: `${((questionIndexInStep + 1) / currentGroup.questions.length) * 100}%` }}
+                    style={{ width: `${((questionIndexInStep + 1) / (currentGroup?.questions.length || 1)) * 100}%` }}
                   />
                 </div>
               </div>
@@ -1390,18 +1459,18 @@ export default function ReviewQuestionnaire() {
                   </Button>
                 )}
                 {isLastInStep && !isLastStepOverall && (
-                  <Button onClick={handleNext} variant="outline" disabled={completing}>
+                  <Button onClick={handleNext} variant="outline" disabled={completing || missingRequired}>
                     Save & Next Step
                   </Button>
                 )}
                 {!isLastInStep && (
-                  <Button onClick={handleNext} disabled={completing}>
+                  <Button onClick={handleNext} disabled={completing || missingRequired}>
                     Next Question
                   </Button>
                 )}
                 {isLastStepOverall && (
-                  <Button onClick={handleCompleteReview} disabled={completing}>
-                    {completing ? "Completing..." : "Complete Review"}
+                  <Button onClick={handleCompleteReview} disabled={completing || missingRequired}>
+                    {completing ? "Completing..." : journey ? "Submit feedback" : "Complete Review"}
                   </Button>
                 )}
               </div>
@@ -1413,7 +1482,7 @@ export default function ReviewQuestionnaire() {
 
     return (
       <div className="p-8 max-w-4xl mx-auto space-y-6">
-        <h1 className="text-2xl font-bold">Review Assessment</h1>
+        <h1 className="text-2xl font-bold">{journey ? `${journey.copy.programName} feedback` : "Review Assessment"}</h1>
         <div className="flex items-center gap-4 mb-6">
           <p className="text-muted-foreground whitespace-nowrap">
             Question {current + 1} of {totalQuestions}
@@ -1446,7 +1515,11 @@ export default function ReviewQuestionnaire() {
         </div>
       </div>
       <div className="border rounded-lg p-6 space-y-4">
-        <p className="text-lg font-medium">{currentQuestion.text || currentQuestion.question_text}</p>
+        <QuestionText
+          text={currentQuestion.text || currentQuestion.question_text || ""}
+          values={placeholders}
+          className="text-lg font-medium [&_b]:font-semibold"
+        />
         
         <div className="border-t my-4" />
         
@@ -1454,10 +1527,11 @@ export default function ReviewQuestionnaire() {
           <label htmlFor={`answer-${currentQuestion.id}`} className="text-sm font-medium">
             Your response (optional)
           </label>
-          <MicTextarea
+          <QuestionField
+            question={currentQuestion as any}
             value={answers[currentQuestion.id] || ""}
             onChange={(next) => handleAnswerChange(currentQuestion.id, next)}
-            placeholder="Type your answer… or hold the mic to speak"
+            slider={journey?.slider}
           />
         </div>
       </div>

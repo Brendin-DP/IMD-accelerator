@@ -16,6 +16,7 @@ export type Database = {
     Tables: {
       assessment_definitions_v2: {
         Row: {
+          config: Json | null
           allow_external_nominees: boolean | null
           allow_internal_nominees: boolean | null
           assessment_type_id: string
@@ -30,6 +31,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          config?: Json | null
           allow_external_nominees?: boolean | null
           allow_internal_nominees?: boolean | null
           assessment_type_id: string
@@ -44,6 +46,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          config?: Json | null
           allow_external_nominees?: boolean | null
           allow_internal_nominees?: boolean | null
           assessment_type_id?: string
@@ -76,6 +79,7 @@ export type Database = {
       }
       assessment_questions_v2: {
         Row: {
+          config: Json | null
           assessment_definition_id: string
           created_at: string
           id: string
@@ -86,6 +90,7 @@ export type Database = {
           step_id: string | null
         }
         Insert: {
+          config?: Json | null
           assessment_definition_id: string
           created_at?: string
           id?: string
@@ -96,6 +101,7 @@ export type Database = {
           step_id?: string | null
         }
         Update: {
+          config?: Json | null
           assessment_definition_id?: string
           created_at?: string
           id?: string
@@ -124,6 +130,7 @@ export type Database = {
       }
       assessment_reports: {
         Row: {
+          phase: number
           id: string
           participant_assessment_id: string
           report_type: string
@@ -132,6 +139,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          phase?: number
           id?: string
           participant_assessment_id: string
           report_type?: string
@@ -140,6 +148,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          phase?: number
           id?: string
           participant_assessment_id?: string
           report_type?: string
@@ -159,6 +168,7 @@ export type Database = {
       }
       assessment_response_sessions: {
         Row: {
+          phase: number
           assessment_definition_id: string
           completion_percent: number
           created_at: string
@@ -176,6 +186,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          phase?: number
           assessment_definition_id: string
           completion_percent?: number
           created_at?: string
@@ -193,6 +204,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          phase?: number
           assessment_definition_id?: string
           completion_percent?: number
           created_at?: string
@@ -311,6 +323,8 @@ export type Database = {
       }
       assessment_steps_v2: {
         Row: {
+          phase_number: number
+          step_key: string | null
           assessment_definition_id: string
           created_at: string
           id: string
@@ -318,6 +332,8 @@ export type Database = {
           title: string | null
         }
         Insert: {
+          phase_number?: number
+          step_key?: string | null
           assessment_definition_id: string
           created_at?: string
           id?: string
@@ -325,6 +341,8 @@ export type Database = {
           title?: string | null
         }
         Update: {
+          phase_number?: number
+          step_key?: string | null
           assessment_definition_id?: string
           created_at?: string
           id?: string
@@ -443,6 +461,44 @@ export type Database = {
             columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "imd_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cohort_assessment_phases: {
+        Row: {
+          cohort_assessment_id: string
+          created_at: string
+          end_date: string | null
+          id: string
+          name: string | null
+          phase_number: number
+          start_date: string | null
+        }
+        Insert: {
+          cohort_assessment_id: string
+          created_at?: string
+          end_date?: string | null
+          id?: string
+          name?: string | null
+          phase_number: number
+          start_date?: string | null
+        }
+        Update: {
+          cohort_assessment_id?: string
+          created_at?: string
+          end_date?: string | null
+          id?: string
+          name?: string | null
+          phase_number?: number
+          start_date?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cohort_assessment_phases_cohort_assessment_id_fkey"
+            columns: ["cohort_assessment_id"]
+            isOneToOne: false
+            referencedRelation: "cohort_assessments"
             referencedColumns: ["id"]
           },
         ]
@@ -864,6 +920,51 @@ export type Database = {
             columns: ["reviewer_id"]
             isOneToOne: false
             referencedRelation: "client_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reviewer_round_invitations: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          id: string
+          phase_id: string
+          reviewer_nomination_id: string
+          sent_at: string | null
+          status: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          phase_id: string
+          reviewer_nomination_id: string
+          sent_at?: string | null
+          status?: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          phase_id?: string
+          reviewer_nomination_id?: string
+          sent_at?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reviewer_round_invitations_phase_id_fkey"
+            columns: ["phase_id"]
+            isOneToOne: false
+            referencedRelation: "cohort_assessment_phases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reviewer_round_invitations_reviewer_nomination_id_fkey"
+            columns: ["reviewer_nomination_id"]
+            isOneToOne: false
+            referencedRelation: "reviewer_nominations"
             referencedColumns: ["id"]
           },
         ]

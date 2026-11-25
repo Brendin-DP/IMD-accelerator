@@ -1,5 +1,6 @@
 // app/api/reports/pulse/regenerate/route.tsx
 import { NextResponse } from "next/server";
+import { isHabitJourney, parseConfig } from "@/lib/assessment-config";
 import { renderToBuffer } from "@react-pdf/renderer";
 import React from "react";
 import { PulseReportPDF, type PulseReportData } from "../_pdf";
@@ -172,6 +173,19 @@ export async function POST(req: Request) {
 
       if (systemDef) {
         assessmentDefinitionId = systemDef.id;
+      }
+    }
+
+    // Habit-journey programmes report on screen with anonymised, thresholded
+    // stats; this PDF lists reviewers by name, so it must not be produced for them.
+    if (assessmentDefinitionId) {
+      const { data: definitionRow } = await supabase
+        .from("assessment_definitions_v2")
+        .select("config")
+        .eq("id", assessmentDefinitionId)
+        .maybeSingle();
+      if (isHabitJourney(parseConfig(definitionRow?.config))) {
+        return NextResponse.json({ skipped: true, reason: "habit_journey_reports_on_screen" });
       }
     }
 

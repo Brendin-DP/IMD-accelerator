@@ -5,8 +5,10 @@
 
 /** Unique constraints beyond the primary key (`id`). */
 export const UNIQUE_CONSTRAINTS: Record<string, string[][]> = {
-  assessment_reports: [["participant_assessment_id", "report_type"]],
+  assessment_reports: [["participant_assessment_id", "report_type", "phase"]],
   assessment_responses: [["session_id", "question_id"]],
+  cohort_assessment_phases: [["cohort_assessment_id", "phase_number"]],
+  reviewer_round_invitations: [["reviewer_nomination_id", "phase_id"]],
 };
 
 /** Defaults for text columns that Postgres fills in (keyed "table.column"). */
@@ -16,6 +18,10 @@ export const STRING_DEFAULTS: Record<string, unknown> = {
   "assessment_response_sessions.status": "not_started",
   "assessment_response_sessions.completion_percent": 0,
   "client_users.status": "active",
+  "assessment_steps_v2.phase_number": 1,
+  "assessment_response_sessions.phase": 1,
+  "assessment_reports.phase": 1,
+  "reviewer_round_invitations.status": "pending",
 };
 
 /**

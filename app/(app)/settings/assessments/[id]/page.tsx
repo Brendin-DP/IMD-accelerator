@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Plus, Trash2, GripVertical, Save } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, GripVertical, Save, SlidersHorizontal, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { QuestionTypeIcon } from "@/components/ui/question-type-icon";
 import { supabase } from "@/lib/supabaseClient";
 import { cn } from "@/lib/utils";
+import { parseConfig, DEFAULT_SLIDER, DEFAULT_NOMINATION_RULES, DEFAULT_COPY, type DefinitionConfig, type QuestionConfig } from "@/lib/assessment-config";
 import {
   DndContext,
   DragOverlay,
@@ -49,6 +50,7 @@ interface AssessmentDefinition {
   is_system: boolean;
   created_at: string;
   updated_at: string;
+  config?: unknown;
   assessment_type?: {
     id: string;
     name: string;
@@ -61,6 +63,8 @@ interface AssessmentStep {
   assessment_definition_id: string;
   title: string | null;
   step_order: number;
+  step_key?: string | null;
+  phase_number?: number;
   created_at: string;
 }
 
@@ -72,6 +76,7 @@ interface AssessmentQuestion {
   question_order: number;
   required: boolean;
   step_id: string | null;
+  config?: QuestionConfig | null;
   created_at: string;
 }
 
@@ -107,6 +112,8 @@ export default function AssessmentDetailPage() {
   // Edit mode state
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingAssessment, setEditingAssessment] = useState({ name: "", description: "" });
+  // Programme config (assessment_definitions_v2.config) — null for classic definitions.
+  const [programmeConfig, setProgrammeConfig] = useState<DefinitionConfig | null>(null);
   const [editingStep, setEditingStep] = useState<AssessmentStep | null>(null);
   const [editingQuestion, setEditingQuestion] = useState<AssessmentQuestion | null>(null);
   const [isStepDialogOpen, setIsStepDialogOpen] = useState(false);
@@ -147,6 +154,7 @@ export default function AssessmentDetailPage() {
         name: assessment.name,
         description: assessment.description || "",
       });
+      setProgrammeConfig(parseConfig<DefinitionConfig>(assessment.config));
     }
   }, [assessment]);
 
@@ -342,7 +350,7 @@ export default function AssessmentDetailPage() {
     setIsQuestionDialogOpen(true);
   }
 
-  async function handleSaveQuestion(questionText: string, required: boolean, stepId: string | null) {
+  async function handleSaveQuestion(questionText: string, required: boolean, stepId: string | null, questionType = "textarea") {
     if (!assessmentId) return;
 
     try {
@@ -370,7 +378,7 @@ export default function AssessmentDetailPage() {
           .insert({
             assessment_definition_id: assessmentId,
             question_text: questionText,
-            question_type: "text",
+            question_type: questionType,
             question_order: maxOrder + 1,
             required,
             step_id: stepId,
@@ -500,6 +508,7 @@ export default function AssessmentDetailPage() {
         .update({
           name: editingAssessment.name.trim(),
           description: editingAssessment.description.trim() || null,
+          ...(programmeConfig ? { config: programmeConfig } : {}),
           updated_at: new Date().toISOString(),
         })
         .eq("id", assessmentId);
@@ -516,6 +525,8 @@ export default function AssessmentDetailPage() {
             assessment_definition_id: assessmentId,
             title: step.title,
             step_order: index + 1,
+            step_key: step.step_key ?? null,
+            phase_number: step.phase_number ?? 1,
           })),
           { onConflict: "id" }
         );
@@ -533,6 +544,7 @@ export default function AssessmentDetailPage() {
             question_order: question.question_order,
             required: question.required,
             step_id: question.step_id && stepIds.has(question.step_id) ? question.step_id : null,
+            config: question.config ?? null,
           })),
           { onConflict: "id" }
         );
@@ -684,6 +696,10 @@ export default function AssessmentDetailPage() {
         </CardContent>
       </Card>
 
+      {programmeConfig?.variant && (
+        <ProgrammeSettingsCard config={programmeConfig} onChange={setProgrammeConfig} editable={isEditMode} />
+      )}
+
       {/* Steps and Questions */}
       {questionGroups.length === 0 && !isEditMode ? (
         <Card>
@@ -763,17 +779,26 @@ export default function AssessmentDetailPage() {
                   }
                   onAddQuestion={() => handleAddQuestion(group.step?.id || null)}
                   onDeleteStep={group.step ? () => handleDeleteStep(group.step!.id) : undefined}
+                  phase={programmeConfig?.variant && group.step ? group.step.phase_number ?? 1 : undefined}
+                  stepKey={group.step?.step_key ?? null}
+                  onPhaseChange={
+                    group.step
+                      ? (value) => setSteps(steps.map((s) => (s.id === group.step!.id ? { ...s, phase_number: value } : s)))
+                      : undefined
+                  }
                 >
                   <SortableContext items={group.questions.map((q) => q.id)} strategy={verticalListSortingStrategy}>
                     {group.questions.map((question, i) => (
                       <SortableQuestionItem
                         key={question.id}
-                        index={i + 1}
+                        index={group.questions.slice(0, i + 1).filter((q) => q.question_type !== "heading" && q.question_type !== "info").length}
                         question={question}
                         isEditMode={isEditMode}
                         questions={questions}
                         setQuestions={setQuestions}
                         onDelete={handleDeleteQuestion}
+                        showProgrammeFields={!!programmeConfig?.variant}
+                        defaultSlider={programmeConfig?.slider}
                       />
                     ))}
                   </SortableContext>
@@ -847,6 +872,9 @@ function StepGroup({
   onTitleChange,
   onAddQuestion,
   onDeleteStep,
+  phase,
+  stepKey,
+  onPhaseChange,
   children,
 }: {
   id: string;
@@ -857,6 +885,10 @@ function StepGroup({
   onTitleChange?: (value: string) => void;
   onAddQuestion: () => void;
   onDeleteStep?: () => void;
+  /** Programme phase (habit journeys); undefined hides the control. */
+  phase?: number;
+  stepKey?: string | null;
+  onPhaseChange?: (value: number) => void;
   children: React.ReactNode;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id });
@@ -881,6 +913,23 @@ function StepGroup({
         ) : (
           <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">{title}</span>
         )}
+        {stepKey && (
+          <code className="hidden shrink-0 rounded bg-gray-50 px-1.5 py-0.5 text-[11px] text-gray-500 sm:inline">{stepKey}</code>
+        )}
+        {phase !== undefined &&
+          (isEditMode && onPhaseChange ? (
+            <Select value={String(phase)} onValueChange={(v) => onPhaseChange(Number(v))}>
+              <SelectTrigger className="h-7 w-[92px] shrink-0 text-xs" aria-label="Phase">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">Phase 1</SelectItem>
+                <SelectItem value="2">Phase 2</SelectItem>
+              </SelectContent>
+            </Select>
+          ) : (
+            <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">Phase {phase}</span>
+          ))}
         <span className="shrink-0 text-xs tabular-nums text-gray-400">{count}</span>
         {isEditMode && (
           <div className="flex shrink-0 items-center">
@@ -914,7 +963,19 @@ function StepGroup({
   );
 }
 
-// One compact, sortable question row.
+const QUESTION_TYPES: { value: string; label: string }[] = [
+  { value: "textarea", label: "Long text" },
+  { value: "text", label: "Short text" },
+  { value: "slider", label: "Slider" },
+  { value: "heading", label: "Heading" },
+];
+const CONTEXT_LABELS: Record<string, string> = {
+  participant: "Participant",
+  reviewer: "Reviewer",
+  self_reflection: "Self-reflection",
+};
+
+// One compact, sortable question row (with an expandable settings panel).
 function SortableQuestionItem({
   index,
   question,
@@ -922,6 +983,8 @@ function SortableQuestionItem({
   questions,
   setQuestions,
   onDelete,
+  showProgrammeFields,
+  defaultSlider,
 }: {
   index: number;
   question: AssessmentQuestion;
@@ -929,75 +992,282 @@ function SortableQuestionItem({
   questions: AssessmentQuestion[];
   setQuestions: (questions: AssessmentQuestion[]) => void;
   onDelete: (id: string) => void;
+  showProgrammeFields?: boolean;
+  defaultSlider?: DefinitionConfig["slider"];
 }) {
+  const [open, setOpen] = useState(false);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: question.id,
     disabled: !isEditMode,
   });
   const update = (patch: Partial<AssessmentQuestion>) =>
     setQuestions(questions.map((q) => (q.id === question.id ? { ...q, ...patch } : q)));
+  const config = (question.config ?? {}) as QuestionConfig;
+  const isHeading = question.question_type === "heading" || question.question_type === "info";
+  const context = config.context;
 
   return (
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={cn(
-        "group flex items-center gap-2 bg-white px-2 py-1.5 transition-colors hover:bg-gray-50/80",
-        isDragging && "relative z-10 opacity-40",
-      )}
+      className={cn("bg-white", isDragging && "relative z-10 opacity-40")}
     >
-      {isEditMode && (
-        <button
-          type="button"
-          {...attributes}
-          {...listeners}
-          className="flex h-6 w-5 shrink-0 cursor-grab items-center justify-center rounded text-gray-300 hover:text-gray-500 active:cursor-grabbing"
-          aria-label="Drag to reorder"
-        >
-          <GripVertical className="h-4 w-4" />
-        </button>
-      )}
-      <span className="w-6 shrink-0 text-right text-xs tabular-nums text-gray-400">{index}</span>
-      <QuestionTypeIcon type={question.question_type} className="h-3.5 w-3.5 shrink-0 text-gray-400" />
-      {isEditMode ? (
-        <input
-          value={question.question_text}
-          onChange={(e) => update({ question_text: e.target.value })}
-          placeholder="Enter question text"
-          className="h-7 min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 text-sm text-gray-900 placeholder:text-gray-400 hover:border-gray-200 focus:border-gray-300 focus:bg-white focus:outline-none"
+      <div className="group flex items-center gap-2 px-2 py-1.5 transition-colors hover:bg-gray-50/80">
+        {isEditMode && (
+          <button
+            type="button"
+            {...attributes}
+            {...listeners}
+            className="flex h-6 w-5 shrink-0 cursor-grab items-center justify-center rounded text-gray-300 hover:text-gray-500 active:cursor-grabbing"
+            aria-label="Drag to reorder"
+          >
+            <GripVertical className="h-4 w-4" />
+          </button>
+        )}
+        <span className="w-6 shrink-0 text-right text-xs tabular-nums text-gray-400">{isHeading ? "" : index}</span>
+        {question.question_type === "slider" ? (
+          <SlidersHorizontal className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+        ) : (
+          <QuestionTypeIcon type={question.question_type} className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+        )}
+        {isEditMode ? (
+          <input
+            value={question.question_text}
+            onChange={(e) => update({ question_text: e.target.value })}
+            placeholder={isHeading ? "Heading or info text" : "Enter question text"}
+            className={cn(
+              "h-7 min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 text-sm text-gray-900 placeholder:text-gray-400 hover:border-gray-200 focus:border-gray-300 focus:bg-white focus:outline-none",
+              isHeading && "italic text-gray-600",
+            )}
+          />
+        ) : (
+          <p
+            className={cn("min-w-0 flex-1 truncate px-1.5 text-sm text-gray-900", isHeading && "italic text-gray-600")}
+            title={question.question_text}
+          >
+            {question.question_text.replace(/<[^>]*>/g, " ")}
+          </p>
+        )}
+        {showProgrammeFields && context && (
+          <span className="hidden shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600 md:inline">
+            {CONTEXT_LABELS[context] ?? context}
+          </span>
+        )}
+        {isEditMode ? (
+          <>
+            <Select value={question.question_type || "textarea"} onValueChange={(v) => update({ question_type: v })}>
+              <SelectTrigger className="h-7 w-[104px] shrink-0 text-xs" aria-label="Question type">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {QUESTION_TYPES.map((t) => (
+                  <SelectItem key={t.value} value={t.value}>
+                    {t.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {!isHeading && (
+              <button
+                type="button"
+                onClick={() => update({ required: !question.required })}
+                className={cn(
+                  "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors",
+                  question.required ? "bg-red-50 text-red-700 hover:bg-red-100" : "text-gray-400 hover:bg-gray-100",
+                )}
+                title="Toggle required"
+              >
+                {question.required ? "Required" : "Optional"}
+              </button>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setOpen((v) => !v)}
+              className={cn("h-7 w-7 shrink-0 p-0 text-gray-400 hover:text-gray-700", open && "bg-gray-100 text-gray-700")}
+              aria-label="Question settings"
+              aria-expanded={open}
+            >
+              <Settings2 className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onDelete(question.id)}
+              className="h-7 w-7 shrink-0 p-0 text-gray-300 opacity-0 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
+              aria-label="Delete question"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </>
+        ) : (
+          question.required && !isHeading && <span className="shrink-0 text-[11px] font-medium text-red-600">Required</span>
+        )}
+      </div>
+      {isEditMode && open && (
+        <QuestionSettingsPanel
+          question={question}
+          config={config}
+          onChange={(next) => update({ config: next })}
+          defaultSlider={defaultSlider}
         />
-      ) : (
-        <p className="min-w-0 flex-1 truncate px-1.5 text-sm text-gray-900" title={question.question_text}>
-          {question.question_text}
-        </p>
-      )}
-      {isEditMode ? (
-        <button
-          type="button"
-          onClick={() => update({ required: !question.required })}
-          className={cn(
-            "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors",
-            question.required ? "bg-red-50 text-red-700 hover:bg-red-100" : "text-gray-400 hover:bg-gray-100",
-          )}
-          title="Toggle required"
-        >
-          {question.required ? "Required" : "Optional"}
-        </button>
-      ) : (
-        question.required && <span className="shrink-0 text-[11px] font-medium text-red-600">Required</span>
-      )}
-      {isEditMode && (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => onDelete(question.id)}
-          className="h-7 w-7 shrink-0 p-0 text-gray-300 opacity-0 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
-          aria-label="Delete question"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </Button>
       )}
     </div>
+  );
+}
+
+function SettingsField({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-[11px] font-medium uppercase tracking-wide text-gray-500">{label}</span>
+      {children}
+      {hint && <span className="text-[11px] text-gray-400">{hint}</span>}
+    </label>
+  );
+}
+
+const fieldClass =
+  "h-8 w-full rounded-md border border-gray-200 bg-white px-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none";
+
+// Per-question config: who answers it, slider bounds/labels, length limits, help text.
+function QuestionSettingsPanel({
+  question,
+  config,
+  onChange,
+  defaultSlider,
+}: {
+  question: AssessmentQuestion;
+  config: QuestionConfig;
+  onChange: (config: QuestionConfig) => void;
+  defaultSlider?: DefinitionConfig["slider"];
+}) {
+  const set = (patch: Partial<QuestionConfig>) => {
+    const next: Record<string, unknown> = { ...config, ...patch };
+    Object.keys(next).forEach((k) => (next[k] === "" || next[k] === undefined) && delete next[k]);
+    onChange(next as QuestionConfig);
+  };
+  const num = (v: string) => (v === "" ? undefined : Number(v));
+  const slider = { ...DEFAULT_SLIDER, ...(defaultSlider ?? {}) };
+  const isSlider = question.question_type === "slider";
+  const isHeading = question.question_type === "heading" || question.question_type === "info";
+
+  return (
+    <div className="mx-2 mb-2 grid gap-3 rounded-lg border border-gray-100 bg-gray-50/70 p-3 sm:grid-cols-2 lg:grid-cols-4">
+      <SettingsField label="Answered by">
+        <Select value={config.context ?? "__all__"} onValueChange={(v) => set({ context: v === "__all__" ? undefined : (v as QuestionConfig["context"]) })}>
+          <SelectTrigger className="h-8 text-sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">Everyone</SelectItem>
+            <SelectItem value="participant">Participant</SelectItem>
+            <SelectItem value="reviewer">Reviewer</SelectItem>
+            <SelectItem value="self_reflection">Self-reflection</SelectItem>
+          </SelectContent>
+        </Select>
+      </SettingsField>
+      <SettingsField label="Key" hint="Stable id used by reports">
+        <input className={fieldClass} value={config.key ?? ""} placeholder="e.g. observe_actions" onChange={(e) => set({ key: e.target.value.trim() || undefined })} />
+      </SettingsField>
+      {isSlider && (
+        <>
+          <SettingsField label="Scale">
+            <div className="flex items-center gap-1.5">
+              <input type="number" className={fieldClass} value={config.min ?? ""} placeholder={String(slider.min)} onChange={(e) => set({ min: num(e.target.value) })} aria-label="Minimum" />
+              <span className="text-gray-400">–</span>
+              <input type="number" className={fieldClass} value={config.max ?? ""} placeholder={String(slider.max)} onChange={(e) => set({ max: num(e.target.value) })} aria-label="Maximum" />
+            </div>
+          </SettingsField>
+          <SettingsField label="End labels">
+            <div className="flex items-center gap-1.5">
+              <input className={fieldClass} value={config.labels?.min ?? ""} placeholder={slider.labels?.min} onChange={(e) => set({ labels: { ...config.labels, min: e.target.value || undefined } })} aria-label="Low label" />
+              <input className={fieldClass} value={config.labels?.max ?? ""} placeholder={slider.labels?.max} onChange={(e) => set({ labels: { ...config.labels, max: e.target.value || undefined } })} aria-label="High label" />
+            </div>
+          </SettingsField>
+        </>
+      )}
+      {!isSlider && !isHeading && (
+        <>
+          <SettingsField label="Max length">
+            <input type="number" className={fieldClass} value={config.maxLength ?? ""} placeholder="No limit" onChange={(e) => set({ maxLength: num(e.target.value) })} />
+          </SettingsField>
+          <SettingsField label="Placeholder">
+            <input className={fieldClass} value={config.placeholder ?? ""} onChange={(e) => set({ placeholder: e.target.value })} />
+          </SettingsField>
+        </>
+      )}
+      <SettingsField label="Tooltip" hint="Shown as help next to the step">
+        <input className={fieldClass} value={config.tooltip ?? ""} onChange={(e) => set({ tooltip: e.target.value })} />
+      </SettingsField>
+      {!isSlider && !isHeading && (
+        <label className="flex items-center gap-2 self-end pb-1.5 text-sm text-gray-700">
+          <input
+            type="checkbox"
+            checked={!!config.sharedWithReviewers}
+            onChange={(e) => set({ sharedWithReviewers: e.target.checked || undefined })}
+          />
+          Shown to reviewers as the commitment
+        </label>
+      )}
+      <p className="text-[11px] leading-relaxed text-gray-400 sm:col-span-2 lg:col-span-4">
+        Question text supports <code>&lt;b&gt;</code>, <code>&lt;i&gt;</code> and <code>&lt;br&gt;</code>, plus{" "}
+        <code>{"{participant_name}"}</code> and <code>{"{t1_commitment}"}</code> (the participant&apos;s shared answer).
+      </p>
+    </div>
+  );
+}
+
+// Programme-level config: nomination rules, slider defaults, report threshold, copy.
+function ProgrammeSettingsCard({
+  config,
+  onChange,
+  editable,
+}: {
+  config: DefinitionConfig;
+  onChange: (config: DefinitionConfig) => void;
+  editable: boolean;
+}) {
+  const rules = { ...DEFAULT_NOMINATION_RULES, ...(config.nominationRules ?? {}) };
+  const slider = { ...DEFAULT_SLIDER, ...(config.slider ?? {}) };
+  const copy = { ...DEFAULT_COPY, ...(config.copy ?? {}) };
+  const num = (v: string, fallback: number) => (v === "" || Number.isNaN(Number(v)) ? fallback : Number(v));
+  const setRule = (channel: "internal" | "external", bound: "min" | "max", v: string) =>
+    onChange({ ...config, nominationRules: { ...rules, [channel]: { ...rules[channel], [bound]: num(v, rules[channel][bound]) } } });
+
+  const cell = ({ label, value, onValue, type = "number" }: { label: string; value: string | number; onValue: (v: string) => void; type?: string }) => (
+    <SettingsField key={label} label={label}>
+      <input type={type} className={fieldClass} value={value} disabled={!editable} onChange={(e) => onValue(e.target.value)} />
+    </SettingsField>
+  );
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between gap-3">
+          <CardTitle className="text-base">Programme settings</CardTitle>
+          <code className="rounded bg-gray-50 px-2 py-0.5 text-xs text-gray-500">{config.variant}</code>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {cell({ label: "Programme name", type: "text", value: copy.programName, onValue: (v) => onChange({ ...config, copy: { ...config.copy, programName: v } }) })}
+          {cell({ label: "Internal reviewers min", value: rules.internal.min, onValue: (v) => setRule("internal", "min", v) })}
+          {cell({ label: "Internal reviewers max", value: rules.internal.max, onValue: (v) => setRule("internal", "max", v) })}
+          {cell({ label: "Report min responses", value: config.report?.minResponses ?? 2, onValue: (v) => onChange({ ...config, report: { ...config.report, minResponses: num(v, 2) } }) })}
+          {cell({ label: "Slider scale (min)", value: slider.min, onValue: (v) => onChange({ ...config, slider: { ...slider, min: num(v, slider.min) } }) })}
+          {cell({ label: "External reviewers min", value: rules.external.min, onValue: (v) => setRule("external", "min", v) })}
+          {cell({ label: "External reviewers max", value: rules.external.max, onValue: (v) => setRule("external", "max", v) })}
+          {cell({ label: "Self-reflection min reviews", value: rules.selfReflectionMinReviews, onValue: (v) => onChange({ ...config, nominationRules: { ...rules, selfReflectionMinReviews: num(v, rules.selfReflectionMinReviews) } }) })}
+          {cell({ label: "Slider scale (max)", value: slider.max, onValue: (v) => onChange({ ...config, slider: { ...slider, max: num(v, slider.max) } }) })}
+          {cell({ label: "Slider low label", type: "text", value: slider.labels?.min ?? "", onValue: (v) => onChange({ ...config, slider: { ...slider, labels: { ...slider.labels, min: v } } }) })}
+          {cell({ label: "Slider high label", type: "text", value: slider.labels?.max ?? "", onValue: (v) => onChange({ ...config, slider: { ...slider, labels: { ...slider.labels, max: v } } }) })}
+          {cell({ label: "Report marker label", type: "text", value: copy.reportYouLabel, onValue: (v) => onChange({ ...config, copy: { ...config.copy, reportYouLabel: v } }) })}
+        </div>
+        <p className="mt-3 text-xs text-muted-foreground">
+          Changes apply when you save the assessment. Avoid changing scales or thresholds while a cohort is running.
+        </p>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -1059,10 +1329,11 @@ function QuestionDialogContent({
   question: AssessmentQuestion | null;
   steps: AssessmentStep[];
   selectedStepId: string | null;
-  onSave: (text: string, required: boolean, stepId: string | null) => void;
+  onSave: (text: string, required: boolean, stepId: string | null, questionType: string) => void;
   onClose: () => void;
 }) {
   const [questionText, setQuestionText] = useState(question?.question_text || "");
+  const [questionType, setQuestionType] = useState(question?.question_type || "textarea");
   const [required, setRequired] = useState(question?.required || false);
   const [stepId, setStepId] = useState<string | null>(selectedStepId || question?.step_id || null);
 
@@ -1081,6 +1352,23 @@ function QuestionDialogContent({
           className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-none"
           required
         />
+      </div>
+      <div className="space-y-2">
+        <label htmlFor="question-type" className="text-sm font-medium">
+          Type
+        </label>
+        <Select value={questionType} onValueChange={setQuestionType}>
+          <SelectTrigger id="question-type">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {QUESTION_TYPES.map((t) => (
+              <SelectItem key={t.value} value={t.value}>
+                {t.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       {steps.length > 0 && (
         <div className="space-y-2">
@@ -1117,7 +1405,7 @@ function QuestionDialogContent({
         <Button variant="outline" onClick={onClose}>
           Cancel
         </Button>
-        <Button onClick={() => onSave(questionText, required, stepId)} disabled={!questionText.trim()}>
+        <Button onClick={() => onSave(questionText, required, stepId, questionType)} disabled={!questionText.trim()}>
           Save
         </Button>
       </div>

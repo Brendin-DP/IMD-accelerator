@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, MoreVertical, Trash2, Download, ClipboardList, Gauge, UserCheck } from "lucide-react";
 import { InfoStrip } from "@/components/ui/info-strip";
+import { HabitJourneyPanel, type JourneyContext } from "@/components/assessment/habit-journey-panel";
+import { recordInvitations } from "@/lib/habit-journey";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
@@ -90,6 +92,8 @@ export default function TenantAssessmentDetailPage() {
   const [nominations, setNominations] = useState<ReviewerNomination[]>([]);
   const [clientRoster, setClientRoster] = useState<ClientUser[]>([]);
   const [isNominationModalOpen, setIsNominationModalOpen] = useState(false);
+  // Set when this assessment runs a habit-journey programme (definition config).
+  const [journeyCtx, setJourneyCtx] = useState<JourneyContext | null>(null);
   const [selectedReviewers, setSelectedReviewers] = useState<string[]>([]);
   const [newReviewerEmail, setNewReviewerEmail] = useState<string>("");
   const [emailValid, setEmailValid] = useState<boolean | null>(null);
@@ -405,6 +409,7 @@ export default function TenantAssessmentDetailPage() {
         .select("*")
         .eq("cohort_assessment_id", assessmentId)
         .in("participant_id", participantIds)
+        .order("created_at", { ascending: true })
         .limit(1);
 
       if (paError) {
@@ -1808,6 +1813,18 @@ export default function TenantAssessmentDetailPage() {
         showToast(`Some external reviewers could not be added: ${externalErrors.join(", ")}`, "info");
       }
 
+      if (journeyCtx && !journeyCtx.submitted) {
+        showToast("Submit your habit and observable actions (steps 1–2) before nominating reviewers.", "error");
+        setSubmittingNominations(false);
+        return;
+      }
+      if (journeyCtx && nominationPayload.length > 0 && activeNominationsCount + nominationPayload.length < journeyCtx.journey.reviewers.min) {
+        const needed = journeyCtx.journey.reviewers.min - activeNominationsCount;
+        showToast(`Please nominate at least ${needed} reviewer${needed === 1 ? "" : "s"} (minimum ${journeyCtx.journey.reviewers.min}).`, "error");
+        setSubmittingNominations(false);
+        return;
+      }
+
       if (nominationPayload.length === 0) {
         if (externalErrors.length > 0) {
           showToast("No nominations could be created. Please check the errors above.", "error");
@@ -1819,15 +1836,21 @@ export default function TenantAssessmentDetailPage() {
       }
 
       // Insert nominations
-      const { error: insertError } = await supabase
+      const { data: insertedNominations, error: insertError } = await supabase
         .from("reviewer_nominations")
-        .insert(nominationPayload);
+        .insert(nominationPayload)
+        .select("id");
 
       if (insertError) {
 
         showToast(`Error creating nominations: ${insertError.message || "Please try again"}`, "error");
         setSubmittingNominations(false);
         return;
+      }
+
+      // Habit journeys track each reviewer's invitation per round (phase 1 here).
+      if (journeyCtx && insertedNominations?.length) {
+        await recordInvitations(insertedNominations.map((n: any) => n.id), assessmentId, 1);
       }
 
       // Refresh nominations list and participant assessment
@@ -2285,7 +2308,7 @@ export default function TenantAssessmentDetailPage() {
           <h1 className="text-3xl font-bold">{assessmentName}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {cohortName}
-            {assessment.assessment_type?.description && <> · {assessment.assessment_type.description}</>}
+            {journeyCtx ? <> · {journeyCtx.journey.copy.programName}</> : assessment.assessment_type?.description && <> · {assessment.assessment_type.description}</>}
           </p>
         </div>
         {(() => {
@@ -2307,18 +2330,21 @@ export default function TenantAssessmentDetailPage() {
                   {downloadingReport ? "Downloading..." : "Download Report"}
                 </Button>
               )}
-              {buttonConfig.showRetake && (
+              {buttonConfig.showRetake && !journeyCtx && (
                 <Button onClick={handleRetakeAssessment} variant="tertiary" size="sm" disabled={!user?.id || retakingAssessment}>
                   {retakingAssessment ? "Resetting..." : "Retake"}
                 </Button>
               )}
-              <Button
-                onClick={() => router.push(`/tenant/${subdomain}/assessments/${assessmentId}/questionnaire?source=db`)}
-                variant={buttonConfig.variant}
-                disabled={!user?.id || buttonConfig.disabled}
-              >
-                {buttonConfig.text}
-              </Button>
+              {/* Habit journeys are driven from the journey panel below. */}
+              {!journeyCtx && (
+                <Button
+                  onClick={() => router.push(`/tenant/${subdomain}/assessments/${assessmentId}/questionnaire?source=db`)}
+                  variant={buttonConfig.variant}
+                  disabled={!user?.id || buttonConfig.disabled}
+                >
+                  {buttonConfig.text}
+                </Button>
+              )}
             </div>
           );
         })()}
@@ -2339,7 +2365,7 @@ export default function TenantAssessmentDetailPage() {
             start={assessment.start_date}
             end={assessment.end_date}
             items={[
-              { icon: ClipboardList, label: "Type", value: assessment.assessment_type?.name || "—" },
+              { icon: ClipboardList, label: journeyCtx ? "Programme" : "Type", value: journeyCtx ? journeyCtx.journey.copy.programName : assessment.assessment_type?.name || "—" },
               {
                 icon: Gauge,
                 label: "My progress",
@@ -2427,13 +2453,27 @@ export default function TenantAssessmentDetailPage() {
         </Card>
       )}
 
+      {/* Habit-journey programmes: the 4-step phase-1 journey (renders nothing otherwise) */}
+      <HabitJourneyPanel
+        cohortAssessmentId={assessmentId}
+        subdomain={subdomain}
+        participantAssessment={participantAssessment ? { id: participantAssessment.id, status: participantAssessment.status } : null}
+        userId={user?.id ?? null}
+        activeNominations={getActiveNominationsCount()}
+        acceptedNominations={nominations.filter((n) => n.request_status?.toLowerCase() === "accepted").length}
+        refreshKey={nominations.map((n) => `${n.id}:${n.request_status}:${n.review_status}`).join("|")}
+        onNominate={handleOpenNominationModal}
+        onJourney={setJourneyCtx}
+      />
+
       {/* Nominate for Review Section */}
-      {/* Show nominations section if participant assessment exists and allows nominations, OR if assessment exists and we should allow by default */}
-      {(participantAssessment?.allow_reviewer_nominations !== false) && (
+      {/* Show nominations section if participant assessment exists and allows nominations, OR if assessment exists and we should allow by default.
+          Habit journeys only open nominations once steps 1–2 are submitted. */}
+      {(participantAssessment?.allow_reviewer_nominations !== false) && (!journeyCtx || journeyCtx.submitted) && (
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle>Nominate for Review</CardTitle>
+              <CardTitle>{journeyCtx ? "Your reviewers" : "Nominate for Review"}</CardTitle>
               <div className="flex items-center gap-2">
                 <Input
                   type="text"
@@ -2706,7 +2746,10 @@ export default function TenantAssessmentDetailPage() {
       <Dialog open={isNominationModalOpen} onOpenChange={setIsNominationModalOpen}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Request Nomination</DialogTitle>
+            <DialogTitle>{journeyCtx ? journeyCtx.journey.copy.nominateModalTitle : "Request Nomination"}</DialogTitle>
+            {journeyCtx && (
+              <p className="text-sm font-medium text-gray-700">{journeyCtx.journey.copy.reviewerDetailsFormHeader}</p>
+            )}
             <DialogDescription>
               {(() => {
                 const maxNominations = nomineeLimits.max_nominees ?? 10;

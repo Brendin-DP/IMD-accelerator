@@ -5,6 +5,17 @@ import { Button } from "@/components/ui/button";
 import { Stepper, StepperStep } from "@/components/ui/stepper";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabaseClient";
+import { once } from "@/lib/once";
+import { QuestionField, QuestionText, StepHeadings } from "@/components/assessment/question-field";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import {
+  isAnswerable,
+  isHabitJourney,
+  parseConfig,
+  questionContext,
+  resolveJourney,
+  type ResolvedJourney,
+} from "@/lib/assessment-config";
 import { MicTextarea } from "@/components/mictextarea";
 
 interface Question {
@@ -53,6 +64,10 @@ export default function Assessment360() {
   const [responseSessionId, setResponseSessionId] = useState<string | null>(null);
   const [loadingSession, setLoadingSession] = useState(false);
   const [hasResumed, setHasResumed] = useState(false);
+  // Habit-journey programmes (definition config) — null for classic assessments.
+  const [journey, setJourney] = useState<ResolvedJourney | null>(null);
+  const [headings, setHeadings] = useState<any[]>([]);
+  const [confirmSubmitOpen, setConfirmSubmitOpen] = useState(false);
 
   useEffect(() => {
     const loadData = async () => {
@@ -182,70 +197,51 @@ export default function Assessment360() {
               } else {
           const participantIds = participants.map((p: any) => p.id);
 
-          // Fetch participant_assessment
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:182',message:'Looking up participant_assessment',data:{assessmentId,participantIds},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-          // #endregion
-          // Use limit(1) instead of maybeSingle() to handle potential duplicates (same as detail page)
-          const { data: participantAssessmentData, error: paError } = await supabase
-            .from("participant_assessments")
-            .select("*")
-            .eq("cohort_assessment_id", assessmentId)
-            .in("participant_id", participantIds)
-            .limit(1);
+          // Find this participant's assessment, creating it on first visit. Wrapped
+          // in once() so overlapping runs (React dev double-effects, quick revisits)
+          // share one lookup/insert instead of each creating a row.
+          const finalParticipantAssessmentId = await once(
+            `participant-assessment:${assessmentId}:${participantIds.join(",")}`,
+            async (): Promise<string | null> => {
+              // limit(1) instead of maybeSingle() tolerates historical duplicates
+              const { data: existing, error: paError } = await supabase
+                .from("participant_assessments")
+                .select("*")
+                .eq("cohort_assessment_id", assessmentId)
+                .in("participant_id", participantIds)
+                .order("created_at", { ascending: true })
+                .limit(1);
+              if (!paError && existing && existing.length > 0) return existing[0].id;
 
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:189',message:'Participant assessment lookup result',data:{found:!!participantAssessmentData?.length,count:participantAssessmentData?.length||0,error:paError?.message,participantAssessmentId:participantAssessmentData?.[0]?.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-          // #endregion
-
-          let finalParticipantAssessmentId: string | null = null;
-
-          const pa = participantAssessmentData && participantAssessmentData.length > 0 
-            ? participantAssessmentData[0] 
-            : null;
-
-          if (!paError && pa) {
-            finalParticipantAssessmentId = pa.id;
-            setParticipantAssessmentId(pa.id);
-          } else {
-            // Create participant_assessment if it doesn't exist (fallback)
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:206',message:'Creating participant_assessment (fallback)',data:{assessmentId,participantId:participantIds[0]},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-            // #endregion
-            const { data: newPA, error: createError } = await supabase
-              .from("participant_assessments")
-              .insert({
-                participant_id: participantIds[0],
-                cohort_assessment_id: assessmentId,
-                status: "Not started",
-              })
-              .select()
-              .single();
-
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:220',message:'Participant assessment creation result',data:{success:!!newPA,error:createError?.message,participantAssessmentId:newPA?.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-            // #endregion
-
-            if (createError) {
-
-            } else if (newPA) {
-              finalParticipantAssessmentId = newPA.id;
-              setParticipantAssessmentId(newPA.id);
-            }
-          }
+              const { data: newPA } = await supabase
+                .from("participant_assessments")
+                .insert({
+                  participant_id: participantIds[0],
+                  cohort_assessment_id: assessmentId,
+                  status: "Not started",
+                })
+                .select()
+                .single();
+              return newPA?.id ?? null;
+            },
+          );
+          if (finalParticipantAssessmentId) setParticipantAssessmentId(finalParticipantAssessmentId);
 
           // Create or get response session if we have participant_assessment_id
           if (finalParticipantAssessmentId && assessmentDefinitionId) {
             // #region agent log
             fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:222',message:'Creating/getting response session',data:{participantAssessmentId:finalParticipantAssessmentId,assessmentDefinitionId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
             // #endregion
-            const sessionId = await createOrGetResponseSession(
+            const sessionId = await once(
+              `session:${finalParticipantAssessmentId}:${assessmentDefinitionId}:participant`,
+              () => createOrGetResponseSession(
               finalParticipantAssessmentId,
               assessmentDefinitionId,
               "participant",
               undefined,
               undefined,
               userData.id
+            ),
             );
             // #region agent log
             fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionnaire/page.tsx:232',message:'Session creation result',data:{sessionId,responseSessionIdState:responseSessionId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
@@ -390,6 +386,7 @@ export default function Assessment360() {
   async function loadQuestionsFromDB(assessmentDefinitionId: string, assessmentTypeId: string, assessmentTypeName: string) {
     try {
       const isPulse = assessmentTypeName?.toLowerCase() === "pulse";
+      let loadedSteps: any[] = [];
 
       // Fetch steps if Pulse
       if (isPulse) {
@@ -402,6 +399,7 @@ export default function Assessment360() {
         if (stepsError) {
 
         } else if (stepsData && stepsData.length > 0) {
+          loadedSteps = stepsData;
           setSteps(stepsData);
         } else {
 
@@ -427,8 +425,30 @@ export default function Assessment360() {
         return;
       }
 
+      // Programme config decides who answers what. Classic definitions have no
+      // config, so every question stays visible exactly as before.
+      const { data: definitionRow } = await supabase
+        .from("assessment_definitions_v2")
+        .select("config")
+        .eq("id", assessmentDefinitionId)
+        .maybeSingle();
+      const journeyConfig = isHabitJourney(parseConfig(definitionRow?.config)) ? resolveJourney(definitionRow?.config) : null;
+      setJourney(journeyConfig);
+      const phaseOfStep = (stepId: string | null) => loadedSteps.find((st) => st.id === stepId)?.phase_number ?? 1;
+      const visibleQuestions = (questionsData || []).filter((q: any) => {
+        const context = questionContext(q);
+        return (context === null || context === "participant") && phaseOfStep(q.step_id) === 1;
+      });
+      setHeadings(visibleQuestions.filter((q: any) => !isAnswerable(q)).map((q: any) => ({ ...q, text: q.question_text })));
+      const answerableQuestions = visibleQuestions.filter((q: any) => isAnswerable(q));
+      if (journeyConfig) {
+        // Only steps the participant actually fills in here (nominating and the
+        // report live on the assessment page).
+        setSteps(loadedSteps.filter((st) => answerableQuestions.some((q: any) => q.step_id === st.id)));
+      }
+
       // Transform DB questions to match Question interface
-      const transformedQuestions = questionsData?.map((q: any) => ({
+      const transformedQuestions = answerableQuestions.map((q: any) => ({
         id: q.id,
         text: q.question_text,
         question_text: q.question_text,
@@ -436,7 +456,8 @@ export default function Assessment360() {
         question_type: q.question_type,
         required: q.required,
         step_id: q.step_id,
-      })) || [];
+        config: q.config,
+      }));
 
       setQuestions(transformedQuestions);
     } catch (error) {
@@ -913,10 +934,12 @@ export default function Assessment360() {
       // Use upsert to handle insert/update in one operation
       // This assumes unique constraint on (session_id, question_id) exists
 
+      const isSlider = (questions.find((q: any) => q.id === questionId) as any)?.question_type === "slider";
       const upsertData = {
         session_id: sessionId,
         question_id: questionId,
         answer_text: answerText,
+        answer_json: isSlider ? Number(answerText) : null,
         is_answered: true,
         updated_at: new Date().toISOString(),
       };
@@ -965,7 +988,12 @@ export default function Assessment360() {
         updateData.last_step_id = lastStepId;
       }
 
-      if (totalQuestions !== undefined && answeredCount !== undefined) {
+      if (journey) {
+        // The definition also holds reviewer / phase-2 questions, so DB-wide counts don't apply.
+        totalQuestions = questions.length;
+        answeredCount = questions.filter((q: any) => (answers[q.id] || "").trim() !== "").length;
+      }
+      if (totalQuestions !== undefined && answeredCount !== undefined && totalQuestions > 0) {
         updateData.completion_percent = Math.round((answeredCount / totalQuestions) * 100);
       }
 
@@ -1458,7 +1486,7 @@ export default function Assessment360() {
 
       // Create PDF report for pulse assessments
       const isPulse = assessmentType && assessmentType.toLowerCase() === "pulse";
-      if (isPulse && participantAssessmentId) {
+      if (isPulse && !journey && participantAssessmentId) {
         try {
           const response = await fetch("/api/reports/pulse/regenerate", {
             method: "POST",
@@ -1548,6 +1576,8 @@ export default function Assessment360() {
     const isLastInStep = questionIndexInStep === currentGroup.questions.length - 1;
     const isFirstStep = currentStep === 0;
     const isLastStepOverall = currentStep === questionGroups.length - 1 && isLastInStep;
+    // Habit-journey programmes enforce required answers; classic ones never did.
+    const missingRequired = !!journey && !!currentQuestion?.required && !(answers[currentQuestion.id] || "").trim();
 
     const stepperSteps: StepperStep[] = questionGroups.map((group, index) => {
       const isActive = index === currentStep;
@@ -1576,6 +1606,7 @@ export default function Assessment360() {
         status: isCompleted ? "completed" : isActive ? "active" : "pending",
         content: isActive ? (
           <div className="space-y-4">
+            <StepHeadings headings={headings.filter((h: any) => h.step_id === currentQuestion.step_id)} />
             <div className="border rounded-lg p-6 space-y-4">
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-xs font-medium text-muted-foreground">
@@ -1590,7 +1621,10 @@ export default function Assessment360() {
                   </span>
                 )}
               </div>
-              <p className="text-lg font-medium">{currentQuestion.text || currentQuestion.question_text}</p>
+              <QuestionText
+                text={currentQuestion.text || currentQuestion.question_text || ""}
+                className="text-lg font-medium [&_b]:font-semibold"
+              />
               
               <div className="border-t my-4" />
               
@@ -1598,10 +1632,11 @@ export default function Assessment360() {
                 <label htmlFor={`answer-${currentQuestion.id}`} className="text-sm font-medium">
                   Your response {currentQuestion.required ? "" : "(optional)"}
                 </label>
-                <MicTextarea
+                <QuestionField
+                  question={currentQuestion as any}
                   value={answers[currentQuestion.id] || ""}
                   onChange={(next) => handleAnswerChange(currentQuestion.id, next)}
-                  placeholder="Type your answer… or hold the mic to speak"
+                  slider={journey?.slider}
                 />
               </div>
             </div>
@@ -1625,18 +1660,21 @@ export default function Assessment360() {
                   </Button>
                 )}
                 {isLastInStep && !isLastStepOverall && (
-                  <Button onClick={handleNext} variant="outline" disabled={completing}>
+                  <Button onClick={handleNext} variant="outline" disabled={completing || missingRequired}>
                     Save & Next Step
                   </Button>
                 )}
                 {!isLastInStep && (
-                  <Button onClick={handleNext} disabled={completing}>
+                  <Button onClick={handleNext} disabled={completing || missingRequired}>
                     Next Question
                   </Button>
                 )}
                 {isLastStepOverall && (
-                  <Button onClick={handleCompleteAssessment} disabled={completing}>
-                    {completing ? "Completing..." : "Complete Assessment"}
+                  <Button
+                    onClick={journey ? () => setConfirmSubmitOpen(true) : handleCompleteAssessment}
+                    disabled={completing || missingRequired}
+                  >
+                    {completing ? "Completing..." : journey ? "Submit" : "Complete Assessment"}
                   </Button>
                 )}
               </div>
@@ -1648,7 +1686,7 @@ export default function Assessment360() {
 
     return (
       <div className="p-8 max-w-4xl mx-auto space-y-6">
-        <h1 className="text-2xl font-bold">Pulse Assessment</h1>
+        <h1 className="text-2xl font-bold">{journey ? journey.copy.programName : "Pulse Assessment"}</h1>
         <div className="flex items-center gap-4 mb-6">
           <p className="text-muted-foreground whitespace-nowrap">
             Question {current + 1} of {totalQuestions}
@@ -1661,6 +1699,30 @@ export default function Assessment360() {
           </div>
         </div>
         <Stepper steps={stepperSteps} />
+        {journey && (
+          <Dialog open={confirmSubmitOpen} onOpenChange={setConfirmSubmitOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{journey.copy.submitModalTitle}</DialogTitle>
+                <DialogDescription>{journey.copy.submitModalBody}</DialogDescription>
+              </DialogHeader>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" onClick={() => setConfirmSubmitOpen(false)} disabled={completing}>
+                  {journey.copy.submitModalCancel}
+                </Button>
+                <Button
+                  onClick={async () => {
+                    await handleCompleteAssessment();
+                    setConfirmSubmitOpen(false);
+                  }}
+                  disabled={completing}
+                >
+                  {completing ? "Submitting..." : journey.copy.submitModalConfirm}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
     );
   }
@@ -1681,7 +1743,10 @@ export default function Assessment360() {
         </div>
       </div>
       <div className="border rounded-lg p-6 space-y-4">
-        <p className="text-lg font-medium">{currentQuestion.text || currentQuestion.question_text}</p>
+        <QuestionText
+          text={currentQuestion.text || currentQuestion.question_text || ""}
+          className="text-lg font-medium [&_b]:font-semibold"
+        />
         
         <div className="border-t my-4" />
         
@@ -1689,10 +1754,11 @@ export default function Assessment360() {
           <label htmlFor={`answer-${currentQuestion.id}`} className="text-sm font-medium">
             Your response (optional)
           </label>
-          <MicTextarea
+          <QuestionField
+            question={currentQuestion as any}
             value={answers[currentQuestion.id] || ""}
             onChange={(next) => handleAnswerChange(currentQuestion.id, next)}
-            placeholder="Type your answer… or hold the mic to speak"
+            slider={journey?.slider}
           />
         </div>
       </div>

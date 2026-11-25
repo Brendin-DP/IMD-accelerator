@@ -4,6 +4,7 @@ import { useState, useEffect, Fragment } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, ChevronDown, ChevronRight, ArrowUp, ArrowDown, Search, Users, MoreVertical, Mail, Layers, UserCheck } from "lucide-react";
 import { InfoStrip } from "@/components/ui/info-strip";
+import { countAnswerableQuestions } from "@/lib/habit-journey";
 import { DonutChart, STATUS_COLORS } from "@/components/ui/donut-chart";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -473,10 +474,9 @@ export default function AssessmentDetailPage() {
       fetch('http://127.0.0.1:7242/ingest/ca92d4d9-564c-4650-95a1-d06408ad98ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'cohorts/[id]/assessments/[assessmentId]/page.tsx:461',message:'fetchParticipantProgress - calculating total',data:{assessmentDefinitionId,assessmentId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
       // #endregion
       
-      const { count: totalQuestionsCount, error: countError } = await supabase
-        .from("assessment_questions_v2")
-        .select("*", { count: "exact", head: true })
-        .eq("assessment_definition_id", assessmentDefinitionId);
+      // Habit-journey definitions also hold reviewer/phase-2 questions; count only the participant's.
+      const totalQuestionsCount = await countAnswerableQuestions(assessmentDefinitionId, "participant");
+      const countError = null as { message: string } | null;
 
       const total = totalQuestionsCount || 0;
       
@@ -493,11 +493,12 @@ export default function AssessmentDetailPage() {
         return;
       }
 
-      // Fetch all response sessions for these participant assessments
+      // Fetch the participants' own response sessions (reviewer sessions have their own progress)
       const { data: responseSessions, error: sessionsError } = await supabase
         .from("assessment_response_sessions")
         .select("id, participant_assessment_id")
-        .in("participant_assessment_id", participantAssessmentIds);
+        .in("participant_assessment_id", participantAssessmentIds)
+        .eq("respondent_type", "participant");
 
       if (sessionsError) {
         console.error("Error fetching response sessions:", sessionsError);
@@ -824,10 +825,7 @@ export default function AssessmentDetailPage() {
       }
 
       // Count total questions for this assessment
-      const { count: totalQuestionsCount } = await supabase
-        .from("assessment_questions_v2")
-        .select("*", { count: "exact", head: true })
-        .eq("assessment_definition_id", assessmentDefinitionId);
+      const totalQuestionsCount = await countAnswerableQuestions(assessmentDefinitionId, "reviewer");
 
       const total = totalQuestionsCount || 0;
 

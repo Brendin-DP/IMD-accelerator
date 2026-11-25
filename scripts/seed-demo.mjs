@@ -14,6 +14,8 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { seedHabitAccelerator } from "./seed/habit-accelerator.mjs";
+import { migrate } from "./migrate-mock-db.mjs";
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
 const DB_FILE = path.join(ROOT, "data", "db.json");
@@ -27,6 +29,41 @@ for (const [table, ids] of Object.entries(previous)) {
   const drop = new Set(ids);
   if (Array.isArray(db[table])) db[table] = db[table].filter((r) => !drop.has(r.id));
 }
+// Rows the app created on top of the previous seed's *progress* (nominations,
+// sessions, answers, invitations attached to seeded assessments) are reset:
+// delete them the way Postgres would cascade. Anything built on seeded
+// reference data (clients, users, plans, definitions, cohorts) — e.g. a cohort
+// created in the UI — is kept; those parents are re-added below.
+const RESET_PARENTS = new Set([
+  "participant_assessments",
+  "reviewer_nominations",
+  "assessment_response_sessions",
+  "cohort_assessment_phases",
+]);
+{
+  const schema = JSON.parse(fs.readFileSync(path.join(ROOT, "lib", "mockdb", "schema.json"), "utf8"));
+  const SET_NULL = /created_by|invited_by|base_assessment|last_question|last_step|cohorts_plan_id|cohort_assessments_assessment_definition_id/;
+  let removed = 0;
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const rel of schema.relationships) {
+      if (!RESET_PARENTS.has(rel.referencedTable)) continue;
+      const rows = db[rel.table];
+      const target = db[rel.referencedTable];
+      if (!Array.isArray(rows) || !Array.isArray(target)) continue;
+      const col = rel.columns[0];
+      const ids = new Set(target.map((r) => r[rel.referencedColumns?.[0] ?? "id"]));
+      for (let i = rows.length - 1; i >= 0; i--) {
+        const v = rows[i][col];
+        if (v === null || v === undefined || ids.has(v)) continue;
+        if (SET_NULL.test(rel.name)) rows[i][col] = null;
+        else rows.splice(i, 1), removed++, (changed = true);
+      }
+    }
+  }
+  if (removed) console.log(`Removed ${removed} row(s) the app had added to the previous seed.`);
+}
+
 // Reports are created by the app (not this script) for seeded assessments; drop them and their PDFs too.
 const previousPAs = new Set(previous.participant_assessments ?? []);
 const livePAs = new Set(db.participant_assessments.map((p) => p.id));
@@ -459,6 +496,16 @@ function session({ key, paId, def, type, clientUserId = null, externalId = null,
   });
 }
 
+// ---------------------------------------------------------------- habit accelerator
+
+const habit = seedHabitAccelerator({
+  uid, add, ts, date, between, pick,
+  TYPE_PULSE,
+  client: NORTHWIND,
+  users: usersBy.get(NORTHWIND.id),
+  admin: ADMIN,
+});
+
 // ---------------------------------------------------------------- write
 
 let total = 0;
@@ -469,9 +516,15 @@ for (const [table, rows] of seeded) {
   total += rows.length;
   summary.push(`${table}: ${rows.length}`);
 }
+migrate(db); // fill new columns (phase, config, ...) on every row
 fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2) + "\n");
 fs.writeFileSync(IDS_FILE, JSON.stringify(Object.fromEntries([...seeded].map(([t, rows]) => [t, rows.map((r) => r.id)]))) + "\n");
 console.log(`Seeded ${total} rows (dates relative to ${date(0)}):\n  ${summary.join("\n  ")}`);
+console.log(`\nHabit Accelerator demo (${habit.cohortName}, /tenant/northwind/login):
+  participant with a report ready:   ${habit.participant.email}
+  reviewer with an open review:      ${habit.reviewer?.email}
+  participant with only 1 review:    ${habit.notEnough.email}
+  participant who hasn't submitted:  ${habit.notSubmitted.email}`);
 
 // ---------------------------------------------------------------- reports
 

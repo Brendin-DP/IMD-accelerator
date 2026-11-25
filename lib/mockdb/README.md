@@ -36,6 +36,18 @@ server:  createServerClient().from(...)  ─────── direct ───�
   past. Re-runs replace the previous seed (tracked in `data/seed-ids.json`). All seeded client
   users share the existing client test password. A good participant to demo with is
   `alexander.king@spacex.example.com` at `/tenant/spacex/login`.
+- **Habit Accelerator demo** (part of `db:seed`, see `scripts/seed/habit-accelerator.mjs`): an editable
+  "Habit Accelerator" definition whose `config` (variant `habit_journey`, 1–7 slider, phases,
+  nomination rules, copy) drives the 4-step participant journey, the slider + suggestion reviewer
+  form and the anonymous phase-1 report. Programme logic lives in `lib/assessment-config.ts` and
+  `lib/habit-journey.ts`; definitions without `config` behave exactly as before. Logins (Northwind
+  tenant, `/tenant/northwind/login`) are printed at the end of `npm run db:seed`.
+- **Fill a cohort you created in the UI** on the Habit Accelerator plan with demo progress:
+  `npm run db:seed-cohort -- "<cohort name or id>"`. Participants get the demo states in order
+  (report ready, one review, not submitted, …); reviewers are same-client colleagues outside the
+  cohort. Re-running replaces that cohort's progress. `npm run db:seed` keeps UI-created cohorts.
+- **Added a column?** Update `database.types.ts`, run `npm run generate:mock-schema`, then
+  `npm run db:migrate` to backfill existing rows (null, or the default listed in the script).
 - **Inspect data**: `GET /api/db` (row counts), `/api/db?table=clients`, `/api/db?export=1`
 - **Reset locally**: `git checkout data/db.json`
 - **Reset on Vercel**: `POST /api/db/reset` (re-seeds Blob from the committed file)
