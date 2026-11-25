@@ -215,3 +215,23 @@ export function renderQuestionHtml(text: string, values: Record<string, string |
 export function questionPlainText(text: string, values: Record<string, string | null | undefined> = {}): string {
   return fill(text.replace(/<br\s*\/?>/gi, " ").replace(/<[^>]*>/g, ""), values).replace(/\s+/g, " ").trim();
 }
+
+/**
+ * Editor preview of question text: same tag whitelist as renderQuestionHtml,
+ * but {tokens} are shown as labelled chips instead of being filled in.
+ */
+export function renderQuestionPreview(text: string): string {
+  return text
+    .split(/(<[^>]*>)/g)
+    .map((part) =>
+      part.startsWith("<")
+        ? ALLOWED_TAGS.test(part)
+          ? part.toLowerCase()
+          : escapeHtml(part)
+        : escapeHtml(part).replace(
+            /\{(\w+)\}/g,
+            '<span class="mx-0.5 inline-flex items-center rounded bg-primary/10 px-1 py-px font-mono text-[11px] font-medium text-primary">$1</span>',
+          ),
+    )
+    .join("");
+}

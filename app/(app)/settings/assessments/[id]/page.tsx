@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Plus, Trash2, GripVertical, Save, SlidersHorizontal, Settings2 } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, GripVertical, Save, SlidersHorizontal, Settings2, AlignLeft, Type, Heading, ArrowRightLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,9 +17,10 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { QuestionTypeIcon } from "@/components/ui/question-type-icon";
+import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/lib/supabaseClient";
 import { cn } from "@/lib/utils";
-import { parseConfig, DEFAULT_SLIDER, DEFAULT_NOMINATION_RULES, DEFAULT_COPY, type DefinitionConfig, type QuestionConfig } from "@/lib/assessment-config";
+import { parseConfig, renderQuestionPreview, DEFAULT_SLIDER, DEFAULT_NOMINATION_RULES, DEFAULT_COPY, type DefinitionConfig, type QuestionConfig } from "@/lib/assessment-config";
 import {
   DndContext,
   DragOverlay,
@@ -130,6 +131,8 @@ export default function AssessmentDetailPage() {
     })
   );
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  // Habit-journey programmes split steps by phase; the editor shows one phase at a time.
+  const [activePhase, setActivePhase] = useState(1);
 
   useEffect(() => {
     if (assessmentId) {
@@ -301,6 +304,7 @@ export default function AssessmentDetailPage() {
             assessment_definition_id: assessmentId,
             title: stepTitle || null,
             step_order: maxOrder + 1,
+            phase_number: programmeConfig?.variant ? activePhase : 1,
           });
 
         if (error) throw error;
@@ -583,6 +587,8 @@ export default function AssessmentDetailPage() {
     }
   }
 
+  const grid = gridKey(isEditMode, !!programmeConfig?.variant);
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -728,7 +734,7 @@ export default function AssessmentDetailPage() {
                 )}
                 <Button size="sm" onClick={handleAddStep}>
                   <Plus className="mr-1.5 h-3.5 w-3.5" />
-                  Step
+                  {programmeConfig?.variant ? `Step in Phase ${activePhase}` : "Step"}
                 </Button>
               </div>
             )}
@@ -738,6 +744,23 @@ export default function AssessmentDetailPage() {
             <div className="rounded-xl border border-dashed border-gray-300 py-8 text-center text-sm text-muted-foreground">
               No questions yet. Add a step or a question to get started.
             </div>
+          )}
+
+          {questionGroups.length > 0 && (
+            <>
+              {programmeConfig?.variant && (
+                <PhaseTabs
+                  config={programmeConfig}
+                  active={activePhase}
+                  onChange={setActivePhase}
+                  counts={[1, 2].map((n) => {
+                    const phaseGroups = questionGroups.filter((g) => (g.step?.phase_number ?? 1) === n);
+                    return { steps: phaseGroups.filter((g) => g.step).length, questions: phaseGroups.reduce((t, g) => t + g.questions.length, 0) };
+                  })}
+                />
+              )}
+              <QuestionTableHeader grid={grid} programme={!!programmeConfig?.variant} edit={isEditMode} />
+            </>
           )}
 
           <DndContext
@@ -759,7 +782,9 @@ export default function AssessmentDetailPage() {
             }}
             onDragCancel={() => setDraggingId(null)}
           >
-            {questionGroups.map((group, groupIndex) => {
+            {questionGroups
+              .filter((group) => !programmeConfig?.variant || (group.step?.phase_number ?? 1) === activePhase)
+              .map((group, groupIndex) => {
               const isSingleStep = steps.length === 1 && group.step !== null;
               const stepLabel = group.step ? (isSingleStep ? "Questions" : `Step ${group.step.step_order}`) : "General";
               const stepTitle = group.step?.title?.trim() || "";
@@ -768,6 +793,7 @@ export default function AssessmentDetailPage() {
                 <StepGroup
                   key={group.step?.id || `ungrouped-${groupIndex}`}
                   id={containerId(group.step?.id ?? null)}
+                  grid={grid}
                   label={stepLabel}
                   title={group.step && isEditMode ? group.step.title || "" : showTitle ? stepTitle : ""}
                   count={group.questions.length}
@@ -779,7 +805,7 @@ export default function AssessmentDetailPage() {
                   }
                   onAddQuestion={() => handleAddQuestion(group.step?.id || null)}
                   onDeleteStep={group.step ? () => handleDeleteStep(group.step!.id) : undefined}
-                  phase={programmeConfig?.variant && group.step ? group.step.phase_number ?? 1 : undefined}
+                  phase={programmeConfig?.variant ? group.step?.phase_number ?? 1 : undefined}
                   stepKey={group.step?.step_key ?? null}
                   onPhaseChange={
                     group.step
@@ -799,6 +825,7 @@ export default function AssessmentDetailPage() {
                         onDelete={handleDeleteQuestion}
                         showProgrammeFields={!!programmeConfig?.variant}
                         defaultSlider={programmeConfig?.slider}
+                        grid={grid}
                       />
                     ))}
                   </SortableContext>
@@ -862,9 +889,123 @@ export default function AssessmentDetailPage() {
   );
 }
 
-// A step: compact header (inline title in edit mode) and a drop zone for questions.
+// ---------------------------------------------------------------- question table layout
+//
+// Step headers, the column header and every question row share one grid, so
+// "Answered by", "Type", "Required" and the actions always line up.
+// (Literal class strings so Tailwind can see them.)
+const GRID = {
+  edit: "grid-cols-[20px_28px_minmax(0,1fr)_136px_88px_64px]",
+  editProgramme: "grid-cols-[20px_28px_minmax(0,1fr)_152px_136px_88px_64px]",
+  view: "grid-cols-[28px_minmax(0,1fr)_136px_88px]",
+  viewProgramme: "grid-cols-[28px_minmax(0,1fr)_152px_136px_88px]",
+} as const;
+type GridKey = keyof typeof GRID;
+const gridKey = (edit: boolean, programme: boolean): GridKey =>
+  edit ? (programme ? "editProgramme" : "edit") : programme ? "viewProgramme" : "view";
+
+const QUESTION_TYPES: { value: string; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { value: "textarea", label: "Long text", icon: AlignLeft },
+  { value: "text", label: "Short text", icon: Type },
+  { value: "slider", label: "Slider", icon: SlidersHorizontal },
+  { value: "heading", label: "Heading", icon: Heading },
+];
+const typeMeta = (t?: string | null) => QUESTION_TYPES.find((x) => x.value === t) ?? QUESTION_TYPES[0];
+
+const AUDIENCES: { value: string; label: string; dot: string }[] = [
+  { value: "__all__", label: "Everyone", dot: "bg-gray-300" },
+  { value: "participant", label: "Participant", dot: "bg-sky-500" },
+  { value: "reviewer", label: "Reviewer", dot: "bg-amber-500" },
+  { value: "self_reflection", label: "Self-reflection", dot: "bg-violet-500" },
+];
+const audienceMeta = (v?: string | null) => AUDIENCES.find((a) => a.value === (v ?? "__all__")) ?? AUDIENCES[0];
+
+const isHeadingType = (t?: string | null) => t === "heading" || t === "info";
+
+/** Phase 1 / Phase 2 tabs for habit-journey programmes. */
+function PhaseTabs({
+  config,
+  active,
+  onChange,
+  counts,
+}: {
+  config: DefinitionConfig;
+  active: number;
+  onChange: (phase: number) => void;
+  counts: { steps: number; questions: number }[];
+}) {
+  const phases = [1, 2].map((n) => {
+    const cfg = config.phases?.[String(n)];
+    return {
+      n,
+      title: cfg?.isSelfReflection ? "Self-reflection" : n === 1 ? "Habit & feedback" : "Follow-up",
+      tag: cfg?.name ?? `T${n}`,
+      hint: cfg?.isSelfReflection
+        ? "Reflection, re-invite reviewers, final report — eligible participants only"
+        : "Define the habit, nominate reviewers, first report",
+    };
+  });
+  return (
+    <div role="tablist" aria-label="Phases" className="grid grid-cols-2 gap-2 rounded-xl bg-gray-100/80 p-1">
+      {phases.map((p, i) => {
+        const selected = p.n === active;
+        return (
+          <button
+            key={p.n}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            onClick={() => onChange(p.n)}
+            className={cn(
+              "flex items-start gap-3 rounded-lg px-4 py-2.5 text-left transition-all",
+              selected ? "bg-white shadow-sm ring-1 ring-gray-200" : "text-gray-500 hover:bg-white/60",
+            )}
+          >
+            <span
+              className={cn(
+                "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
+                selected ? "bg-primary text-primary-foreground" : "bg-gray-200 text-gray-500",
+              )}
+            >
+              {p.n}
+            </span>
+            <span className="min-w-0">
+              <span className="flex items-center gap-2">
+                <span className={cn("text-sm font-semibold", selected ? "text-gray-900" : "text-gray-600")}>
+                  Phase {p.n} · {p.title}
+                </span>
+                <span className="rounded bg-gray-100 px-1.5 py-px font-mono text-[10px] text-gray-500">{p.tag}</span>
+              </span>
+              <span className="block truncate text-xs text-gray-500">
+                {counts[i].steps} step{counts[i].steps === 1 ? "" : "s"} · {counts[i].questions} item{counts[i].questions === 1 ? "" : "s"} — {p.hint}
+              </span>
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Column titles above all steps. */
+function QuestionTableHeader({ grid, programme, edit }: { grid: GridKey; programme: boolean; edit: boolean }) {
+  return (
+    <div className={cn("grid items-center gap-3 px-3 pb-1 text-[11px] font-medium uppercase tracking-wide text-gray-400", GRID[grid])}>
+      {edit && <span />}
+      <span className="text-right">#</span>
+      <span className={edit ? "pl-2" : ""}>Question</span>
+      {programme && <span>Answered by</span>}
+      <span>Type</span>
+      <span>Required</span>
+      {edit && <span />}
+    </div>
+  );
+}
+
+// A step: header on the shared grid + a drop zone for its questions.
 function StepGroup({
   id,
+  grid,
   label,
   title,
   count,
@@ -878,6 +1019,7 @@ function StepGroup({
   children,
 }: {
   id: string;
+  grid: GridKey;
   label: string;
   title: string;
   count: number;
@@ -892,70 +1034,89 @@ function StepGroup({
   children: React.ReactNode;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id });
+  const programme = phase !== undefined;
   return (
     <section
       className={cn(
-        "rounded-xl border bg-white shadow-sm transition-colors",
+        "overflow-hidden rounded-xl border bg-white shadow-sm transition-colors",
         isOver ? "border-primary/60 ring-2 ring-primary/15" : "border-gray-200",
       )}
     >
-      <header className="group/step flex items-center gap-2 border-b border-gray-100 px-3 py-2">
-        <span className="shrink-0 rounded-md bg-gray-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-gray-600">
-          {label}
-        </span>
-        {isEditMode && onTitleChange ? (
-          <input
-            value={title}
-            onChange={(e) => onTitleChange(e.target.value)}
-            placeholder="Untitled step"
-            className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-sm font-medium text-gray-900 placeholder:text-gray-400 hover:border-gray-200 focus:border-gray-300 focus:outline-none"
-          />
-        ) : (
-          <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">{title}</span>
-        )}
-        {stepKey && (
-          <code className="hidden shrink-0 rounded bg-gray-50 px-1.5 py-0.5 text-[11px] text-gray-500 sm:inline">{stepKey}</code>
-        )}
-        {phase !== undefined &&
-          (isEditMode && onPhaseChange ? (
-            <Select value={String(phase)} onValueChange={(v) => onPhaseChange(Number(v))}>
-              <SelectTrigger className="h-7 w-[92px] shrink-0 text-xs" aria-label="Phase">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="1">Phase 1</SelectItem>
-                <SelectItem value="2">Phase 2</SelectItem>
-              </SelectContent>
-            </Select>
+      <header className={cn("group/step grid min-h-[44px] items-center gap-3 border-b border-gray-100 bg-gray-50/70 px-3 py-1.5", GRID[grid])}>
+        {/* Step label + title span the handle, number and question columns */}
+        <div className={cn("flex min-w-0 items-center gap-2", isEditMode ? "col-span-3" : "col-span-2")}>
+          <span className="shrink-0 rounded-md bg-white px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-gray-600 ring-1 ring-gray-200">
+            {label}
+          </span>
+          {isEditMode && onTitleChange ? (
+            <input
+              value={title}
+              onChange={(e) => onTitleChange(e.target.value)}
+              placeholder="Untitled step"
+              aria-label="Step title"
+              className="h-7 min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 text-sm font-semibold text-gray-900 placeholder:font-normal placeholder:text-gray-400 hover:border-gray-200 hover:bg-white focus:border-gray-300 focus:bg-white focus:outline-none"
+            />
           ) : (
-            <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">Phase {phase}</span>
-          ))}
-        <span className="shrink-0 text-xs tabular-nums text-gray-400">{count}</span>
-        {isEditMode && (
-          <div className="flex shrink-0 items-center">
-            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={onAddQuestion}>
+            <span className="min-w-0 flex-1 truncate text-sm font-semibold text-gray-900">{title}</span>
+          )}
+          <span className="shrink-0 text-xs tabular-nums text-gray-400">
+            {count} {count === 1 ? "item" : "items"}
+          </span>
+        </div>
+
+        {programme && (
+          <span className="truncate font-mono text-[11px] text-gray-400" title="Step key">
+            {stepKey || "—"}
+          </span>
+        )}
+
+        {/* "Move to the other phase" sits in the "Type" column */}
+        <div>
+          {programme && isEditMode && onPhaseChange && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs text-gray-500 opacity-0 transition-opacity hover:text-gray-900 focus-visible:opacity-100 group-hover/step:opacity-100"
+              onClick={() => onPhaseChange(phase === 1 ? 2 : 1)}
+              title={`Move this step to Phase ${phase === 1 ? 2 : 1}`}
+            >
+              <ArrowRightLeft className="mr-1.5 h-3.5 w-3.5" />
+              To Phase {phase === 1 ? 2 : 1}
+            </Button>
+          )}
+        </div>
+
+        {/* "+ Question" sits in the "Required" column, the bin in the actions column */}
+        {isEditMode ? (
+          <>
+            <Button variant="ghost" size="sm" className="h-7 justify-start px-2 text-xs text-primary hover:text-primary" onClick={onAddQuestion}>
               <Plus className="mr-1 h-3.5 w-3.5" />
               Question
             </Button>
-            {onDeleteStep && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 w-7 p-0 text-gray-400 hover:text-destructive"
-                onClick={onDeleteStep}
-                aria-label="Delete step"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            )}
-          </div>
+            <div className="flex justify-end">
+              {onDeleteStep && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0 text-gray-400 hover:bg-red-50 hover:text-destructive"
+                  onClick={onDeleteStep}
+                  aria-label="Delete step"
+                  title="Delete step"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              )}
+            </div>
+          </>
+        ) : (
+          <span />
         )}
       </header>
       <div ref={setNodeRef} className="divide-y divide-gray-100">
         {children}
         {count === 0 && (
           <p className={cn("px-3 py-4 text-center text-xs", isOver ? "text-primary" : "text-gray-400")}>
-            {isEditMode ? "Drop questions here" : "No questions in this step"}
+            {isEditMode ? "Drop questions here, or add one" : "No questions in this step"}
           </p>
         )}
       </div>
@@ -963,19 +1124,56 @@ function StepGroup({
   );
 }
 
-const QUESTION_TYPES: { value: string; label: string }[] = [
-  { value: "textarea", label: "Long text" },
-  { value: "text", label: "Short text" },
-  { value: "slider", label: "Slider" },
-  { value: "heading", label: "Heading" },
-];
-const CONTEXT_LABELS: Record<string, string> = {
-  participant: "Participant",
-  reviewer: "Reviewer",
-  self_reflection: "Self-reflection",
-};
+/** Question text shown formatted (bold/italics, placeholder chips); click to edit the source. */
+function QuestionTextCell({
+  value,
+  editable,
+  isHeading,
+  onChange,
+}: {
+  value: string;
+  editable: boolean;
+  isHeading: boolean;
+  onChange: (value: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const preview = (
+    <div
+      className={cn(
+        "line-clamp-2 text-sm leading-snug text-gray-900 [&_b]:font-semibold [&_strong]:font-semibold",
+        isHeading && "text-gray-600",
+        !value && "italic text-gray-400",
+      )}
+      dangerouslySetInnerHTML={{ __html: value ? renderQuestionPreview(value) : isHeading ? "Heading text" : "Question text" }}
+    />
+  );
+  if (!editable) return <div title={value.replace(/<[^>]*>/g, " ")}>{preview}</div>;
+  if (editing) {
+    return (
+      <textarea
+        autoFocus
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={() => setEditing(false)}
+        onKeyDown={(e) => e.key === "Escape" && (e.currentTarget as HTMLTextAreaElement).blur()}
+        rows={Math.min(5, Math.max(2, Math.ceil(value.length / 90)))}
+        className="w-full resize-none rounded-md border border-gray-300 bg-white px-2 py-1.5 font-mono text-[12px] leading-relaxed text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary/20"
+      />
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => setEditing(true)}
+      className="block w-full rounded-md px-2 py-1 text-left transition-colors hover:bg-gray-100/80"
+      title="Click to edit"
+    >
+      {preview}
+    </button>
+  );
+}
 
-// One compact, sortable question row (with an expandable settings panel).
+// One sortable question row on the shared grid (with an expandable settings panel).
 function SortableQuestionItem({
   index,
   question,
@@ -985,6 +1183,7 @@ function SortableQuestionItem({
   onDelete,
   showProgrammeFields,
   defaultSlider,
+  grid,
 }: {
   index: number;
   question: AssessmentQuestion;
@@ -994,6 +1193,7 @@ function SortableQuestionItem({
   onDelete: (id: string) => void;
   showProgrammeFields?: boolean;
   defaultSlider?: DefinitionConfig["slider"];
+  grid: GridKey;
 }) {
   const [open, setOpen] = useState(false);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -1003,90 +1203,117 @@ function SortableQuestionItem({
   const update = (patch: Partial<AssessmentQuestion>) =>
     setQuestions(questions.map((q) => (q.id === question.id ? { ...q, ...patch } : q)));
   const config = (question.config ?? {}) as QuestionConfig;
-  const isHeading = question.question_type === "heading" || question.question_type === "info";
-  const context = config.context;
+  const isHeading = isHeadingType(question.question_type);
+  const type = typeMeta(question.question_type);
+  const audience = audienceMeta(config.context);
+  const TypeIcon = type.icon;
 
   return (
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={cn("bg-white", isDragging && "relative z-10 opacity-40")}
+      className={cn("bg-white", isDragging && "relative z-10 opacity-40", isHeading && "bg-gray-50/40")}
     >
-      <div className="group flex items-center gap-2 px-2 py-1.5 transition-colors hover:bg-gray-50/80">
+      <div className={cn("group grid min-h-[44px] items-center gap-3 px-3 py-1.5", GRID[grid])}>
         {isEditMode && (
           <button
             type="button"
             {...attributes}
             {...listeners}
-            className="flex h-6 w-5 shrink-0 cursor-grab items-center justify-center rounded text-gray-300 hover:text-gray-500 active:cursor-grabbing"
+            className="flex h-7 w-5 cursor-grab items-center justify-center rounded text-gray-300 hover:bg-gray-100 hover:text-gray-500 active:cursor-grabbing"
             aria-label="Drag to reorder"
           >
             <GripVertical className="h-4 w-4" />
           </button>
         )}
-        <span className="w-6 shrink-0 text-right text-xs tabular-nums text-gray-400">{isHeading ? "" : index}</span>
-        {question.question_type === "slider" ? (
-          <SlidersHorizontal className="h-3.5 w-3.5 shrink-0 text-gray-400" />
-        ) : (
-          <QuestionTypeIcon type={question.question_type} className="h-3.5 w-3.5 shrink-0 text-gray-400" />
-        )}
-        {isEditMode ? (
-          <input
-            value={question.question_text}
-            onChange={(e) => update({ question_text: e.target.value })}
-            placeholder={isHeading ? "Heading or info text" : "Enter question text"}
-            className={cn(
-              "h-7 min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 text-sm text-gray-900 placeholder:text-gray-400 hover:border-gray-200 focus:border-gray-300 focus:bg-white focus:outline-none",
-              isHeading && "italic text-gray-600",
-            )}
-          />
-        ) : (
-          <p
-            className={cn("min-w-0 flex-1 truncate px-1.5 text-sm text-gray-900", isHeading && "italic text-gray-600")}
-            title={question.question_text}
-          >
-            {question.question_text.replace(/<[^>]*>/g, " ")}
-          </p>
-        )}
-        {showProgrammeFields && context && (
-          <span className="hidden shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600 md:inline">
-            {CONTEXT_LABELS[context] ?? context}
-          </span>
-        )}
-        {isEditMode ? (
-          <>
-            <Select value={question.question_type || "textarea"} onValueChange={(v) => update({ question_type: v })}>
-              <SelectTrigger className="h-7 w-[104px] shrink-0 text-xs" aria-label="Question type">
+
+        <span className="flex justify-end text-xs tabular-nums text-gray-400">
+          {isHeading ? <Heading className="h-3.5 w-3.5 text-gray-300" /> : index}
+        </span>
+
+        <QuestionTextCell
+          value={question.question_text}
+          editable={isEditMode}
+          isHeading={isHeading}
+          onChange={(v) => update({ question_text: v })}
+        />
+
+        {showProgrammeFields &&
+          (isEditMode ? (
+            <Select
+              value={config.context ?? "__all__"}
+              onValueChange={(v) =>
+                update({ config: { ...config, context: v === "__all__" ? undefined : (v as QuestionConfig["context"]) } })
+              }
+            >
+              <SelectTrigger className="h-8 w-full text-xs" aria-label="Answered by">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {QUESTION_TYPES.map((t) => (
-                  <SelectItem key={t.value} value={t.value}>
-                    {t.label}
+                {AUDIENCES.map((a) => (
+                  <SelectItem key={a.value} value={a.value}>
+                    <span className="flex items-center gap-2">
+                      <span className={cn("h-2 w-2 rounded-full", a.dot)} />
+                      {a.label}
+                    </span>
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {!isHeading && (
-              <button
-                type="button"
-                onClick={() => update({ required: !question.required })}
-                className={cn(
-                  "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors",
-                  question.required ? "bg-red-50 text-red-700 hover:bg-red-100" : "text-gray-400 hover:bg-gray-100",
-                )}
-                title="Toggle required"
-              >
-                {question.required ? "Required" : "Optional"}
-              </button>
-            )}
+          ) : (
+            <span className="flex items-center gap-2 text-xs text-gray-700">
+              <span className={cn("h-2 w-2 shrink-0 rounded-full", audience.dot)} />
+              {audience.label}
+            </span>
+          ))}
+
+        {isEditMode ? (
+          <Select value={type.value} onValueChange={(v) => update({ question_type: v })}>
+            <SelectTrigger className="h-8 w-full text-xs" aria-label="Question type">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {QUESTION_TYPES.map((t) => (
+                <SelectItem key={t.value} value={t.value}>
+                  <span className="flex items-center gap-2">
+                    <t.icon className="h-3.5 w-3.5 text-gray-400" />
+                    {t.label}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <span className="flex items-center gap-2 text-xs text-gray-700">
+            <TypeIcon className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+            {type.label}
+          </span>
+        )}
+
+        {/* Required: a switch in edit mode; headings can't be required */}
+        {isHeading ? (
+          <span className="text-xs text-gray-300">—</span>
+        ) : isEditMode ? (
+          <label className="flex cursor-pointer items-center gap-2 text-xs text-gray-600">
+            <Switch checked={question.required} onCheckedChange={(checked) => update({ required: checked })} aria-label="Required" />
+            <span className={question.required ? "font-medium text-gray-900" : "text-gray-400"}>{question.required ? "Yes" : "No"}</span>
+          </label>
+        ) : (
+          <span className={cn("text-xs", question.required ? "font-medium text-gray-900" : "text-gray-400")}>
+            {question.required ? "Required" : "Optional"}
+          </span>
+        )}
+
+        {isEditMode && (
+          <div className="flex items-center justify-end gap-0.5">
             <Button
               variant="ghost"
               size="sm"
               onClick={() => setOpen((v) => !v)}
-              className={cn("h-7 w-7 shrink-0 p-0 text-gray-400 hover:text-gray-700", open && "bg-gray-100 text-gray-700")}
+              className={cn("h-7 w-7 p-0 text-gray-400 hover:text-gray-700", open && "bg-gray-100 text-gray-700")}
               aria-label="Question settings"
               aria-expanded={open}
+              title="Settings"
             >
               <Settings2 className="h-3.5 w-3.5" />
             </Button>
@@ -1094,14 +1321,13 @@ function SortableQuestionItem({
               variant="ghost"
               size="sm"
               onClick={() => onDelete(question.id)}
-              className="h-7 w-7 shrink-0 p-0 text-gray-300 opacity-0 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
+              className="h-7 w-7 p-0 text-gray-400 hover:bg-red-50 hover:text-destructive"
               aria-label="Delete question"
+              title="Delete question"
             >
               <Trash2 className="h-3.5 w-3.5" />
             </Button>
-          </>
-        ) : (
-          question.required && !isHeading && <span className="shrink-0 text-[11px] font-medium text-red-600">Required</span>
+          </div>
         )}
       </div>
       {isEditMode && open && (
@@ -1152,20 +1378,7 @@ function QuestionSettingsPanel({
   const isHeading = question.question_type === "heading" || question.question_type === "info";
 
   return (
-    <div className="mx-2 mb-2 grid gap-3 rounded-lg border border-gray-100 bg-gray-50/70 p-3 sm:grid-cols-2 lg:grid-cols-4">
-      <SettingsField label="Answered by">
-        <Select value={config.context ?? "__all__"} onValueChange={(v) => set({ context: v === "__all__" ? undefined : (v as QuestionConfig["context"]) })}>
-          <SelectTrigger className="h-8 text-sm">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__">Everyone</SelectItem>
-            <SelectItem value="participant">Participant</SelectItem>
-            <SelectItem value="reviewer">Reviewer</SelectItem>
-            <SelectItem value="self_reflection">Self-reflection</SelectItem>
-          </SelectContent>
-        </Select>
-      </SettingsField>
+    <div className="mx-3 mb-3 grid gap-3 rounded-lg border border-gray-100 bg-gray-50/70 p-3 sm:grid-cols-2 lg:grid-cols-4">
       <SettingsField label="Key" hint="Stable id used by reports">
         <input className={fieldClass} value={config.key ?? ""} placeholder="e.g. observe_actions" onChange={(e) => set({ key: e.target.value.trim() || undefined })} />
       </SettingsField>
