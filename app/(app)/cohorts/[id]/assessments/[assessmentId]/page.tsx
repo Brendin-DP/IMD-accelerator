@@ -2,7 +2,9 @@
 
 import { useState, useEffect, Fragment } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, ChevronDown, ChevronRight, ArrowUp, ArrowDown, Search, Calendar, Users, MoreVertical, Mail } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronRight, ArrowUp, ArrowDown, Search, Users, MoreVertical, Mail, Layers, UserCheck } from "lucide-react";
+import { InfoStrip } from "@/components/ui/info-strip";
+import { DonutChart, STATUS_COLORS } from "@/components/ui/donut-chart";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
@@ -1348,9 +1350,28 @@ export default function AssessmentDetailPage() {
     }
   });
 
-  const reviewsCompletedPercent = participantsWithAcceptedReviews > 0
-    ? Math.round((participantsWithAllReviewsCompleted / participantsWithAcceptedReviews) * 100)
-    : 0;
+  const participantCounts = {
+    inProgress: participantAssessments.filter((pa) => pa.status?.toLowerCase() === "in progress").length,
+    notStarted: participantAssessments.filter((pa) => !["completed", "in progress"].includes(pa.status?.toLowerCase() ?? "")).length,
+  };
+
+  // Every nomination for these participants, by where the reviewer is up to.
+  const reviewerCounts = { completed: 0, inProgress: 0, notStarted: 0, pending: 0, declined: 0, total: 0, completedPercent: 0 };
+  participantAssessments.forEach((pa) => {
+    if (!pa.id) return;
+    getNominationsForParticipant(pa.id).forEach((n) => {
+      reviewerCounts.total++;
+      const request = n.request_status?.toLowerCase();
+      if (request === "pending") return void reviewerCounts.pending++;
+      if (request === "rejected") return void reviewerCounts.declined++;
+      const review = (n.is_external ? n.external_reviewer?.review_status || n.review_status : n.review_status)?.toLowerCase();
+      if (review === "completed") reviewerCounts.completed++;
+      else if (review === "in progress") reviewerCounts.inProgress++;
+      else reviewerCounts.notStarted++;
+    });
+  });
+  const acceptedReviewers = reviewerCounts.completed + reviewerCounts.inProgress + reviewerCounts.notStarted;
+  reviewerCounts.completedPercent = acceptedReviewers ? Math.round((reviewerCounts.completed / acceptedReviewers) * 100) : 0;
 
   const getStatusColor = (status: string | null) => {
     if (!status) return "bg-gray-100 text-gray-800";
@@ -1385,7 +1406,7 @@ export default function AssessmentDetailPage() {
       </Button>
 
       {/* Header with Meta and Actions */}
-      <div className="border-b border-gray-200 pb-4">
+      <div>
         <div className="sm:flex sm:items-start sm:justify-between">
           <div className="flex-1">
             <div className="flex items-center justify-between">
@@ -1404,83 +1425,63 @@ export default function AssessmentDetailPage() {
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
-            <p className="mt-2 text-sm text-muted-foreground">
+            <p className="mt-1 text-sm text-muted-foreground">
               Assessment participants for {cohortName}
             </p>
-            <div className="mt-4 flex flex-wrap items-center gap-6 text-sm text-muted-foreground">
-              {/* Date Range */}
-              <div className="flex items-center gap-2">
-                <Calendar className="h-4 w-4" />
-                <span>
-                  {assessment.start_date && assessment.end_date ? (
-                    <>
-                      {new Date(assessment.start_date).toLocaleDateString()} - {new Date(assessment.end_date).toLocaleDateString()}
-                    </>
-                  ) : assessment.start_date ? (
-                    <>
-                      {new Date(assessment.start_date).toLocaleDateString()} - Not set
-                    </>
-                  ) : assessment.end_date ? (
-                    <>
-                      Not set - {new Date(assessment.end_date).toLocaleDateString()}
-                    </>
-                  ) : (
-                    "Not set"
-                  )}
-                </span>
-              </div>
-              
-              {/* Participants Count */}
-              <div className="flex items-center gap-2">
-                <Users className="h-4 w-4" />
-                <span>{participantAssessments.length} {participantAssessments.length === 1 ? 'participant' : 'participants'}</span>
-              </div>
-              
-              {/* Status */}
-              {assessment.status && (
-                <div>
-                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(assessment.status)}`}>
-                    {assessment.status}
-                  </span>
-                </div>
-              )}
-            </div>
           </div>
         </div>
       </div>
 
-      {/* Stats Section */}
-      <div className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
-        <div className="grid grid-cols-2 divide-x divide-gray-200">
-          {/* Participants Completed % */}
-          <div className="px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Participants Completed</p>
-                <p className="mt-2 text-3xl font-semibold text-primary">
-                  {participantsCompletedPercent}%
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {completedParticipants} of {totalParticipants} participants
-                </p>
-              </div>
-            </div>
-          </div>
+      <InfoStrip
+        start={assessment.start_date}
+        end={assessment.end_date}
+        items={[
+          { icon: Layers, label: "Cohort", value: cohortName || "—" },
+          { icon: Users, label: "Participants", value: totalParticipants },
+          { icon: UserCheck, label: "Reviewers", value: reviewerCounts.total },
+        ]}
+      />
 
-          {/* Reviews Completed % */}
-          <div className="px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Reviews Completed</p>
-                <p className="mt-2 text-3xl font-semibold text-primary">
-                  {reviewsCompletedPercent}%
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {participantsWithAllReviewsCompleted} of {participantsWithAcceptedReviews} participants
-                </p>
-              </div>
-            </div>
+      {/* Stats: participant and reviewer progress at a glance */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <div className="mb-4 flex items-baseline justify-between gap-4">
+            <h3 className="text-sm font-semibold text-gray-900">Participants</h3>
+            <p className="text-xs text-muted-foreground">
+              {completedParticipants} of {totalParticipants} completed
+            </p>
           </div>
+          <DonutChart
+            centerValue={`${participantsCompletedPercent}%`}
+            centerLabel="completed"
+            emptyLabel="No participants yet"
+            segments={[
+              { label: "Completed", value: completedParticipants, color: STATUS_COLORS.completed },
+              { label: "In progress", value: participantCounts.inProgress, color: STATUS_COLORS.inProgress },
+              { label: "Not started", value: participantCounts.notStarted, color: STATUS_COLORS.notStarted },
+            ]}
+          />
+        </div>
+
+        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <div className="mb-4 flex items-baseline justify-between gap-4">
+            <h3 className="text-sm font-semibold text-gray-900">Reviewers</h3>
+            <p className="text-xs text-muted-foreground">
+              {participantsWithAllReviewsCompleted} of {participantsWithAcceptedReviews} participants have all reviews in
+            </p>
+          </div>
+          <DonutChart
+            centerValue={`${reviewerCounts.completedPercent}%`}
+            centerLabel="reviews done"
+            emptyLabel="No reviewers nominated"
+            segments={[
+              { label: "Completed", value: reviewerCounts.completed, color: STATUS_COLORS.completed },
+              { label: "In progress", value: reviewerCounts.inProgress, color: STATUS_COLORS.inProgress },
+              { label: "Not started", value: reviewerCounts.notStarted, color: STATUS_COLORS.notStarted },
+              { label: "Awaiting response", value: reviewerCounts.pending, color: STATUS_COLORS.pending },
+              { label: "Declined", value: reviewerCounts.declined, color: STATUS_COLORS.declined },
+            ]}
+          />
         </div>
       </div>
 

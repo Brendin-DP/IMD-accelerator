@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Plus, ArrowLeft, MoreVertical, Pencil, Calendar, ArrowUp, ArrowDown, Info, Building2, CheckCircle2 } from "lucide-react";
+import { Plus, ArrowLeft, MoreVertical, Pencil, Calendar, ArrowUp, ArrowDown, Info, Building2, ClipboardList, Users, Layers } from "lucide-react";
+import { InfoStrip } from "@/components/ui/info-strip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -684,7 +685,7 @@ export default function CohortDetailPage() {
           </Button>
 
       {/* Header with Meta and Actions */}
-      <div className="border-b border-gray-200 pb-4">
+      <div>
         <div className="sm:flex sm:items-start sm:justify-between">
           <div className="flex-1">
             <div className="flex items-center justify-between">
@@ -715,63 +716,23 @@ export default function CohortDetailPage() {
                 </Button>
               </div>
             </div>
-            <p className="mt-2 text-sm text-muted-foreground">
+            <p className="mt-1 text-sm text-muted-foreground">
               Cohort details and participant management
             </p>
-            <div className="mt-4 flex flex-wrap items-center gap-6 text-sm text-muted-foreground">
-              {/* Client Name */}
-              {(cohort.client as any)?.name && (
-                <div className="flex items-center gap-2">
-                  <Building2 className="h-4 w-4" />
-                  <span>{(cohort.client as any)?.name}</span>
-                </div>
-              )}
-              
-              {/* Date Range */}
-              <div className="flex items-center gap-2">
-                <Calendar className="h-4 w-4" />
-                <span>
-                  {cohort.start_date && cohort.end_date ? (
-                    <>
-                      {new Date(cohort.start_date).toLocaleDateString()} - {new Date(cohort.end_date).toLocaleDateString()}
-                    </>
-                  ) : cohort.start_date ? (
-                    <>
-                      {new Date(cohort.start_date).toLocaleDateString()} - Not set
-                    </>
-                  ) : cohort.end_date ? (
-                    <>
-                      Not set - {new Date(cohort.end_date).toLocaleDateString()}
-                    </>
-                  ) : (
-                    "Not set"
-                  )}
-                </span>
-              </div>
-              
-              {/* Cohort Status */}
-              {(() => {
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
-                const endDate = cohort.end_date ? new Date(cohort.end_date) : null;
-                const status = endDate && endDate < today ? "Completed" : "Active";
-                const statusColor = status === "Completed" 
-                  ? "bg-green-100 text-green-800" 
-                  : "bg-blue-100 text-blue-800";
-                
-                return (
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4" />
-                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${statusColor}`}>
-                      {status}
-                    </span>
-                  </div>
-                );
-              })()}
-            </div>
           </div>
         </div>
       </div>
+
+      <InfoStrip
+        start={cohort.start_date}
+        end={cohort.end_date}
+        items={[
+          { icon: Building2, label: "Client", value: (cohort.client as any)?.name || "—" },
+          { icon: ClipboardList, label: "Plan", value: (cohort.plan as any)?.name || "—" },
+          { icon: Users, label: "Participants", value: participants.length },
+          { icon: Layers, label: "Assessments", value: assessments.length },
+        ]}
+      />
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>

@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { supabase } from "@/lib/supabaseClient";
+import { planDescriptionText, withPlanMapping } from "@/lib/planDescription";
 
 interface Plan {
   id: string;
@@ -90,7 +91,7 @@ export default function PlanDetailPage() {
       // Populate form with current plan data
       setFormData({
         name: planData.name || "",
-        description: planData.description || "",
+        description: planDescriptionText(planData.description),
         assessment_type_ids: selectedAssessmentTypeIds,
       });
     } catch (err) {
@@ -152,7 +153,7 @@ export default function PlanDetailPage() {
         .from("plans")
         .update({
           name: formData.name.trim(),
-          description: formData.description.trim() || null,
+          description: withPlanMapping(formData.description, plan?.description),
         })
         .eq("id", planId);
 

@@ -14,6 +14,7 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import { supabase } from "@/lib/supabaseClient";
+import { planDescriptionText } from "@/lib/planDescription";
 
 interface Plan {
   id: string;
@@ -475,7 +476,7 @@ export default function PlansPage() {
                 <tr key={plan.id} className="border-b hover:bg-muted/50 transition-colors">
                   <td className="px-6 py-4 text-sm font-medium">{plan.name || "-"}</td>
                   <td className="px-6 py-4 text-sm text-muted-foreground">
-                    {plan.description || "-"}
+                    {planDescriptionText(plan.description) || "-"}
                   </td>
                   <td className="px-6 py-4 text-sm text-muted-foreground">
                     {plan.created_at

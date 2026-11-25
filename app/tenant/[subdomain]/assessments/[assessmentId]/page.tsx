@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, MoreVertical, Trash2, Download } from "lucide-react";
+import { ArrowLeft, MoreVertical, Trash2, Download, ClipboardList, Gauge, UserCheck } from "lucide-react";
+import { InfoStrip } from "@/components/ui/info-strip";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
@@ -2278,123 +2279,88 @@ export default function TenantAssessmentDetailPage() {
         {assessment.cohort_id ? "Back to Cohort" : "Back to Dashboard"}
       </Button>
 
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold">{assessmentName}</h1>
-        <p className="text-muted-foreground mt-2">
-          {cohortName}
-        </p>
-      </div>
-
-      {/* Assessment Details Card */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-start justify-between">
-            <div className="flex items-center gap-3">
-              <CardTitle>Assessment Information</CardTitle>
+      {/* Header: title + actions */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-3xl font-bold">{assessmentName}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {cohortName}
+            {assessment.assessment_type?.description && <> · {assessment.assessment_type.description}</>}
+          </p>
+        </div>
+        {(() => {
+          const buttonConfig = getButtonConfig();
+          const isPulse = assessment?.assessment_type?.name?.toLowerCase() === "pulse";
+          const isCompleted = participantAssessment?.status?.toLowerCase() === "completed";
+          return (
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
               <Button
-                variant="outline"
+                variant="ghost"
                 size="sm"
                 onClick={() => router.push(`/tenant/${subdomain}/assessments/${assessmentId}/v2`)}
               >
                 View V2
               </Button>
+              {isPulse && isCompleted && reportAvailable && (
+                <Button onClick={handleDownloadReport} variant="outline" size="sm" disabled={!user?.id || downloadingReport}>
+                  <Download className="mr-2 h-4 w-4" />
+                  {downloadingReport ? "Downloading..." : "Download Report"}
+                </Button>
+              )}
+              {buttonConfig.showRetake && (
+                <Button onClick={handleRetakeAssessment} variant="tertiary" size="sm" disabled={!user?.id || retakingAssessment}>
+                  {retakingAssessment ? "Resetting..." : "Retake"}
+                </Button>
+              )}
+              <Button
+                onClick={() => router.push(`/tenant/${subdomain}/assessments/${assessmentId}/questionnaire?source=db`)}
+                variant={buttonConfig.variant}
+                disabled={!user?.id || buttonConfig.disabled}
+              >
+                {buttonConfig.text}
+              </Button>
             </div>
-            {assessment.status && (
-              <span className={`px-3 py-1 text-sm font-medium rounded-full ${getStatusColor(assessment.status)}`}>
-                {assessment.status}
-              </span>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Assessment Type</p>
-              <p className="text-base mt-1">{assessment.assessment_type?.name || "N/A"}</p>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground mb-2">Assessment Status</p>
-              <span className={`inline-block px-3 py-1 text-sm font-medium rounded-full ${getStatusColor(participantAssessment?.status || "Not started")}`}>
-                {participantAssessment?.status || "Not started"}
-              </span>
-            </div>
-            {assessment.assessment_type?.description && (
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Description</p>
-                <p className="text-base mt-1">{assessment.assessment_type.description}</p>
-              </div>
-            )}
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Start Date</p>
-              <p className="text-base mt-1">
-                {assessment.start_date ? (
-                  new Date(assessment.start_date).toLocaleDateString()
-                ) : (
-                  <span className="text-muted-foreground">Not set</span>
-                )}
-              </p>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">End Date</p>
-              <p className="text-base mt-1">
-                {assessment.end_date ? (
-                  new Date(assessment.end_date).toLocaleDateString()
-                ) : (
-                  <span className="text-muted-foreground">Not set</span>
-                )}
-              </p>
-            </div>
-          </div>
-          {/* Assessment Action Buttons */}
-          <div className="mt-6 pt-6 border-t flex justify-between items-center gap-4">
-            {(() => {
-              const buttonConfig = getButtonConfig();
-              const isPulse = assessment?.assessment_type?.name?.toLowerCase() === "pulse";
-              const isCompleted = participantAssessment?.status?.toLowerCase() === "completed";
-              
-              return (
-                <>
-                  {/* Left side - Download Report button (pulse only, when completed and report available) */}
-                  {isPulse && isCompleted && reportAvailable && (
-                    <Button
-                      onClick={handleDownloadReport}
-                      variant="outline"
-                      disabled={!user?.id || downloadingReport}
-                      className="w-full sm:w-auto"
-                    >
-                      <Download className="h-4 w-4 mr-2" />
-                      {downloadingReport ? "Downloading..." : "Download Report"}
-                    </Button>
-                  )}
-                  
-                  {/* Right side - Assessment action buttons */}
-                  <div className="flex items-center gap-4 ml-auto">
-                    {buttonConfig.showRetake && (
-                      <Button
-                        onClick={handleRetakeAssessment}
-                        variant="tertiary"
-                        disabled={!user?.id || retakingAssessment}
-                        className="w-full sm:w-auto"
-                      >
-                        {retakingAssessment ? "Resetting..." : "Retake Assessment"}
-                      </Button>
+          );
+        })()}
+      </div>
+
+      {/* Assessment summary */}
+      {(() => {
+        const myStatus = participantAssessment?.status || "Not started";
+        const pct = myStatus.toLowerCase() === "completed" ? 100 : responseSession?.completion_percent ?? null;
+        const accepted = nominations.filter((n) => n.request_status?.toLowerCase() === "accepted").length;
+        const reviewsDone = nominations.filter((n) => {
+          if (n.request_status?.toLowerCase() !== "accepted") return false;
+          const status = n.is_external ? (n as any).external_reviewer?.review_status || n.review_status : n.review_status;
+          return status?.toLowerCase() === "completed";
+        }).length;
+        return (
+          <InfoStrip
+            start={assessment.start_date}
+            end={assessment.end_date}
+            items={[
+              { icon: ClipboardList, label: "Type", value: assessment.assessment_type?.name || "—" },
+              {
+                icon: Gauge,
+                label: "My progress",
+                value: (
+                  <span className="flex items-center gap-2">
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${getStatusColor(myStatus)}`}>{myStatus}</span>
+                    {pct !== null && myStatus.toLowerCase() !== "not started" && (
+                      <span className="text-xs font-normal tabular-nums text-muted-foreground">{pct}%</span>
                     )}
-                    <Button
-                      onClick={() => router.push(`/tenant/${subdomain}/assessments/${assessmentId}/questionnaire?source=db`)}
-                      variant={buttonConfig.variant}
-                      disabled={!user?.id || buttonConfig.disabled}
-                      className="w-full sm:w-auto"
-                    >
-                      {buttonConfig.text}
-                    </Button>
-                  </div>
-                </>
-              );
-            })()}
-          </div>
-        </CardContent>
-      </Card>
+                  </span>
+                ),
+              },
+              {
+                icon: UserCheck,
+                label: "Reviewers",
+                value: nominations.length ? `${reviewsDone} of ${accepted} done` : "None yet",
+              },
+            ]}
+          />
+        );
+      })()}
 
       {/* My Assessment Status Card - Hidden for now */}
       {false && (
